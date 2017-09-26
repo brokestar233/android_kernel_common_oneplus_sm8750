@@ -237,6 +237,9 @@ int f2fs_start_gc_thread(struct f2fs_sb_info *sbi)
 
 	set_user_nice(gc_th->f2fs_gc_task,
 			PRIO_TO_NICE(sbi->critical_task_priority));
+
+	set_task_ioprio(sbi->gc_thread->f2fs_gc_task,
+		IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0));
 	return 0;
 }
 
