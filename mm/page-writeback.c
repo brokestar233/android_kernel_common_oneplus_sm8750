@@ -65,7 +65,7 @@
  * After a CPU has dirtied this many pages, balance_dirty_pages_ratelimited
  * will look to see if it needs to force writeback or throttling.
  */
-static long ratelimit_pages = 32;
+static long ratelimit_pages = 256;
 
 /* The following parameters are exported via /proc/sys/vm */
 
