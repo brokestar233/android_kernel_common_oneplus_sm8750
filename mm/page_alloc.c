@@ -333,7 +333,7 @@ unsigned long nr_free_highatomic[MAX_NR_ZONES] = {0};
 
 int min_free_kbytes = 1024;
 int user_min_free_kbytes = -1;
-static int watermark_boost_factor __read_mostly = 15000;
+static int watermark_boost_factor __read_mostly;
 static int watermark_scale_factor = 10;
 
 /* virt_zone is the "real" zone pages in virtual zones are taken from */
