@@ -661,7 +661,7 @@ static void log_block_read(struct mount_info *mi, incfs_uuid_t *id,
 	++head->current_record_no;
 
 	spin_unlock(&log->rl_lock);
-	schedule_delayed_work(&log->ml_wakeup_work, msecs_to_jiffies(16));
+	queue_delayed_work(system_power_efficient_wq, &log->ml_wakeup_work, msecs_to_jiffies(16));
 }
 
 static int validate_hash_tree(struct backing_file_context *bfc, struct file *f,

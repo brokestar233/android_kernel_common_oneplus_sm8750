@@ -595,7 +595,7 @@ static void psi_avgs_work(struct work_struct *work)
 	}
 
 	if (changed_states & PSI_STATE_RESCHEDULE) {
-		schedule_delayed_work(dwork, nsecs_to_jiffies(
+		queue_delayed_work(system_power_efficient_wq, dwork, nsecs_to_jiffies(
 				group->avg_next_update - now) + 1);
 	}
 
@@ -887,7 +887,7 @@ static void psi_group_change(struct psi_group *group, int cpu,
 		psi_schedule_rtpoll_work(group, 1, false);
 
 	if (wake_clock && !delayed_work_pending(&group->avgs_work))
-		schedule_delayed_work(&group->avgs_work, PSI_FREQ);
+		queue_delayed_work(system_power_efficient_wq, &group->avgs_work, PSI_FREQ);
 }
 
 static inline struct psi_group *task_psi_group(struct task_struct *task)
