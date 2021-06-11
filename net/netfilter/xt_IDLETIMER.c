@@ -393,9 +393,6 @@ static int idletimer_tg_create_v1(struct idletimer_tg_info_v1 *info)
 		goto out_free_attr;
 	}
 
-	/*  notify userspace  */
-	kobject_uevent(idletimer_tg_kobj,KOBJ_ADD);
-
 	list_add(&info->timer->entry, &idletimer_tg_list);
 	pr_debug("timer type value is %u\n", info->timer_type);
 	info->timer->timer_type = info->timer_type;
