@@ -25,6 +25,29 @@ typedef u32 kprobe_opcode_t;
 struct arch_specific_insn {
 	struct arch_probe_insn api;
 };
+
+/* optinsn template addresses */
+extern __visible kprobe_opcode_t optinsn_slot;
+extern __visible kprobe_opcode_t optprobe_template_entry;
+extern __visible kprobe_opcode_t optprobe_template_val;
+extern __visible kprobe_opcode_t optprobe_template_call;
+extern __visible kprobe_opcode_t optprobe_template_end;
+extern __visible kprobe_opcode_t optprobe_template_restore_orig_insn;
+extern __visible kprobe_opcode_t optprobe_template_restore_end;
+
+#define MAX_OPTIMIZED_LENGTH    4
+#define MAX_OPTINSN_SIZE                                \
+	((kprobe_opcode_t *)&optprobe_template_end -        \
+	(kprobe_opcode_t *)&optprobe_template_entry)
+
+
+struct arch_optimized_insn {
+	/* copy of the original instructions */
+	kprobe_opcode_t copied_insn[AARCH64_INSN_SIZE];
+	/* detour code buffer */
+	kprobe_opcode_t *insn;
+};
+
 #endif
 
 #endif
