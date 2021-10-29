@@ -416,6 +416,33 @@ int __kprobes arch_trampoline_kprobe(struct kprobe *p)
 	return 0;
 }
 
+kprobe_opcode_t __kprobes *kprobe_lookup_name(const char *name, unsigned int offset)
+{
+	kprobe_opcode_t *addr;
+
+	addr = (kprobe_opcode_t *)kallsyms_lookup_name(name);
+#ifdef CONFIG_KPROBES_ON_FTRACE
+	if (addr && !offset) {
+		unsigned long faddr;
+
+		faddr = ftrace_location_range((unsigned long)addr,
+					      (unsigned long)addr + 8);
+		if (faddr)
+			addr = (kprobe_opcode_t *)faddr;
+	}
+#endif
+	return addr;
+}
+
+bool __kprobes arch_kprobe_on_func_entry(unsigned long offset)
+{
+#ifdef CONFIG_KPROBES_ON_FTRACE
+	return offset <= 8;
+#else
+	return !offset;
+#endif
+}
+
 int __init arch_init_kprobes(void)
 {
 	register_kernel_break_hook(&kprobes_break_hook);
