@@ -4465,38 +4465,42 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		 * A similar smb_rmb() lives in try_invoke_on_locked_down_task().
 		 */
 		smp_rmb();
-		if (READ_ONCE(p->on_rq) && ttwu_runnable(p, wake_flags))
-			break;
+		if (READ_ONCE(p->on_rq)) {
+				if (ttwu_runnable(p, wake_flags))
+					break;
+		} else {
+#ifdef CONFIG_SMP
+			/*
+			 * Ensure we load p->on_cpu _after_ p->on_rq, otherwise it would be
+			 * possible to, falsely, observe p->on_cpu == 0.
+			 *
+			 * One must be running (->on_cpu == 1) in order to remove oneself
+			 * from the runqueue.
+			 *
+			 * __schedule() (switch to task 'p')	try_to_wake_up()
+			 *   STORE p->on_cpu = 1		  LOAD p->on_rq
+			 *   UNLOCK rq->lock
+			 *
+			 * __schedule() (put 'p' to sleep)
+			 *   LOCK rq->lock			  smp_rmb();
+			 *   smp_mb__after_spinlock();
+			 *   STORE p->on_rq = 0			  LOAD p->on_cpu
+			 *
+			 * Pairs with the LOCK+smp_mb__after_spinlock() on rq->lock in
+			 * __schedule().  See the comment for smp_mb__after_spinlock().
+			 *
+			 * Form a control-dep-acquire with p->on_rq == 0 above, to ensure
+			 * schedule()'s deactivate_task() has 'happened' and p will no longer
+			 * care about it's own p->state. See the comment in __schedule().
+			 */
+			smp_acquire__after_ctrl_dep();
+#endif
+		}
 
 	if (READ_ONCE(p->__state) & TASK_UNINTERRUPTIBLE)
 		trace_sched_blocked_reason(p);
 
 #ifdef CONFIG_SMP
-		/*
-		 * Ensure we load p->on_cpu _after_ p->on_rq, otherwise it would be
-		 * possible to, falsely, observe p->on_cpu == 0.
-		 *
-		 * One must be running (->on_cpu == 1) in order to remove oneself
-		 * from the runqueue.
-		 *
-		 * __schedule() (switch to task 'p')	try_to_wake_up()
-		 *   STORE p->on_cpu = 1		  LOAD p->on_rq
-		 *   UNLOCK rq->lock
-		 *
-		 * __schedule() (put 'p' to sleep)
-		 *   LOCK rq->lock			  smp_rmb();
-		 *   smp_mb__after_spinlock();
-		 *   STORE p->on_rq = 0			  LOAD p->on_cpu
-		 *
-		 * Pairs with the LOCK+smp_mb__after_spinlock() on rq->lock in
-		 * __schedule().  See the comment for smp_mb__after_spinlock().
-		 *
-		 * Form a control-dep-acquire with p->on_rq == 0 above, to ensure
-		 * schedule()'s deactivate_task() has 'happened' and p will no longer
-		 * care about it's own p->state. See the comment in __schedule().
-		 */
-		smp_acquire__after_ctrl_dep();
-
 		/*
 		 * We're doing the wakeup (@success == 1), they did a dequeue (p->on_rq
 		 * == 0), which means we need to do an enqueue, change p->state to
