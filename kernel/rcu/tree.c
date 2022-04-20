@@ -4732,7 +4732,8 @@ static void __init rcu_start_exp_gp_kworkers(void)
 
 static inline void rcu_alloc_par_gp_wq(void)
 {
-	rcu_par_gp_wq = alloc_workqueue("rcu_par_gp", WQ_MEM_RECLAIM, 0);
+	rcu_par_gp_wq = alloc_workqueue("rcu_par_gp",
+					WQ_MEM_RECLAIM | WQ_UNBOUND, 0);
 	WARN_ON(!rcu_par_gp_wq);
 }
 #endif /* CONFIG_RCU_EXP_KTHREAD */
@@ -5102,7 +5103,7 @@ void __init rcu_init(void)
 	rcutree_online_cpu(cpu);
 
 	/* Create workqueue for Tree SRCU and for expedited GPs. */
-	rcu_gp_wq = alloc_workqueue("rcu_gp", WQ_MEM_RECLAIM, 0);
+	rcu_gp_wq = alloc_workqueue("rcu_gp", WQ_MEM_RECLAIM | WQ_UNBOUND, 0);
 	WARN_ON(!rcu_gp_wq);
 	rcu_alloc_par_gp_wq();
 
