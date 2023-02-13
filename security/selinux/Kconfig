@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 config SECURITY_SELINUX
 	bool "SELinux Support"
-	depends on SECURITY_NETWORK && AUDIT && NET && INET
+	depends on SECURITY_NETWORK && NET && INET
 	select NETWORK_SECMARK
 	default n
 	help
