@@ -171,19 +171,39 @@ static int is_full_zero(const void *s1, size_t len)
 
 #endif
 #else
+static const char zero_page[PAGE_SIZE] = { 0 };
+
+static int is_full_zero_page(const void *s1, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len; i += PAGE_SIZE) {
+		void *s = (void *)s1 + i;
+
+		if (memcmp(s, zero_page, PAGE_SIZE))
+			return false;
+	}
+
+	return true;
+}
+
 static int is_full_zero(const void *s1, size_t len)
 {
 	const unsigned long *src = s1;
-	int i;
+	size_t i;
 
-	len /= sizeof(*src);
+	if (likely(len == PAGE_SIZE)) {
+		return is_full_zero_page(s1, len);
+	} else {
+		len /= sizeof(*src);
 
-	for (i = 0; i < len; i++) {
-		if (src[i])
-			return 0;
+		for (i = 0; i < len; i++) {
+			if (src[i])
+				return false;
+		}
+
+		return true;
 	}
-
-	return 1;
 }
 #endif
 
