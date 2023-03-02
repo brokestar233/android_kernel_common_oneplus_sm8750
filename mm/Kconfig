@@ -862,13 +862,14 @@ if UKSM
 
 config UKSM_CPU_GOVERNOR
 	int "Ultra-KSM default CPU governor"
-	range 0 3
+	range 0 4
 	help
 	The UKSM default CPU governor.
 	0: full
 	1: medium
 	2: low
 	3: quiet
+	4: android
 
 endif
 
