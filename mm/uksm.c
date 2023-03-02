@@ -4952,8 +4952,8 @@ static ssize_t max_cpu_percentage_store(struct kobject *kobj,
 
 	if (max_cpu_percentage == 100)
 		max_cpu_percentage = 99;
-	else if (max_cpu_percentage < 10)
-		max_cpu_percentage = 10;
+	else if (max_cpu_percentage < 1)
+		max_cpu_percentage = 1;
 
 	uksm_max_cpu_percentage = max_cpu_percentage;
 
