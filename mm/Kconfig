@@ -871,6 +871,10 @@ config UKSM_CPU_GOVERNOR
 	3: quiet
 	4: android
 
+config UKSM_SLEEP_MS
+	int "Ultra-KSM default sleep millisecs"
+	range 8 60000
+
 endif
 
 config DEFAULT_MMAP_MIN_ADDR

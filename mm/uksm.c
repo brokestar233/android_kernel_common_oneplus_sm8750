@@ -4831,8 +4831,8 @@ rm_slot:
 		if (expected_jiffies > uksm_sleep_real)
 			uksm_sleep_real = expected_jiffies;
 
-		/* We have a 1 second up bound for responsiveness. */
-		if (jiffies_to_msecs(uksm_sleep_real) > MSEC_PER_SEC)
+		/* We have a 60 second up bound for responsiveness. */
+		if (jiffies_to_msecs(uksm_sleep_real) > MSEC_PER_SEC * 60)
 			uksm_sleep_real = msecs_to_jiffies(1000);
 	}
 
@@ -5066,7 +5066,7 @@ static ssize_t sleep_millisecs_store(struct kobject *kobj,
 	int err;
 
 	err = kstrtoul(buf, 10, &msecs);
-	if (err || msecs > MSEC_PER_SEC)
+	if (err || msecs > MSEC_PER_SEC * 60)
 		return -EINVAL;
 
 	uksm_sleep_jiffies = msecs_to_jiffies(msecs);
@@ -5740,7 +5740,7 @@ static int __init uksm_init(void)
 	struct task_struct *uksm_thread;
 	int err;
 
-	uksm_sleep_jiffies = msecs_to_jiffies(100);
+	uksm_sleep_jiffies = msecs_to_jiffies(CONFIG_UKSM_SLEEP_MS);
 	uksm_sleep_saved = uksm_sleep_jiffies;
 
 	slot_tree_init();
