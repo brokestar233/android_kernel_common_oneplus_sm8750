@@ -5636,26 +5636,25 @@ static void __init uksm_slab_free(void)
 int ksm_madvise(struct vm_area_struct *vma, unsigned long start,
 		unsigned long end, int advice, unsigned long *vm_flags)
 {
-	int err;
-
-	switch (advice) {
-	case MADV_MERGEABLE:
+	/* force ignore the advice */
+	if (*vm_flags & (VM_MERGEABLE | VM_SHARED  | VM_MAYSHARE   |
+			 VM_PFNMAP    | VM_IO      | VM_DONTEXPAND |
+			 VM_HUGETLB | VM_MIXEDMAP))
 		return 0;		/* just ignore the advice */
 
-	case MADV_UNMERGEABLE:
-		if (!(*vm_flags & VM_MERGEABLE) || !uksm_flags_can_scan(*vm_flags))
-			return 0;		/* just ignore the advice */
+	if (vma_is_dax(vma))
+		return 0;
 
-		if (vma->anon_vma) {
-			err = unmerge_uksm_pages(vma, start, end, true);
-			if (err)
-				return err;
-		}
+#ifdef VM_SAO
+	if (*vm_flags & VM_SAO)
+		return 0;
+#endif
+#ifdef VM_SPARC_ADI
+	if (*vm_flags & VM_SPARC_ADI)
+		return 0;
+#endif
 
-		uksm_remove_vma(vma, "ksm_advise");
-		*vm_flags &= ~VM_MERGEABLE;
-		break;
-	}
+	*vm_flags |= VM_MERGEABLE;
 
 	return 0;
 }
