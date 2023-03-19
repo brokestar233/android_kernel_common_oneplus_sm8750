@@ -714,7 +714,7 @@ static unsigned long stable_tree_index;
 static u32 *random_nums;
 
 /* The hash strength */
-static unsigned long hash_strength = HASH_STRENGTH_FULL >> 4;
+static unsigned long hash_strength = HASH_STRENGTH_FULL >> 6;
 
 /* The delta value each time the hash strength increases or decreases */
 static unsigned long hash_strength_delta;
