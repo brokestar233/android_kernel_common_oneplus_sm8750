@@ -530,6 +530,10 @@ struct sched_statistics {
 #endif /* CONFIG_SCHEDSTATS */
 } ____cacheline_aligned;
 
+struct sched_entity_ext {
+	unsigned char			custom_slice;
+};
+
 struct sched_entity {
 	/* For load-balancing: */
 	struct load_weight		load;
@@ -570,7 +574,7 @@ struct sched_entity {
 	struct sched_avg		avg;
 #endif
 
-	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_USE(1, struct sched_entity_ext ext);
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
