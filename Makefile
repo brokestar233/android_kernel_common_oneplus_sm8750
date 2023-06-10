@@ -1007,6 +1007,7 @@ endif
 ifdef CONFIG_LTO_CLANG
 ifdef CONFIG_LTO_CLANG_THIN
 CC_FLAGS_LTO	:= -flto=thin -fsplit-lto-unit
+KBUILD_LDFLAGS	+= --thinlto-cache-dir=$(extmod_prefix).thinlto-cache --thinlto-jobs=$(nproc --all)
 else
 CC_FLAGS_LTO	:= -flto
 endif
