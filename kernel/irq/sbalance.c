@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2023 Sultan Alsawaf <sultan@kerneltoast.com>.
+ * Copyright (C) 2023-2024 Sultan Alsawaf <sultan@kerneltoast.com>.
  */
 
 /**
@@ -187,12 +187,20 @@ static bool find_min_bd(const cpumask_t *mask, unsigned int max_intrs,
 		if (intrs > max_intrs)
 			return true;
 
+		/* Don't consider moving IRQs to this CPU if it's excluded */
+		if (cpumask_test_cpu(cpu, &cpu_exclude_mask))
+			continue;
+
 		/* Find the CPU with the lowest relative number of interrupts */
 		if (intrs < min_intrs) {
 			min_intrs = intrs;
 			*min_bd = bd;
 		}
 	}
+
+	/* No CPUs available to move IRQs onto */
+	if (min_intrs == UINT_MAX)
+		return true;
 
 	/* Don't balance if IRQs are already balanced evenly enough */
 	return max_intrs - min_intrs < IRQ_SCALED_THRESH;
@@ -210,7 +218,7 @@ static void balance_irqs(void)
 	rcu_read_lock();
 
 	/* Find the available CPUs for balancing, if there are any */
-	cpumask_andnot(&cpus, cpu_active_mask, &cpu_exclude_mask);
+	cpumask_copy(&cpus, cpu_active_mask);
 	if (unlikely(cpumask_weight(&cpus) <= 1))
 		goto unlock;
 
