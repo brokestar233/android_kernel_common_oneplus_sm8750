@@ -283,7 +283,7 @@ try_next_heaviest:
 		if (cpumask_weight(&cpus) == 2)
 			goto unlock;
 
-		cpumask_clear_cpu(max_bd->cpu, &cpus);
+		__cpumask_clear_cpu(max_bd->cpu, &cpus);
 	}
 
 	/* Find the CPU with the lowest relative interrupt count */
