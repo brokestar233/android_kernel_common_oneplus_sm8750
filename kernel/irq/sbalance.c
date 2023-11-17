@@ -334,6 +334,36 @@ unlock:
 	}
 }
 
+struct process_timer {
+	struct timer_list timer;
+	struct task_struct *task;
+};
+
+static void process_timeout(struct timer_list *t)
+{
+	struct process_timer *timeout = from_timer(timeout, t, timer);
+
+	wake_up_process(timeout->task);
+}
+
+static void sbalance_wait(long poll_jiffies)
+{
+	struct process_timer timer;
+
+	/*
+	 * Open code freezable_schedule_timeout_interruptible() in order to
+	 * make the timer deferrable, so that it doesn't kick CPUs out of idle.
+	 */
+	__set_current_state(TASK_IDLE | TASK_FREEZABLE);
+	timer.task = current;
+	timer_setup_on_stack(&timer.timer, process_timeout, TIMER_DEFERRABLE);
+	timer.timer.expires = jiffies + poll_jiffies;
+	add_timer(&timer.timer);
+	schedule();
+	del_timer_sync(&timer.timer);
+	destroy_timer_on_stack(&timer.timer);
+}
+
 static int __noreturn sbalance_thread(void *data)
 {
 	long poll_jiffies = msecs_to_jiffies(POLL_MS);
@@ -353,7 +383,7 @@ static int __noreturn sbalance_thread(void *data)
 
 	set_freezable();
 	while (1) {
-		freezable_schedule_timeout_interruptible(poll_jiffies);
+		sbalance_wait(poll_jiffies);
 		balance_irqs();
 	}
 }
