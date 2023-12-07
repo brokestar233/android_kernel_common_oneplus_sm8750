@@ -244,7 +244,7 @@ static bool kcompressd_store(struct folio *folio)
 		return false;
 
 	/* Swap device must be sync-efficient */
-	if (!zswap_is_enabled() &&
+	if (!is_zswap_enabled() &&
 	    !data_race(swp_swap_info(folio->swap)->flags & SWP_SYNCHRONOUS_IO))
 		return false;
 
@@ -324,6 +324,11 @@ int swap_writepage(struct page *page, struct writeback_control *wbc)
 		folio_end_writeback(folio);
 		return 0;
 	}
+	if (!mem_cgroup_zswap_writeback_enabled(folio_memcg(folio))) {
+		folio_mark_dirty(folio);
+		return AOP_WRITEPAGE_ACTIVATE;
+	}
+
 	__swap_writepage(&folio->page, wbc);
 	return 0;
 }
