@@ -539,7 +539,11 @@ void tcp_retransmit_timer(struct sock *sk)
 		struct inet_sock *inet = inet_sk(sk);
 		u32 rtx_delta;
 
-		rtx_delta = tcp_time_stamp(tp) - (tp->retrans_stamp ?: tcp_skb_timestamp(skb));
+		rtx_delta = tcp_time_stamp_ts(tp) - (tp->retrans_stamp ?:
+				tcp_skb_timestamp_ts(tp->tcp_usec_ts, skb));
+		if (tp->tcp_usec_ts)
+			rtx_delta /= USEC_PER_MSEC;
+
 		if (sk->sk_family == AF_INET) {
 			net_dbg_ratelimited("Probing zero-window on %pI4:%u/%u, seq=%u:%u, recv %ums ago, lasting %ums\n",
 				&inet->inet_daddr, ntohs(inet->inet_dport),
@@ -673,6 +677,7 @@ void tcp_write_timer_handler(struct sock *sk)
 		return;
 	}
 
+	tcp_rate_check_app_limited(sk);
 	tcp_mstamp_refresh(tcp_sk(sk));
 	event = icsk->icsk_pending;
 
