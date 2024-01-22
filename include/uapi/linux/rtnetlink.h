@@ -502,13 +502,19 @@ enum {
 
 #define RTAX_MAX (__RTAX_MAX - 1)
 
-#define RTAX_FEATURE_ECN	(1 << 0)
-#define RTAX_FEATURE_SACK	(1 << 1)
-#define RTAX_FEATURE_TIMESTAMP	(1 << 2)
-#define RTAX_FEATURE_ALLFRAG	(1 << 3)
+#define RTAX_FEATURE_ECN		(1 << 0)
+#define RTAX_FEATURE_SACK		(1 << 1) /* unused */
+#define RTAX_FEATURE_TIMESTAMP		(1 << 2) /* unused */
+#define RTAX_FEATURE_ALLFRAG		(1 << 3) /* unused */
+#define RTAX_FEATURE_TCP_USEC_TS	(1 << 4)
+#define RTAX_FEATURE_ECN_LOW		(1 << 5)
 
-#define RTAX_FEATURE_MASK	(RTAX_FEATURE_ECN | RTAX_FEATURE_SACK | \
-				 RTAX_FEATURE_TIMESTAMP | RTAX_FEATURE_ALLFRAG)
+#define RTAX_FEATURE_MASK	(RTAX_FEATURE_ECN |		\
+				 RTAX_FEATURE_SACK |		\
+				 RTAX_FEATURE_TIMESTAMP |	\
+				 RTAX_FEATURE_ALLFRAG |		\
+				 RTAX_FEATURE_TCP_USEC_TS |	\
+				 RTAX_FEATURE_ECN_LOW)
 
 struct rta_session {
 	__u8	proto;
