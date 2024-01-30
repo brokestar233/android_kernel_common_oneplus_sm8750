@@ -772,6 +772,53 @@ static inline int entry_to_nid(struct zswap_entry *entry)
 	return page_to_nid(virt_to_page(entry));
 }
 
+static void zswap_lru_add(struct list_lru *list_lru, struct zswap_entry *entry)
+{
+	atomic_long_t *nr_zswap_protected;
+	unsigned long lru_size, old, new;
+	int nid = entry_to_nid(entry);
+	struct mem_cgroup *memcg;
+	struct lruvec *lruvec;
+
+	/*
+	 * Note that it is safe to use rcu_read_lock() here, even in the face of
+	 * concurrent memcg offlining. Thanks to the memcg->kmemcg_id indirection
+	 * used in list_lru lookup, only two scenarios are possible:
+	 *
+	 * 1. list_lru_add() is called before memcg->kmemcg_id is updated. The
+	 *    new entry will be reparented to memcg's parent's list_lru.
+	 * 2. list_lru_add() is called after memcg->kmemcg_id is updated. The
+	 *    new entry will be added directly to memcg's parent's list_lru.
+	 *
+	 * Similar reasoning holds for list_lru_del().
+	 */
+	rcu_read_lock();
+	/* will always succeed */
+	list_lru_add(list_lru, &entry->lru);
+
+	/* Update the protection area */
+	lru_size = list_lru_count_one(list_lru, nid, memcg);
+	lruvec = mem_cgroup_lruvec(memcg, NODE_DATA(nid));
+	nr_zswap_protected = &lruvec->zswap_lruvec_state.nr_zswap_protected;
+	old = atomic_long_inc_return(nr_zswap_protected);
+	/*
+	 * Decay to avoid overflow and adapt to changing workloads.
+	 * This is based on LRU reclaim cost decaying heuristics.
+	 */
+	do {
+		new = old > lru_size / 4 ? old / 2 : old;
+	} while (!atomic_long_try_cmpxchg(nr_zswap_protected, &old, new));
+	rcu_read_unlock();
+}
+
+static void zswap_lru_del(struct list_lru *list_lru, struct zswap_entry *entry)
+{
+	rcu_read_lock();
+	/* will always succeed */
+	list_lru_del(list_lru, &entry->lru, nid, memcg);
+	rcu_read_unlock();
+}
+
 void zswap_lruvec_state_init(struct lruvec *lruvec)
 {
 	atomic_long_set(&lruvec->zswap_lruvec_state.nr_zswap_protected, 0);
@@ -819,56 +866,6 @@ static struct zswap_entry *zswap_entry_cache_alloc(gfp_t gfp, int nid)
 static void zswap_entry_cache_free(struct zswap_entry *entry)
 {
 	kmem_cache_free(zswap_entry_cache, entry);
-}
-
-/*********************************
-* lru functions
-**********************************/
-static void zswap_lru_add(struct list_lru *list_lru, struct zswap_entry *entry)
-{
-	atomic_long_t *nr_zswap_protected;
-	unsigned long lru_size, old, new;
-	int nid = entry_to_nid(entry);
-	struct mem_cgroup *memcg;
-	struct lruvec *lruvec;
-
-	/*
-	 * Note that it is safe to use rcu_read_lock() here, even in the face of
-	 * concurrent memcg offlining. Thanks to the memcg->kmemcg_id indirection
-	 * used in list_lru lookup, only two scenarios are possible:
-	 *
-	 * 1. list_lru_add() is called before memcg->kmemcg_id is updated. The
-	 *    new entry will be reparented to memcg's parent's list_lru.
-	 * 2. list_lru_add() is called after memcg->kmemcg_id is updated. The
-	 *    new entry will be added directly to memcg's parent's list_lru.
-	 *
-	 * Similar reasoning holds for list_lru_del().
-	 */
-	rcu_read_lock();
-	/* will always succeed */
-	list_lru_add(list_lru, &entry->lru);
-
-	/* Update the protection area */
-	lru_size = list_lru_count_one(list_lru, nid, memcg);
-	lruvec = mem_cgroup_lruvec(memcg, NODE_DATA(nid));
-	nr_zswap_protected = &lruvec->zswap_lruvec_state.nr_zswap_protected;
-	old = atomic_long_inc_return(nr_zswap_protected);
-	/*
-	 * Decay to avoid overflow and adapt to changing workloads.
-	 * This is based on LRU reclaim cost decaying heuristics.
-	 */
-	do {
-		new = old > lru_size / 4 ? old / 2 : old;
-	} while (!atomic_long_try_cmpxchg(nr_zswap_protected, &old, new));
-	rcu_read_unlock();
-}
-
-static void zswap_lru_del(struct list_lru *list_lru, struct zswap_entry *entry)
-{
-	rcu_read_lock();
-	/* will always succeed */
-	list_lru_del(list_lru, &entry->lru, nid, memcg);
-	rcu_read_unlock();
 }
 
 /*********************************
