@@ -682,7 +682,7 @@ skip:
 	/* The page was likely read above, so no need for plugging here */
 	page = __read_swap_cache_async(entry, gfp_mask, vma, addr, &page_allocated);
 	if (unlikely(page_allocated)) {
-		zswap_page_swapin(page);
+		zswap_folio_swapin(page_folio(page));
 		swap_readpage(page, false, NULL);
 	}
 	return page;
@@ -855,7 +855,7 @@ skip:
 	page = __read_swap_cache_async(fentry, gfp_mask, vma, vmf->address,
 				    &page_allocated);
 	if (unlikely(page_allocated)) {
-		zswap_page_swapin(page);
+		zswap_folio_swapin(page_folio(page));
 		swap_readpage(page, false, NULL);
 	}
 	return page;
