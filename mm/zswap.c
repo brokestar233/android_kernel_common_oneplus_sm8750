@@ -750,6 +750,10 @@ static int zswap_enabled_param_set(const char *val,
 	return ret;
 }
 
+/*********************************
+* lru functions
+**********************************/
+
 /* should be called under RCU */
 #ifdef CONFIG_MEMCG
 static inline struct mem_cgroup *mem_cgroup_from_entry(struct zswap_entry *entry)
@@ -766,6 +770,21 @@ static inline struct mem_cgroup *mem_cgroup_from_entry(struct zswap_entry *entry
 static inline int entry_to_nid(struct zswap_entry *entry)
 {
 	return page_to_nid(virt_to_page(entry));
+}
+
+void zswap_lruvec_state_init(struct lruvec *lruvec)
+{
+	atomic_long_set(&lruvec->zswap_lruvec_state.nr_zswap_protected, 0);
+}
+
+void zswap_folio_swapin(struct folio *folio)
+{
+	struct lruvec *lruvec;
+
+	if (folio) {
+		lruvec = folio_lruvec(folio);
+		atomic_long_inc(&lruvec->zswap_lruvec_state.nr_zswap_protected);
+	}
 }
 
 void zswap_memcg_offline_cleanup(struct mem_cgroup *memcg)
@@ -800,23 +819,6 @@ static struct zswap_entry *zswap_entry_cache_alloc(gfp_t gfp, int nid)
 static void zswap_entry_cache_free(struct zswap_entry *entry)
 {
 	kmem_cache_free(zswap_entry_cache, entry);
-}
-
-/*********************************
-* zswap lruvec functions
-**********************************/
-void zswap_lruvec_state_init(struct lruvec *lruvec)
-{
-	atomic_long_set(&lruvec->zswap_lruvec_state.nr_zswap_protected, 0);
-}
-
-void zswap_page_swapin(struct page *page)
-{
-	struct lruvec *lruvec;
-
-	VM_WARN_ON_ONCE(!folio_test_locked(page_folio(page)));
-	lruvec = folio_lruvec(page_folio(page));
-	atomic_long_inc(&lruvec->zswap_lruvec_state.nr_zswap_protected);
 }
 
 /*********************************
@@ -1471,7 +1473,7 @@ static int zswap_writeback_entry(struct zswap_entry *entry,
 	 * backs (our zswap_entry reference doesn't prevent that), to
 	 * avoid overwriting a new swap page with old compressed data.
 	 */
-	tree = swap_zswap_tree(swpentry);
+	struct zswap_tree *tree = swap_zswap_tree(swpentry);
 	spin_lock(&tree->lock);
 	if (zswap_rb_search(&tree->rbroot, swp_offset(swpentry)) != entry) {
 		spin_unlock(&tree->lock);
