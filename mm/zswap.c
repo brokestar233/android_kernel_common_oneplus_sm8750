@@ -1314,7 +1314,7 @@ static int zswap_enabled_param_set(const char *val,
 	return ret;
 }
 
-static void __zswap_load(struct zswap_entry *entry, struct page *page)
+static void zswap_decompress(struct zswap_entry *entry, struct page *page)
 {
 	struct zpool *zpool = zswap_find_zpool(entry);
 	struct scatterlist input, output;
@@ -1409,7 +1409,7 @@ static int zswap_writeback_entry(struct zswap_entry *entry,
 	zswap_entry_get(entry);
 	spin_unlock(&tree->lock);
 
-	__zswap_load(entry, page);
+	zswap_decompress(entry, page);
 
 	count_vm_event(ZSWPWB);
 	if (entry->objcg)
@@ -1705,7 +1705,7 @@ bool zswap_load(struct folio *folio)
 	spin_unlock(&tree->lock);
 
 	if (entry->length)
-		__zswap_load(entry, page);
+		zswap_decompress(entry, page);
 	else {
 		dst = kmap_local_page(page);
 		zswap_fill_page(dst, entry->value);
