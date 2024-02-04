@@ -274,6 +274,9 @@ void free_swap_slot(swp_entry_t entry)
 {
 	struct swap_slots_cache *cache;
 
+	/* Large folio swap slot is not covered. */
+	zswap_invalidate(entry);
+
 	cache = raw_cpu_ptr(&swp_slots);
 	trace_android_vh_alloc_swap_slot_cache(cache);
 	if (likely(use_swap_slot_cache && cache->slots_ret)) {
