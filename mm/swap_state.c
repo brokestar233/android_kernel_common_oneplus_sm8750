@@ -680,8 +680,11 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
 	lru_add_drain();	/* Push any new pages onto the LRU now */
 skip:
 	/* The page was likely read above, so no need for plugging here */
-	page = read_swap_cache_async(entry, gfp_mask, vma, addr, NULL);
-	zswap_page_swapin(page);
+	page = __read_swap_cache_async(entry, gfp_mask, vma, addr, &page_allocated);
+	if (unlikely(page_allocated)) {
+		zswap_page_swapin(page);
+		swap_readpage(page, false, NULL);
+	}
 	return page;
 }
 
@@ -849,9 +852,12 @@ static struct page *swap_vma_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 	lru_add_drain();
 skip:
 	/* The page was likely read above, so no need for plugging here */
-	page = read_swap_cache_async(fentry, gfp_mask, vma, vmf->address,
-				     NULL);
-	zswap_page_swapin(page);
+	page = __read_swap_cache_async(fentry, gfp_mask, vma, vmf->address,
+				    &page_allocated);
+	if (unlikely(page_allocated)) {
+		zswap_page_swapin(page);
+		swap_readpage(page, false, NULL);
+	}
 	return page;
 }
 
