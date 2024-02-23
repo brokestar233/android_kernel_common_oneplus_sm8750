@@ -782,6 +782,10 @@
   __traceiter_android_vh_rt_mutex_steal
   __traceiter_android_vh_rtmutex_waiter_prio
   __traceiter_android_vh_task_blocks_on_rtmutex
+  __traceiter_android_vh_record_mutex_lock_starttime
+  __traceiter_android_vh_record_pcpu_rwsem_starttime
+  __traceiter_android_vh_record_rtmutex_lock_starttime
+  __traceiter_android_vh_record_rwsem_lock_starttime
   __tracepoint_android_vh_mutex_opt_spin_start
   __tracepoint_android_vh_mutex_opt_spin_finish
   __tracepoint_android_vh_mutex_can_spin_on_owner
@@ -803,3 +807,7 @@
   __tracepoint_android_vh_rt_mutex_steal
   __tracepoint_android_vh_rtmutex_waiter_prio
   __tracepoint_android_vh_task_blocks_on_rtmutex
+  __tracepoint_android_vh_record_mutex_lock_starttime
+  __tracepoint_android_vh_record_pcpu_rwsem_starttime
+  __tracepoint_android_vh_record_rtmutex_lock_starttime
+  __tracepoint_android_vh_record_rwsem_lock_starttime
