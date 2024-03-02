@@ -370,3 +370,4 @@ xhci_sideband_unregister(struct xhci_sideband *sb)
 	kfree(sb);
 }
 EXPORT_SYMBOL_GPL(xhci_sideband_unregister);
+MODULE_LICENSE("GPL");
