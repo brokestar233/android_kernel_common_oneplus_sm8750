@@ -105,7 +105,7 @@ config USB_XHCI_RZV2M
 	  found in Renesas RZ/V2M SoC.
 
 config USB_XHCI_SIDEBAND
-	bool "xHCI support for sideband"
+	tristate "xHCI support for sideband"
 	help
 	  Say 'Y' to enable the support for the xHCI sideband capability.
 	  provide a mechanism for a sideband datapath for payload associated

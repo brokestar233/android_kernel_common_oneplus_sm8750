@@ -62,5 +62,7 @@ def define_consolidate():
         name = "{}_images".format(rule_base),
         kernel_build = ":{}".format(rule_base),
         build_system_dlkm = True,
+        build_system_dlkm_flatten = True,
+        system_dlkm_fs_types = ["ext4"],
         kernel_modules_install = ":{}_modules_install".format(rule_base),
     )
