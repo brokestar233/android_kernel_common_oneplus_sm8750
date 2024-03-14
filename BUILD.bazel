@@ -103,6 +103,7 @@ filegroup(
     srcs = [
         # keep sorted
         "android/abi_gki_aarch64_oplus",
+        "android/abi_gki_aarch64_qcom",
     ],
     visibility = ["//visibility:public"],
 )
