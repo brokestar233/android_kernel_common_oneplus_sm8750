@@ -691,8 +691,7 @@ void bpf_mem_alloc_destroy(struct bpf_mem_alloc *ma)
 			rcu_in_progress += atomic_read(&c->call_rcu_in_progress);
 		}
 		/* objcg is the same across cpus */
-		if (c->objcg)
-			obj_cgroup_put(c->objcg);
+		obj_cgroup_put(c->objcg);
 		destroy_mem_alloc(ma, rcu_in_progress);
 	}
 	if (ma->caches) {
@@ -708,8 +707,7 @@ void bpf_mem_alloc_destroy(struct bpf_mem_alloc *ma)
 				rcu_in_progress += atomic_read(&c->call_rcu_in_progress);
 			}
 		}
-		if (c->objcg)
-			obj_cgroup_put(c->objcg);
+		obj_cgroup_put(c->objcg);
 		destroy_mem_alloc(ma, rcu_in_progress);
 	}
 }
