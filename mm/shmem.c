@@ -4977,7 +4977,7 @@ int reclaim_shmem_address_space(struct address_space *mapping)
 			continue;
 		if (xa_is_value(page))
 			continue;
-		if (isolate_lru_page(page))
+		if (!isolate_lru_page(page))
 			continue;
 
 		list_add(&page->lru, &page_list);
