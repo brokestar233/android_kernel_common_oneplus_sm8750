@@ -8,6 +8,7 @@
   i2c_smbus_read_word_data
   i2c_smbus_write_word_data
   iio_channel_get
+  iio_channel_release
   of_property_read_variable_u64_array
   power_supply_unregister
   public_key_verify_signature
