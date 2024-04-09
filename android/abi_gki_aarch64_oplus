@@ -17,3 +17,4 @@
   rtc_read_time
   rtc_valid_tm
   stpcpy
+  wakeup_source_remove
