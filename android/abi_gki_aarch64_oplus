@@ -1,27 +1,9 @@
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-[abi_symbol_list]
-  alarm_init
-  alarm_start_relative
-  alarmtimer_get_rtcdev
-  console_printk
-  devres_destroy
-  gpiod_to_chip
-  i2c_smbus_read_word_data
-  i2c_smbus_write_word_data
-  iio_channel_get
-  iio_channel_release
-  of_property_read_variable_u64_array
-  power_supply_unregister
-  public_key_verify_signature
-  rtc_class_close
-  rtc_class_open
-  rtc_read_time
-  rtc_valid_tm
-  stpcpy
-  wakeup_source_remove
-||||||| merged common ancestors
-=======
 [abi_symbol_list]
   __traceiter_android_vh_rwsem_downgrade_wake_finish
   __tracepoint_android_vh_rwsem_downgrade_wake_finish
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.015
+  devres_destroy
+  gpiod_to_chip
+  iio_channel_get
+  iio_channel_release
+  public_key_verify_signature
+  wakeup_source_remove

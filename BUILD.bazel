@@ -108,11 +108,6 @@ filegroup(
     name = "aarch64_additional_kmi_symbol_lists",
     srcs = [
         # keep sorted
-<<<<<<< HEAD 李智:80318999:平台与内核开发部 
-        "android/abi_gki_aarch64_oplus",
-        "android/abi_gki_aarch64_qcom",
-||||||| merged common ancestors
-=======
         "android/abi_gki_aarch64_amlogic",
         "android/abi_gki_aarch64_db845c",
         "android/abi_gki_aarch64_exynos",
@@ -122,7 +117,6 @@ filegroup(
         "android/abi_gki_aarch64_qcom",
         "android/abi_gki_aarch64_unisoc",
         "android/abi_gki_aarch64_virtual_device",
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.015
     ],
     visibility = ["//visibility:public"],
 )
