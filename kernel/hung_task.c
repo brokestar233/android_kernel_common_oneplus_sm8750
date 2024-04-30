@@ -24,7 +24,6 @@
 #include <linux/sched/sysctl.h>
 
 #include <trace/events/sched.h>
-#undef CREATE_TRACE_POINTS
 #include <trace/hooks/hung_task.h>
 
 /*
@@ -213,9 +212,9 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 		if (need_check) {
 			state = READ_ONCE(t->__state);
 			if ((state & TASK_UNINTERRUPTIBLE) &&
-				!(state & TASK_WAKEKILL) &&
-				!(state & TASK_NOLOAD))
-				    check_hung_task(t, timeout);
+			    !(state & TASK_WAKEKILL) &&
+			    !(state & TASK_NOLOAD))
+				check_hung_task(t, timeout);
 		}
 	}
 	trace_android_vh_check_uninterruptible_tasks_dn(NULL);

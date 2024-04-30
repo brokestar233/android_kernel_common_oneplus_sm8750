@@ -13,6 +13,17 @@ config ANDROID_BINDER_IPC
 	  Android process, using Binder to identify, invoke and pass arguments
 	  between said processes.
 
+config ANDROID_BINDER_IPC_RUST
+	bool "Android Binder IPC Driver in Rust"
+	depends on MMU && RUST
+	help
+	  Binder is used in Android for both communication between processes,
+	  and remote method invocation.
+
+	  This means one Android process can call a method/routine in another
+	  Android process, using Binder to identify, invoke and pass arguments
+	  between said processes.
+
 config ANDROID_BINDERFS
 	bool "Android Binderfs filesystem"
 	depends on ANDROID_BINDER_IPC
@@ -25,9 +36,33 @@ config ANDROID_BINDERFS
 	  It can be used to dynamically allocate new binder IPC devices via
 	  ioctls.
 
+config ANDROID_BINDERFS_RUST
+	bool "Android Binderfs filesystem in Rust"
+	depends on ANDROID_BINDER_IPC_RUST
+	default n
+	help
+	  Binderfs is a pseudo-filesystem for the Android Binder IPC driver
+	  which can be mounted per-ipc namespace allowing to run multiple
+	  instances of Android.
+	  Each binderfs mount initially only contains a binder-control device.
+	  It can be used to dynamically allocate new binder IPC devices via
+	  ioctls.
+
 config ANDROID_BINDER_DEVICES
 	string "Android Binder devices"
 	depends on ANDROID_BINDER_IPC
+	default "binder,hwbinder,vndbinder"
+	help
+	  Default value for the binder.devices parameter.
+
+	  The binder.devices parameter is a comma-separated list of strings
+	  that specifies the names of the binder device nodes that will be
+	  created. Each binder device has its own context manager, and is
+	  therefore logically separated from the other devices.
+
+config ANDROID_BINDER_DEVICES_RUST
+	string "Android Binder devices in Rust"
+	depends on ANDROID_BINDER_IPC_RUST
 	default "binder,hwbinder,vndbinder"
 	help
 	  Default value for the binder.devices parameter.
@@ -101,17 +136,5 @@ config ANDROID_VENDOR_OEM_DATA
 	  NOT be supported by the Google Android kernel team.
 
 	  If even slightly unsure, say Y.
-
-config ANDROID_MEMHEALTH
-	tristate "Android memory health module"
-	depends on MMU && TRACEPOINTS
-	help
-	  Android module to expose memory health-related events to userspace.
-	  Creates a proc/memhealth directory with pollable event files
-	  (currenty only oom_victim_list) to notify userspace of memory
-	  critical events.
-
-	  To compile this driver as a module, choose M here: the module
-	  will be called android_memhealth.
 
 endmenu

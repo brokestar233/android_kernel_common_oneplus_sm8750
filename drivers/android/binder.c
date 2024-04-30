@@ -5233,7 +5233,7 @@ static __poll_t binder_poll(struct file *filp,
 
 	thread = binder_get_thread(proc);
 	if (!thread)
-		return POLLERR;
+		return EPOLLERR;
 
 	binder_inner_proc_lock(thread->proc);
 	thread->looper |= BINDER_LOOPER_STATE_POLL;
@@ -6764,6 +6764,49 @@ static int __init init_binder_device(const char *name)
 	return ret;
 }
 
+bool binder_use_rust;
+bool binder_driver_initialized;
+
+static int binder_param_set(const char *buffer, const struct kernel_param *kp)
+{
+	if (binder_driver_initialized)
+		return -EOPNOTSUPP;
+
+	if (!strcmp(buffer, "rust"))
+		binder_use_rust = true;
+	else if (!strcmp(buffer, "c"))
+		binder_use_rust = false;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+static int binder_param_get(char *buffer, const struct kernel_param *kp)
+{
+	// The kernel_param_ops buffer is 4k bytes, so this will not overflow.
+	if (binder_use_rust) {
+		buffer[0] = 'r';
+		buffer[1] = 'u';
+		buffer[2] = 's';
+		buffer[3] = 't';
+		buffer[4] = '\n';
+		buffer[5] = 0;
+	} else {
+		buffer[0] = 'c';
+		buffer[1] = '\n';
+		buffer[2] = 0;
+	}
+	return strlen(buffer);
+}
+
+static const struct kernel_param_ops binder_param_ops = {
+	.set = binder_param_set,
+	.get = binder_param_get,
+};
+
+module_param_cb(impl, &binder_param_ops, NULL, 0444);
+
 static int __init binder_init(void)
 {
 	int ret;
@@ -6772,6 +6815,10 @@ static int __init binder_init(void)
 	struct hlist_node *tmp;
 	char *device_names = NULL;
 	const struct binder_debugfs_entry *db_entry;
+
+	if (binder_use_rust)
+		return 0;
+	binder_driver_initialized = true;
 
 	ret = binder_alloc_shrinker_init();
 	if (ret)

@@ -619,6 +619,13 @@ config MEMORY_BALLOON
 	bool
 
 #
+# support for memory relinquish
+config MEMORY_RELINQUISH
+	def_bool y
+	depends on ARCH_HAS_MEM_RELINQUISH
+	depends on MEMORY_BALLOON || PAGE_REPORTING
+
+#
 # support for memory balloon compaction
 config BALLOON_COMPACTION
 	bool "Allow for balloon memory compaction/migration"
@@ -1165,6 +1172,11 @@ config IO_MAPPING
 
 config MEMFD_CREATE
 	bool "Enable memfd_create() system call" if EXPERT
+
+# Some architectures want callbacks for all IO mappings in order to
+# track the physical addresses that get used as devices.
+config ARCH_HAS_IOREMAP_PHYS_HOOKS
+	bool
 
 config SECRETMEM
 	default y
