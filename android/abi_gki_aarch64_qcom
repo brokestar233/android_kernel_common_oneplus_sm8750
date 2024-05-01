@@ -176,7 +176,6 @@
   cpu_irqtime
   cpu_latency_qos_add_request
   cpu_latency_qos_remove_request
-  cpu_latency_qos_request_active
   cpu_latency_qos_update_request
   cpumask_any_and_distribute
   cpu_number
