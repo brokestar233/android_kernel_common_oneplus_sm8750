@@ -1894,6 +1894,9 @@ update_max_tr(struct trace_array *tr, struct task_struct *tsk, int cpu,
 	__update_max_tr(tr, tsk, cpu);
 
 	arch_spin_unlock(&tr->max_lock);
+
+	/* Any waiters on the old snapshot buffer need to wake up */
+	ring_buffer_wake_waiters(tr->array_buffer.buffer, RING_BUFFER_ALL_CPUS);
 }
 
 /**
@@ -1945,12 +1948,23 @@ update_max_tr_single(struct trace_array *tr, struct task_struct *tsk, int cpu)
 
 static int wait_on_pipe(struct trace_iterator *iter, int full)
 {
+	int ret;
+
 	/* Iterators are static, they should be filled or empty */
 	if (trace_buffer_iter(iter, iter->cpu_file))
 		return 0;
 
-	return ring_buffer_wait(iter->array_buffer->buffer, iter->cpu_file,
-				full);
+	ret = ring_buffer_wait(iter->array_buffer->buffer, iter->cpu_file, full);
+
+#ifdef CONFIG_TRACER_MAX_TRACE
+	/*
+	 * Make sure this is still the snapshot buffer, as if a snapshot were
+	 * to happen, this would now be the main buffer.
+	 */
+	if (iter->snapshot)
+		iter->array_buffer = &iter->tr->max_buffer;
+#endif
+	return ret;
 }
 
 #ifdef CONFIG_FTRACE_STARTUP_TEST
@@ -4731,7 +4745,11 @@ static int s_show(struct seq_file *m, void *v)
 		iter->leftover = ret;
 
 	} else {
-		print_trace_line(iter);
+		ret = print_trace_line(iter);
+		if (ret == TRACE_TYPE_PARTIAL_LINE) {
+			iter->seq.full = 0;
+			trace_seq_puts(&iter->seq, "[LINE TOO BIG]\n");
+		}
 		ret = trace_print_seq(m, &iter->seq);
 		/*
 		 * If we overflow the seq_file buffer, then it will
@@ -4971,6 +4989,12 @@ int tracing_release_file_tr(struct inode *inode, struct file *filp)
 	event_file_put(file);
 
 	return 0;
+}
+
+int tracing_single_release_file_tr(struct inode *inode, struct file *filp)
+{
+	tracing_release_file_tr(inode, filp);
+	return single_release(inode, filp);
 }
 
 static int tracing_mark_open(struct inode *inode, struct file *filp)
@@ -8515,7 +8539,7 @@ tracing_buffers_splice_read(struct file *file, loff_t *ppos,
 
 		wait_index = READ_ONCE(iter->wait_index);
 
-		ret = wait_on_pipe(iter, iter->tr->buffer_percent);
+		ret = wait_on_pipe(iter, iter->snapshot ? 0 : iter->tr->buffer_percent);
 		if (ret)
 			goto out;
 
@@ -10105,6 +10129,7 @@ void
 trace_printk_seq(struct trace_seq *s)
 {
 	bool dump_printk = true;
+
 	/* Probably should print a warning here. */
 	if (s->seq.len >= TRACE_MAX_PRINT)
 		s->seq.len = TRACE_MAX_PRINT;
@@ -10161,7 +10186,8 @@ void ftrace_dump(enum ftrace_dump_mode oops_dump_mode)
 	unsigned int old_userobj;
 	unsigned long flags;
 	int cnt = 0, cpu;
-	bool ftrace_check = false;
+	bool ftrace_check = true;
+	bool ftrace_size_check = false;
 	unsigned long size;
 
 	/* Only allow one dump user at a time. */
@@ -10188,7 +10214,7 @@ void ftrace_dump(enum ftrace_dump_mode oops_dump_mode)
 	for_each_tracing_cpu(cpu) {
 		atomic_inc(&per_cpu_ptr(iter.array_buffer->data, cpu)->disabled);
 		size = ring_buffer_size(iter.array_buffer->buffer, cpu);
-		trace_android_vh_ftrace_size_check(size, &ftrace_check);
+		trace_android_vh_ftrace_size_check(size, &ftrace_size_check);
 	}
 
 	old_userobj = tr->trace_flags & TRACE_ITER_SYM_USEROBJ;
@@ -10196,7 +10222,7 @@ void ftrace_dump(enum ftrace_dump_mode oops_dump_mode)
 	/* don't look at user memory in panic mode */
 	tr->trace_flags &= ~TRACE_ITER_SYM_USEROBJ;
 
-	if (ftrace_check)
+	if (ftrace_size_check)
 		goto out_enable;
 
 	switch (oops_dump_mode) {
@@ -10222,6 +10248,14 @@ void ftrace_dump(enum ftrace_dump_mode oops_dump_mode)
 	}
 
 	/*
+	 * Ftrace timestmap support two types:
+	 * - ftrace_check = 1, latency format, start with 0 from a specific time.
+	 * - ftrace_check = 0, absolute time format, consistent with kernel time.
+	 * With this vendor hook, we can choose the format from different requirement.
+	 */
+	trace_android_vh_ftrace_format_check(&ftrace_check);
+
+	/*
 	 * We need to stop all tracing on all CPUS to read
 	 * the next buffer. This is a bit expensive, but is
 	 * not done often. We fill all what we can read,
@@ -10237,7 +10271,6 @@ void ftrace_dump(enum ftrace_dump_mode oops_dump_mode)
 		cnt++;
 
 		trace_iterator_reset(&iter);
-		trace_android_vh_ftrace_format_check(&ftrace_check);
 		if (ftrace_check)
 			iter.iter_flags |= TRACE_FILE_LAT_FMT;
 
