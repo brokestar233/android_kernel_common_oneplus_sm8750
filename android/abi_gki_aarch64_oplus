@@ -147,6 +147,7 @@
   atomic_notifier_call_chain
   atomic_notifier_chain_register
   atomic_notifier_chain_unregister
+  async_schedule_node
   bcmp
   blkdev_get_by_dev
   blkdev_get_by_path
