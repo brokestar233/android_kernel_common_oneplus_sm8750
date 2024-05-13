@@ -563,3 +563,21 @@
   __tracepoint_sched_stat_runtime
   __tracepoint_android_vh_build_sched_domains
   __tracepoint_android_vh_exit_signal
+  __traceiter_android_vh_meminfo_proc_show
+  __traceiter_android_vh_exit_mm
+  __traceiter_android_vh_show_mem
+  __traceiter_android_vh_print_slabinfo_header
+  __traceiter_android_vh_cache_show
+  __tracepoint_android_vh_do_shrink_slab
+  __tracepoint_android_vh_meminfo_proc_show
+  __tracepoint_android_vh_exit_mm
+  __tracepoint_android_vh_show_mem
+  __tracepoint_android_vh_print_slabinfo_header
+  __tracepoint_android_vh_cache_show
+  __traceiter_android_vh_do_shrink_slab
+  is_dma_buf_file
+  dma_buf_get_each
+  is_ashmem_file
+  si_swapinfo
+  vmalloc_nr_pages
+  get_slabinfo
