@@ -54,6 +54,9 @@
 #include <asm/tlbflush.h>
 
 #include <trace/events/migrate.h>
+#undef CREATE_TRACE_POINTS
+#include <trace/hooks/mm.h>
+#include <trace/hooks/vmscan.h>
 
 #include "internal.h"
 
@@ -591,6 +594,8 @@ void folio_migrate_flags(struct folio *newfolio, struct folio *folio)
 		folio_set_young(newfolio);
 	if (folio_test_idle(folio))
 		folio_set_idle(newfolio);
+
+	trace_android_vh_look_around_migrate_folio(folio, newfolio);
 
 	/*
 	 * Copy NUMA information to the new page, to prevent over-eager

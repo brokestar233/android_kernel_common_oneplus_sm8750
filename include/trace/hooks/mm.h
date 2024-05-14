@@ -11,6 +11,7 @@
 
 struct shmem_inode_info;
 struct folio;
+struct page_vma_mapped_walk;
 
 DECLARE_RESTRICTED_HOOK(android_rvh_shmem_get_folio,
 			TP_PROTO(struct shmem_inode_info *info, struct folio **folio),
@@ -90,6 +91,16 @@ DECLARE_HOOK(android_vh_alloc_pages_failure_bypass,
 	TP_PROTO(gfp_t gfp_mask, int order, int alloc_flags,
 	int migratetype, struct page **page),
 	TP_ARGS(gfp_mask, order, alloc_flags, migratetype, page));
+DECLARE_HOOK(android_vh_test_clear_look_around_ref,
+	TP_PROTO(struct page *page),
+	TP_ARGS(page));
+DECLARE_HOOK(android_vh_look_around_migrate_folio,
+	TP_PROTO(struct folio *old_folio, struct folio *new_folio),
+	TP_ARGS(old_folio, new_folio));
+DECLARE_HOOK(android_vh_look_around,
+	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
+		struct vm_area_struct *vma, int *referenced),
+	TP_ARGS(pvmw, folio, vma, referenced));
 
 #endif /* _TRACE_HOOK_MM_H */
 

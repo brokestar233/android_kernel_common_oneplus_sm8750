@@ -18,6 +18,9 @@ DECLARE_HOOK(android_vh_tune_swappiness,
 DECLARE_HOOK(android_vh_do_shrink_slab,
 	TP_PROTO(struct shrinker *shrinker, long *freeable),
 	TP_ARGS(shrinker, freeable));
+DECLARE_HOOK(android_vh_check_folio_look_around_ref,
+	TP_PROTO(struct folio *folio, int *skip),
+	TP_ARGS(folio, skip));
 #endif /* _TRACE_HOOK_VMSCAN_H */
 /* This part must be outside protection */
 #include <trace/define_trace.h>
