@@ -717,3 +717,12 @@
   device_create_bin_file
   device_remove_bin_file
   snd_pcm_hw_constraint_mask64
+  zero_pfn
+  __traceiter_android_vh_check_folio_look_around_ref
+  __traceiter_android_vh_look_around
+  __traceiter_android_vh_look_around_migrate_folio
+  __traceiter_android_vh_test_clear_look_around_ref
+  __tracepoint_android_vh_check_folio_look_around_ref
+  __tracepoint_android_vh_look_around
+  __tracepoint_android_vh_look_around_migrate_folio
+  __tracepoint_android_vh_test_clear_look_around_ref
