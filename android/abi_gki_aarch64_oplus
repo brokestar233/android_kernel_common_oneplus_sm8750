@@ -558,6 +558,10 @@
   up
   up_read
   usleep_range_state
+  async_schedule_node
+  ufshcd_query_descriptor_retry
+  ufshcd_query_attr
+  ufshcd_query_flag
   v4l2_subdev_call_wrappers
   vfree
   vfs_fsync_range
