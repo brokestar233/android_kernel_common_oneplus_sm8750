@@ -499,13 +499,21 @@
   __spi_register_driver
   __stack_chk_fail
   __task_pid_nr_ns
+  __traceiter_android_vh_adjust_alloc_flags
+  __traceiter_android_vh_adjust_kvmalloc_flags
   __traceiter_android_vh_check_uninterruptible_tasks
   __traceiter_android_vh_check_uninterruptible_tasks_dn
   __traceiter_android_vh_sysrq_crash
+  __traceiter_android_vh_tune_swappiness
+  __traceiter_android_rvh_set_balance_anon_file_reclaim
   __traceiter_mmap_lock_start_locking
+  __tracepoint_android_vh_adjust_alloc_flags
+  __tracepoint_android_vh_adjust_kvmalloc_flags
   __tracepoint_android_vh_check_uninterruptible_tasks
   __tracepoint_android_vh_check_uninterruptible_tasks_dn
   __tracepoint_android_vh_sysrq_crash
+  __tracepoint_android_vh_tune_swappiness
+  __tracepoint_android_rvh_set_balance_anon_file_reclaim
   __tracepoint_mmap_lock_start_locking
   __udp4_lib_lookup
   __udp6_lib_lookup
