@@ -3085,7 +3085,7 @@ void xhci_skip_sec_intr_events(struct xhci_hcd *xhci,
 
 	/* last acked event trb is in erdp reg  */
 	erdp_reg = xhci_read_64(xhci, &ir->ir_set->erst_dequeue);
-	deq = (dma_addr_t)(erdp_reg & ~ERST_PTR_MASK);
+	deq = (dma_addr_t)(erdp_reg & ERST_PTR_MASK);
 	if (!deq) {
 		xhci_dbg(xhci, "event ring handling not required\n");
 		return;
