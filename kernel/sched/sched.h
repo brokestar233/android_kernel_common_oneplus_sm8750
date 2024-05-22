@@ -1176,6 +1176,8 @@ struct rq {
 	call_single_data_t	cfsb_csd;
 	struct list_head	cfsb_csd_list;
 #endif
+
+	ANDROID_OEM_DATA_ARRAY(1, 16);
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
