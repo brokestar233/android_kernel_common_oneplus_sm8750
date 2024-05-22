@@ -548,4 +548,8 @@
   devm_regmap_del_irq_chip
   snd_soc_component_exit_regmap
   __traceiter_task_rename
+  __traceiter_android_vh_sched_stat_runtime_rt
+  __traceiter_sched_stat_runtime
   __tracepoint_task_rename
+  __tracepoint_android_vh_sched_stat_runtime_rt
+  __tracepoint_sched_stat_runtime
