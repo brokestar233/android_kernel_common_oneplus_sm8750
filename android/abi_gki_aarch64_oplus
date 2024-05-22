@@ -554,6 +554,8 @@
   __traceiter_task_rename
   __traceiter_android_vh_sched_stat_runtime_rt
   __traceiter_sched_stat_runtime
+  __traceiter_android_vh_build_sched_domains
   __tracepoint_task_rename
   __tracepoint_android_vh_sched_stat_runtime_rt
   __tracepoint_sched_stat_runtime
+  __tracepoint_android_vh_build_sched_domains
