@@ -547,3 +547,5 @@
   snd_soc_lookup_component
   devm_regmap_del_irq_chip
   snd_soc_component_exit_regmap
+  __traceiter_task_rename
+  __tracepoint_task_rename
