@@ -117,6 +117,7 @@
   hrtimer_cancel
   hrtimer_init
   hrtimer_start_range_ns
+  iterate_dir
   i2c_del_driver
   i2c_register_driver
   i2c_transfer
@@ -331,6 +332,7 @@
   rtnl_link_unregister
   rtnl_lock
   rtnl_unlock
+  security_file_ioctl
   schedule
   schedule_timeout
   schedule_timeout_interruptible
@@ -390,6 +392,7 @@
   tcf_exts_validate
   tcf_queue_work
   tcp_hashinfo
+  vfs_llseek
   thermal_tripless_zone_device_register
   thermal_zone_device_unregister
   thermal_zone_get_temp
@@ -524,6 +527,7 @@
   driver_create_file
   snd_soc_find_dai
   drm_crtc_vblank_waitqueue
+  down_write_killable
   of_translate_dma_region
   pci_dev_present
   kmem_cache_create_usercopy
