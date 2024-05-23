@@ -2258,7 +2258,13 @@ EXPORT_SYMBOL_GPL(activate_task);
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	p->on_rq = (flags & DEQUEUE_SLEEP) ? 0 : TASK_ON_RQ_MIGRATING;
+	WRITE_ONCE(p->on_rq, TASK_ON_RQ_MIGRATING);
+	ASSERT_EXCLUSIVE_WRITER(p->on_rq);
+
+	/*
+	 * Code explicitly relies on TASK_ON_RQ_MIGRATING begin set *before*
+	 * dequeue_task() and cleared *after* enqueue_task().
+	 */
 
 	dequeue_task(rq, p, flags);
 }
@@ -2344,6 +2350,12 @@ static int effective_prio(struct task_struct *p)
 	if (!rt_prio(p->prio))
 		return p->normal_prio;
 	return p->prio;
+}
+
+static void block_task(struct rq *rq, struct task_struct *p, int flags)
+{
+	if (__dequeue_task(rq, p, DEQUEUE_SLEEP | flags))
+		__block_task(rq, p);
 }
 
 /**
@@ -6962,9 +6974,6 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 				!(prev_state & TASK_NOLOAD) &&
 				!(prev_state & TASK_FROZEN);
 
-			if (prev->sched_contributes_to_load)
-				rq->nr_uninterruptible++;
-
 			/*
 			 * __schedule()			ttwu()
 			 *   prev_state = prev->state;    if (p->on_rq && ...)
@@ -6976,12 +6985,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 			 *
 			 * After this, schedule() must not care about p->state any more.
 			 */
-			deactivate_task(rq, prev, DEQUEUE_SLEEP | DEQUEUE_NOCLOCK);
-
-			if (prev->in_iowait) {
-				atomic_inc(&rq->nr_iowait);
-				delayacct_blkio_start();
-			}
+			block_task(rq, prev, DEQUEUE_NOCLOCK);
 		}
 		switch_count = &prev->nvcsw;
 	}
