@@ -555,11 +555,15 @@
   snd_soc_component_exit_regmap
   __traceiter_task_rename
   __traceiter_android_vh_sched_stat_runtime_rt
+  __traceiter_android_vh_sched_setaffinity_early
+  __traceiter_android_rvh_set_cpus_allowed_comm
   __traceiter_sched_stat_runtime
   __traceiter_android_vh_build_sched_domains
   __traceiter_android_vh_exit_signal
   __tracepoint_task_rename
   __tracepoint_android_vh_sched_stat_runtime_rt
+  __tracepoint_android_vh_sched_setaffinity_early
+  __tracepoint_android_rvh_set_cpus_allowed_comm
   __tracepoint_sched_stat_runtime
   __tracepoint_android_vh_build_sched_domains
   __tracepoint_android_vh_exit_signal
