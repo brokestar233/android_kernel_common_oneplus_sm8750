@@ -91,3 +91,4 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_set_task_comm);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_find_new_ilb);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_set_cpus_allowed_comm);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_sched_setaffinity_early);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_map_util_freq);
