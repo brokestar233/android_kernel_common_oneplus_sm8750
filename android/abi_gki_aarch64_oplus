@@ -889,3 +889,16 @@
   stack_depot_fetch
   memcg_kmem_online_key
   stack_depot_print
+  root_mem_cgroup
+  folio_referenced
+  __mod_lruvec_state
+  mem_cgroup_update_lru_size
+  filp_open_block
+  __traceiter_android_vh_vmscan_kswapd_done
+  __traceiter_android_vh_page_add_new_anon_rmap
+  __traceiter_android_vh_get_page_wmark
+  __traceiter_android_vh_tune_scan_type
+  __tracepoint_android_vh_vmscan_kswapd_done
+  __tracepoint_android_vh_get_page_wmark
+  __tracepoint_android_vh_page_add_new_anon_rmap
+  __tracepoint_android_vh_tune_scan_type
