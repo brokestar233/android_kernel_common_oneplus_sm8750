@@ -648,6 +648,9 @@
   __traceiter_android_vh_tune_swappiness
   __traceiter_android_rvh_set_balance_anon_file_reclaim
   __traceiter_mmap_lock_start_locking
+  __traceiter_android_vh_alter_mutex_list_add
+  __traceiter_android_vh_mutex_unlock_slowpath
+  __traceiter_android_vh_rwsem_wake_finish
   __tracepoint_android_vh_adjust_alloc_flags
   __tracepoint_android_vh_adjust_kvmalloc_flags
   __tracepoint_android_vh_check_uninterruptible_tasks
@@ -657,6 +660,9 @@
   __tracepoint_android_vh_tune_swappiness
   __tracepoint_android_rvh_set_balance_anon_file_reclaim
   __tracepoint_mmap_lock_start_locking
+  __tracepoint_android_vh_alter_mutex_list_add
+  __tracepoint_android_vh_mutex_unlock_slowpath
+  __tracepoint_android_vh_rwsem_wake_finish
   __udp4_lib_lookup
   __udp6_lib_lookup
   __unregister_chrdev
