@@ -152,6 +152,7 @@
   __traceiter_android_vh_tune_swappiness
   __traceiter_android_vh_look_around
   __traceiter_android_vh_look_around_migrate_folio
+  __traceiter_android_vh_customize_alloc_gfp
   __traceiter_android_vh_meminfo_cache_adjust
   __traceiter_android_vh_si_mem_available_adjust
   __traceiter_android_vh_si_meminfo_adjust
@@ -237,6 +238,8 @@
   __tracepoint_android_vh_check_folio_look_around_ref
   __tracepoint_android_vh_look_around
   __tracepoint_android_vh_look_around_migrate_folio
+  __tracepoint_android_vh_customize_alloc_gfp
+  __traceiter_android_vh_drain_all_pages_bypass
   __tracepoint_android_vh_adjust_alloc_flags
   __tracepoint_android_vh_test_clear_look_around_ref
   __tracepoint_android_vh_meminfo_cache_adjust
@@ -805,6 +808,7 @@
   __tracepoint_android_vh_binder_preset
   __tracepoint_android_vh_do_send_sig_info
   __traceiter_android_vh_alter_mutex_list_add
+  __tracepoint_android_vh_drain_all_pages_bypass
   __traceiter_android_vh_do_shrink_slab
   __traceiter_android_vh_mutex_unlock_slowpath
   __traceiter_android_vh_mutex_opt_spin_start
@@ -885,6 +889,7 @@
   __traceiter_android_vh_show_stack_hash
   __tracepoint_android_vh_save_vmalloc_stack
   __tracepoint_android_vh_show_stack_hash
+  get_slabinfo
   on_each_cpu_cond_mask
   stack_depot_fetch
   memcg_kmem_online_key
