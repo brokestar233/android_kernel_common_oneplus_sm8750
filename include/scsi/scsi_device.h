@@ -9,6 +9,7 @@
 #include <scsi/scsi.h>
 #include <linux/atomic.h>
 #include <linux/sbitmap.h>
+#include <linux/android_kabi.h>
 
 struct bsg_device;
 struct device;
@@ -98,10 +99,6 @@ struct scsi_vpd {
 	struct rcu_head	rcu;
 	int		len;
 	unsigned char	data[];
-};
-
-enum scsi_vpd_parameters {
-	SCSI_VPD_HEADER_SIZE = 4,
 };
 
 struct scsi_device {
@@ -284,6 +281,12 @@ struct scsi_device {
 	struct mutex		state_mutex;
 	enum scsi_device_state sdev_state;
 	struct task_struct	*quiesced_by;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
+
 	unsigned long		sdev_data[];
 } __attribute__((aligned(sizeof(unsigned long))));
 

@@ -102,11 +102,14 @@ xhci_sideband_add_endpoint(struct xhci_sideband *sb,
 	struct xhci_virt_ep *ep;
 	unsigned int ep_index;
 
+	mutex_lock(&sb->mutex);
 	ep_index = xhci_get_endpoint_index(&host_ep->desc);
 	ep = &sb->vdev->eps[ep_index];
 
-	if (ep->ep_state & EP_HAS_STREAMS)
+	if (ep->ep_state & EP_HAS_STREAMS) {
+		mutex_unlock(&sb->mutex);
 		return -EINVAL;
+	}
 
 	/*
 	 * Note, we don't know the DMA mask of the audio DSP device, if its
@@ -116,12 +119,14 @@ xhci_sideband_add_endpoint(struct xhci_sideband *sb,
 	 * and let this function add the endpoint and allocate the ring buffer
 	 * with the smallest common DMA mask
 	 */
-
-	if (sb->eps[ep_index] || ep->sideband)
+	if (sb->eps[ep_index] || ep->sideband) {
+		mutex_unlock(&sb->mutex);
 		return -EBUSY;
+	}
 
 	ep->sideband = sb;
 	sb->eps[ep_index] = ep;
+	mutex_unlock(&sb->mutex);
 
 	return 0;
 }
@@ -146,14 +151,18 @@ xhci_sideband_remove_endpoint(struct xhci_sideband *sb,
 	struct xhci_virt_ep *ep;
 	unsigned int ep_index;
 
+	mutex_lock(&sb->mutex);
 	ep_index = xhci_get_endpoint_index(&host_ep->desc);
 	ep = sb->eps[ep_index];
 
-	if (!ep || !ep->sideband)
+	if (!ep || !ep->sideband) {
+		mutex_unlock(&sb->mutex);
 		return -ENODEV;
+	}
 
 	__xhci_sideband_remove_endpoint(sb, ep);
 	xhci_initialize_ring_info(ep->ring, 1);
+	mutex_unlock(&sb->mutex);
 
 	return 0;
 }
@@ -183,7 +192,7 @@ EXPORT_SYMBOL_GPL(xhci_sideband_stop_endpoint);
  *
  * Returns the address of the endpoint buffer where xHC controller reads queued
  * transfer TRBs from. This is the starting address of the ringbuffer where the
- * sidband cliend should write TRBs to.
+ * sideband client should write TRBs to.
  *
  * Caller needs to free the returned sg_table
  *
@@ -221,7 +230,7 @@ EXPORT_SYMBOL_GPL(xhci_sideband_get_endpoint_buffer);
 struct sg_table *
 xhci_sideband_get_event_buffer(struct xhci_sideband *sb)
 {
-	if (!sb->ir)
+	if (!sb || !sb->ir)
 		return NULL;
 
 	return xhci_ring_to_sgtable(sb, sb->ir->event_ring);
@@ -229,8 +238,34 @@ xhci_sideband_get_event_buffer(struct xhci_sideband *sb)
 EXPORT_SYMBOL_GPL(xhci_sideband_get_event_buffer);
 
 /**
+ * xhci_sideband_enable_interrupt - enable interrupt for secondary interrupter
+ * @sb: sideband instance for this usb device
+ * @imod_interval: number of event ring segments to allocate
+ *
+ * Enables OS owned event handling for a particular interrupter if client
+ * requests for it.  In addition, set the IMOD interval for this particular
+ * interrupter.
+ *
+ * Returns 0 on success, negative error otherwise
+ */
+int xhci_sideband_enable_interrupt(struct xhci_sideband *sb, u32 imod_interval)
+{
+	if (!sb || !sb->ir)
+		return -ENODEV;
+
+	xhci_set_interrupter_moderation(sb->ir, imod_interval);
+	sb->ir->skip_events = false;
+	xhci_enable_interrupter(sb->ir);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xhci_sideband_enable_interrupt);
+
+/**
  * xhci_sideband_create_interrupter - creates a new interrupter for this sideband
  * @sb: sideband instance for this usb device
+ * @num_seg: number of event ring segments to allocate
+ * @ip_autoclear: IP autoclearing support such as MSI implemented
  *
  * Sets up a xhci interrupter that can be used for this sideband accessed usb
  * device. Transfer events for this device can be routed to this interrupters
@@ -242,17 +277,35 @@ EXPORT_SYMBOL_GPL(xhci_sideband_get_event_buffer);
  * Returns 0 on success, negative error otherwise
  */
 int
-xhci_sideband_create_interrupter(struct xhci_sideband *sb, int intr_num)
+xhci_sideband_create_interrupter(struct xhci_sideband *sb, int num_seg,
+				 int intr_num, bool ip_autoclear)
 {
-	if (sb->ir)
-		return -EBUSY;
+	int ret = 0;
+
+	if (!sb)
+		return -ENODEV;
+
+	mutex_lock(&sb->mutex);
+	if (sb->ir) {
+		ret = -EBUSY;
+		goto out;
+	}
 
 	sb->ir = xhci_create_secondary_interrupter(xhci_to_hcd(sb->xhci),
-			intr_num);
-	if (!sb->ir)
-		return -ENOMEM;
+			num_seg, intr_num);
+	if (!sb->ir) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
-	return 0;
+	sb->ir->ip_autoclear = ip_autoclear;
+	/* skip events for secondary interrupters by default */
+	sb->ir->skip_events = true;
+
+out:
+	mutex_unlock(&sb->mutex);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(xhci_sideband_create_interrupter);
 
@@ -269,9 +322,13 @@ xhci_sideband_remove_interrupter(struct xhci_sideband *sb)
 	if (!sb || !sb->ir)
 		return;
 
+	mutex_lock(&sb->mutex);
+	if (!sb->ir->skip_events)
+		xhci_disable_interrupter(sb->ir);
 	xhci_remove_secondary_interrupter(xhci_to_hcd(sb->xhci), sb->ir);
 
 	sb->ir = NULL;
+	mutex_unlock(&sb->mutex);
 }
 EXPORT_SYMBOL_GPL(xhci_sideband_remove_interrupter);
 
@@ -322,6 +379,8 @@ xhci_sideband_register(struct usb_device *udev)
 	if (!sb)
 		return NULL;
 
+	mutex_init(&sb->mutex);
+
 	/* check this device isn't already controlled via sideband */
 	spin_lock_irq(&xhci->lock);
 
@@ -358,15 +417,22 @@ EXPORT_SYMBOL_GPL(xhci_sideband_register);
 void
 xhci_sideband_unregister(struct xhci_sideband *sb)
 {
+	struct xhci_hcd *xhci = sb->xhci;
 	int i;
 
+	mutex_lock(&sb->mutex);
 	for (i = 0; i < EP_CTX_PER_DEV; i++)
 		if (sb->eps[i])
 			__xhci_sideband_remove_endpoint(sb, sb->eps[i]);
+	mutex_unlock(&sb->mutex);
 
 	xhci_sideband_remove_interrupter(sb);
 
+	spin_lock_irq(&xhci->lock);
+	sb->xhci = NULL;
 	sb->vdev->sideband = NULL;
+	spin_unlock_irq(&xhci->lock);
+
 	kfree(sb);
 }
 EXPORT_SYMBOL_GPL(xhci_sideband_unregister);

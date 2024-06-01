@@ -131,17 +131,11 @@ static struct snd_usb_platform_ops *platform_ops;
  */
 int snd_usb_register_platform_ops(struct snd_usb_platform_ops *ops)
 {
-	int ret;
-
-	mutex_lock(&register_mutex);
-	if (platform_ops) {
-		ret = -EEXIST;
-		goto out;
-	}
+	guard(mutex)(&register_mutex);
+	if (platform_ops)
+		return -EEXIST;
 
 	platform_ops = ops;
-out:
-	mutex_unlock(&register_mutex);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(snd_usb_register_platform_ops);
@@ -154,9 +148,8 @@ EXPORT_SYMBOL_GPL(snd_usb_register_platform_ops);
  */
 int snd_usb_unregister_platform_ops(void)
 {
-	mutex_lock(&register_mutex);
+	guard(mutex)(&register_mutex);
 	platform_ops = NULL;
-	mutex_unlock(&register_mutex);
 
 	return 0;
 }

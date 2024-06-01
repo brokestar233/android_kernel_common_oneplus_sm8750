@@ -11,6 +11,7 @@
 #include <linux/errno.h>
 #include <trace/events/lock.h>
 
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 #include <trace/hooks/dtask.h>
 
 /*
@@ -26,6 +27,24 @@ void _trace_android_vh_record_pcpu_rwsem_starttime(struct percpu_rw_semaphore *s
 }
 EXPORT_SYMBOL_GPL(_trace_android_vh_record_pcpu_rwsem_starttime);
 
+||||||| merged common ancestors
+=======
+#include <trace/hooks/dtask.h>
+
+/*
+ * trace_android_vh_record_pcpu_rwsem_starttime  is called in
+ * include/linux/percpu-rwsem.h by including include/hooks/dtask.h, which
+ * will result to build-err. So we create
+ * func:_trace_android_vh_record_pcpu_rwsem_starttime for percpu-rwsem.h to call.
+ */
+void _trace_android_vh_record_pcpu_rwsem_starttime(struct task_struct *tsk,
+		unsigned long settime)
+{
+	trace_android_vh_record_pcpu_rwsem_starttime(tsk, settime);
+}
+EXPORT_SYMBOL_GPL(_trace_android_vh_record_pcpu_rwsem_starttime);
+
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 int __percpu_init_rwsem(struct percpu_rw_semaphore *sem,
 			const char *name, struct lock_class_key *key)
 {
@@ -264,7 +283,12 @@ void __sched percpu_down_write(struct percpu_rw_semaphore *sem)
 	/* Wait for all active readers to complete. */
 	rcuwait_wait_event(&sem->writer, readers_active_check(sem), TASK_UNINTERRUPTIBLE);
 	trace_contention_end(sem, 0);
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_pcpu_rwsem_starttime(sem, jiffies);
+||||||| merged common ancestors
+=======
+	trace_android_vh_record_pcpu_rwsem_starttime(current, jiffies);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 }
 EXPORT_SYMBOL_GPL(percpu_down_write);
 
@@ -295,6 +319,11 @@ void percpu_up_write(struct percpu_rw_semaphore *sem)
 	 * exclusive write lock because its counting.
 	 */
 	rcu_sync_exit(&sem->rss);
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_pcpu_rwsem_starttime(sem, 0);
+||||||| merged common ancestors
+=======
+	trace_android_vh_record_pcpu_rwsem_starttime(current, 0);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 }
 EXPORT_SYMBOL_GPL(percpu_up_write);

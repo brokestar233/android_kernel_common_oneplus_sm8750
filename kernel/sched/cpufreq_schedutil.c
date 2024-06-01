@@ -147,12 +147,22 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	unsigned long next_freq = 0;
 
 	util = map_util_perf(util);
+<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
 	trace_android_vh_map_util_freq(util, freq, max, &next_freq, policy,
 			&sg_policy->need_freq_update);
 	if (next_freq)
 		freq = next_freq;
 	else
 		freq = map_util_freq(util, freq, max);
+||||||| merged common ancestors
+	freq = map_util_freq(util, freq, max);
+=======
+	trace_android_vh_map_util_freq(util, freq, max, &next_freq);
+	if (next_freq)
+		freq = next_freq;
+	else
+		freq = map_util_freq(util, freq, max);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 
 	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
 		return sg_policy->next_freq;

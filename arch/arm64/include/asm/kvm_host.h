@@ -82,27 +82,34 @@ u32 __attribute_const__ kvm_target_cpu(void);
 int kvm_reset_vcpu(struct kvm_vcpu *vcpu);
 void kvm_arm_vcpu_destroy(struct kvm_vcpu *vcpu);
 
+/* Head holds page head and it's order. */
 struct kvm_hyp_memcache {
 	phys_addr_t head;
 	unsigned long nr_pages;
+	unsigned long flags;
 };
 
 static inline void push_hyp_memcache(struct kvm_hyp_memcache *mc,
 				     phys_addr_t *p,
-				     phys_addr_t (*to_pa)(void *virt))
+				     phys_addr_t (*to_pa)(void *virt),
+				     unsigned long order)
 {
 	*p = mc->head;
-	mc->head = to_pa(p);
+	mc->head = (to_pa(p) & PAGE_MASK) |
+		   FIELD_PREP(~PAGE_MASK, order);
 	mc->nr_pages++;
 }
 
 static inline void *pop_hyp_memcache(struct kvm_hyp_memcache *mc,
-				     void *(*to_va)(phys_addr_t phys))
+				     void *(*to_va)(phys_addr_t phys),
+				     unsigned long *order)
 {
-	phys_addr_t *p = to_va(mc->head);
+	phys_addr_t *p = to_va(mc->head & PAGE_MASK);
 
 	if (!mc->nr_pages)
 		return NULL;
+
+	*order = FIELD_GET(~PAGE_MASK, mc->head);
 
 	mc->head = *p;
 	mc->nr_pages--;
@@ -112,36 +119,52 @@ static inline void *pop_hyp_memcache(struct kvm_hyp_memcache *mc,
 
 static inline int __topup_hyp_memcache(struct kvm_hyp_memcache *mc,
 				       unsigned long min_pages,
-				       void *(*alloc_fn)(void *arg),
+				       void *(*alloc_fn)(void *arg, unsigned long order),
 				       phys_addr_t (*to_pa)(void *virt),
-				       void *arg)
+				       void *arg,
+				       unsigned long order)
 {
 	while (mc->nr_pages < min_pages) {
-		phys_addr_t *p = alloc_fn(arg);
+		phys_addr_t *p = alloc_fn(arg, order);
 
 		if (!p)
 			return -ENOMEM;
-		push_hyp_memcache(mc, p, to_pa);
+		push_hyp_memcache(mc, p, to_pa, order);
 	}
 
 	return 0;
 }
 
 static inline void __free_hyp_memcache(struct kvm_hyp_memcache *mc,
-				       void (*free_fn)(void *virt, void *arg),
+				       void (*free_fn)(void *virt, void *arg, unsigned long order),
 				       void *(*to_va)(phys_addr_t phys),
 				       void *arg)
 {
-	while (mc->nr_pages)
-		free_fn(pop_hyp_memcache(mc, to_va), arg);
+	unsigned long order;
+	void *p;
+
+	while (mc->nr_pages) {
+		p = pop_hyp_memcache(mc, to_va, &order);
+		free_fn(p, arg, order);
+	}
 }
 
 #define HYP_MEMCACHE_ACCOUNT_KMEMCG BIT(1)
+#define HYP_MEMCACHE_ACCOUNT_STAGE2 BIT(2)
 
-void free_hyp_memcache(struct kvm_hyp_memcache *mc,
-		       unsigned long flags);
-int topup_hyp_memcache(struct kvm_hyp_memcache *mc, unsigned long min_pages,
-		       unsigned long flags);
+void free_hyp_memcache(struct kvm_hyp_memcache *mc);
+int topup_hyp_memcache(struct kvm_hyp_memcache *mc, unsigned long min_pages, unsigned long order);
+
+static inline void init_hyp_memcache(struct kvm_hyp_memcache *mc)
+{
+	memset(mc, 0, sizeof(*mc));
+}
+
+static inline void init_hyp_stage2_memcache(struct kvm_hyp_memcache *mc)
+{
+	init_hyp_memcache(mc);
+	mc->flags = HYP_MEMCACHE_ACCOUNT_KMEMCG | HYP_MEMCACHE_ACCOUNT_STAGE2;
+}
 
 struct kvm_vmid {
 	atomic64_t id;
@@ -210,7 +233,7 @@ typedef unsigned int pkvm_handle_t;
 
 struct kvm_protected_vm {
 	pkvm_handle_t handle;
-	struct kvm_hyp_memcache teardown_mc;
+	struct kvm_hyp_memcache stage2_teardown_mc;
 	struct rb_root pinned_pages;
 	gpa_t pvmfw_load_addr;
 	bool enabled;
@@ -473,12 +496,60 @@ extern s64 kvm_nvhe_sym(hyp_physvirt_offset);
 extern u64 kvm_nvhe_sym(hyp_cpu_logical_map)[NR_CPUS];
 #define hyp_cpu_logical_map CHOOSE_NVHE_SYM(hyp_cpu_logical_map)
 
+struct kvm_iommu_driver {
+	int (*init_driver)(void);
+	void (*remove_driver)(void);
+	pkvm_handle_t (*get_iommu_id)(struct device *dev);
+};
+
 struct vcpu_reset_state {
 	unsigned long	pc;
 	unsigned long	r0;
 	bool		be;
 	bool		reset;
 };
+
+struct kvm_hyp_req {
+#define KVM_HYP_LAST_REQ	0
+#define KVM_HYP_REQ_TYPE_MEM	1
+#define KVM_HYP_REQ_TYPE_MAP	2
+	u8 type;
+	union {
+		struct {
+#define REQ_MEM_DEST_HYP_ALLOC		1
+#define REQ_MEM_DEST_VCPU_MEMCACHE	2
+#define REQ_MEM_DEST_HYP_IOMMU		3
+			u8	dest;
+			int	nr_pages;
+			int	sz_alloc; /* Size of the page. */
+		} mem;
+		struct {
+			unsigned long	guest_ipa;
+			size_t		size;
+		} map;
+	};
+};
+
+#define KVM_HYP_REQ_MAX (PAGE_SIZE / sizeof(struct kvm_hyp_req))
+/*
+ * De-serialize request from SMCCC return.
+ * See hyp-main.c for serialization.
+ */
+/* Register a2. */
+#define	SMCCC_REQ_TYPE_MASK		GENMASK_ULL(7, 0)
+#define SMCCC_REQ_DEST_MASK		GENMASK_ULL(15 , 8)
+/* Register a3. */
+#define SMCCC_REQ_NR_PAGES_MASK		GENMASK_ULL(31 , 0)
+#define SMCCC_REQ_SZ_ALLOC_MASK		GENMASK_ULL(63 , 32)
+
+static inline void hyp_reqs_smccc_decode(struct arm_smccc_res *res,
+					 struct kvm_hyp_req *req)
+{
+	req->type = FIELD_GET(SMCCC_REQ_TYPE_MASK, res->a2);
+	req->mem.dest = FIELD_GET(SMCCC_REQ_DEST_MASK, res->a2);
+	req->mem.nr_pages = FIELD_GET(SMCCC_REQ_NR_PAGES_MASK, res->a3);
+	req->mem.sz_alloc = FIELD_GET(SMCCC_REQ_SZ_ALLOC_MASK, res->a3);
+}
 
 struct kvm_vcpu_arch {
 	struct kvm_cpu_context ctxt;
@@ -590,7 +661,7 @@ struct kvm_vcpu_arch {
 		/* Cache some mmu pages needed inside spinlock regions */
 		struct kvm_mmu_memory_cache mmu_page_cache;
 		/* Pages to be donated to pkvm/EL2 if it runs out */
-		struct kvm_hyp_memcache pkvm_memcache;
+		struct kvm_hyp_memcache stage2_mc;
 	};
 
 	/* feature flags */
@@ -610,6 +681,9 @@ struct kvm_vcpu_arch {
 
 	/* Per-vcpu CCSIDR override or NULL */
 	u32 *ccsidr;
+
+	/* PAGE_SIZE bound list of requests from the hypervisor to the host. */
+	struct kvm_hyp_req *hyp_reqs;
 };
 
 /*
@@ -954,6 +1028,9 @@ static inline bool __vcpu_write_sys_reg_to_cpu(u64 val, int reg)
 
 struct kvm_vm_stat {
 	struct kvm_vm_stat_generic generic;
+	atomic64_t protected_hyp_mem;
+	atomic64_t protected_shared_mem;
+	atomic64_t protected_pgtable_mem;
 };
 
 struct kvm_vcpu_stat {
@@ -989,7 +1066,18 @@ void kvm_arm_resume_guest(struct kvm *kvm);
 #define vcpu_has_run_once(vcpu)	!!rcu_access_pointer((vcpu)->pid)
 
 #ifndef __KVM_NVHE_HYPERVISOR__
-#define kvm_call_hyp_nvhe(f, ...)						\
+#define kvm_call_hyp_nvhe_smccc(f, ...)					\
+	({								\
+		struct arm_smccc_res res;				\
+									\
+		arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(f),		\
+				  ##__VA_ARGS__, &res);			\
+		WARN_ON(res.a0 != SMCCC_RET_SUCCESS);			\
+									\
+		res;							\
+	})
+
+#define kvm_call_hyp_nvhe(f, ...)					\
 	({								\
 		struct arm_smccc_res res;				\
 									\
@@ -1226,5 +1314,27 @@ static inline void kvm_hyp_reserve(void) { }
 
 void kvm_arm_vcpu_power_off(struct kvm_vcpu *vcpu);
 bool kvm_arm_vcpu_stopped(struct kvm_vcpu *vcpu);
+
+int kvm_iommu_init_driver(void);
+void kvm_iommu_remove_driver(void);
+
+int pkvm_iommu_suspend(struct device *dev);
+int pkvm_iommu_resume(struct device *dev);
+
+struct kvm_iommu_ops;
+
+int kvm_iommu_init_hyp(struct kvm_iommu_ops *hyp_ops,
+		       struct kvm_hyp_memcache *atomic_mc,
+		       unsigned long init_arg);
+
+int kvm_iommu_register_driver(struct kvm_iommu_driver *kern_ops);
+
+/* Allocator interface IDs. */
+#define HYP_ALLOC_MGT_HEAP_ID		0
+#define HYP_ALLOC_MGT_IOMMU_ID		1
+
+unsigned long __pkvm_reclaim_hyp_alloc_mgt(unsigned long nr_pages);
+int __pkvm_topup_hyp_alloc_mgt(unsigned long id, unsigned long nr_pages,
+			       unsigned long sz_alloc);
 
 #endif /* __ARM64_KVM_HOST_H__ */

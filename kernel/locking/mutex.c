@@ -55,6 +55,7 @@ __mutex_init(struct mutex *lock, const char *name, struct lock_class_key *key)
 	osq_lock_init(&lock->osq);
 #endif
 
+	trace_android_vh_mutex_init(lock);
 	debug_mutex_init(lock, name, key);
 }
 EXPORT_SYMBOL(__mutex_init);
@@ -171,8 +172,15 @@ static __always_inline bool __mutex_trylock_fast(struct mutex *lock)
 	unsigned long curr = (unsigned long)current;
 	unsigned long zero = 0UL;
 
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	if (atomic_long_try_cmpxchg_acquire(&lock->owner, &zero, curr)) {
 		trace_android_vh_record_mutex_lock_starttime(lock, jiffies);
+||||||| merged common ancestors
+	if (atomic_long_try_cmpxchg_acquire(&lock->owner, &zero, curr))
+=======
+	if (atomic_long_try_cmpxchg_acquire(&lock->owner, &zero, curr)) {
+		trace_android_vh_record_mutex_lock_starttime(current, jiffies);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		return true;
 	}
 
@@ -555,13 +563,25 @@ static noinline void __sched __mutex_unlock_slowpath(struct mutex *lock, unsigne
 void __sched mutex_unlock(struct mutex *lock)
 {
 #ifndef CONFIG_DEBUG_LOCK_ALLOC
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	if (__mutex_unlock_fast(lock)) {
 		trace_android_vh_record_mutex_lock_starttime(lock, 0);
+||||||| merged common ancestors
+	if (__mutex_unlock_fast(lock))
+=======
+	if (__mutex_unlock_fast(lock)) {
+		trace_android_vh_record_mutex_lock_starttime(current, 0);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		return;
 	}
 #endif
 	__mutex_unlock_slowpath(lock, _RET_IP_);
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_mutex_lock_starttime(lock, 0);
+||||||| merged common ancestors
+=======
+	trace_android_vh_record_mutex_lock_starttime(current, 0);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 }
 EXPORT_SYMBOL(mutex_unlock);
 
@@ -631,7 +651,12 @@ __mutex_lock_common(struct mutex *lock, unsigned int state, unsigned int subclas
 		if (ww_ctx)
 			ww_mutex_set_context_fastpath(ww, ww_ctx);
 		trace_contention_end(lock, 0);
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 		trace_android_vh_record_mutex_lock_starttime(lock, jiffies);
+||||||| merged common ancestors
+=======
+		trace_android_vh_record_mutex_lock_starttime(current, jiffies);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		preempt_enable();
 		return 0;
 	}
@@ -750,7 +775,12 @@ skip_wait:
 
 	raw_spin_unlock(&lock->wait_lock);
 	preempt_enable();
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_mutex_lock_starttime(lock, jiffies);
+||||||| merged common ancestors
+=======
+	trace_android_vh_record_mutex_lock_starttime(current, jiffies);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	return 0;
 
 err:
@@ -1112,8 +1142,15 @@ int __sched mutex_trylock(struct mutex *lock)
 	MUTEX_WARN_ON(lock->magic != lock);
 
 	locked = __mutex_trylock(lock);
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	if (locked) {
 		trace_android_vh_record_mutex_lock_starttime(lock, jiffies);
+||||||| merged common ancestors
+	if (locked)
+=======
+	if (locked) {
+		trace_android_vh_record_mutex_lock_starttime(current, jiffies);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		mutex_acquire(&lock->dep_map, 0, 1, _RET_IP_);
 	}
 

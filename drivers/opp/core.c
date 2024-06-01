@@ -1030,7 +1030,7 @@ static int _set_performance_state(struct device *dev, struct device *pd_dev,
 	if (!pd_dev)
 		return 0;
 
-	ret = dev_pm_genpd_set_performance_state(pd_dev, pstate);
+	ret = dev_pm_domain_set_performance_state(pd_dev, pstate);
 	if (ret) {
 		dev_err(dev, "Failed to set performance state of %s: %d (%d)\n",
 			dev_name(pd_dev), pstate, ret);
@@ -1107,6 +1107,28 @@ void _update_set_required_opps(struct opp_table *opp_table)
 		opp_table->set_required_opps = _opp_set_required_opps_generic;
 }
 
+static int _set_opp_level(struct device *dev, struct opp_table *opp_table,
+			  struct dev_pm_opp *opp)
+{
+	unsigned int level = 0;
+	int ret = 0;
+
+	if (opp) {
+		if (!opp->level)
+			return 0;
+
+		level = opp->level;
+	}
+
+	/* Request a new performance state through the device's PM domain. */
+	ret = dev_pm_domain_set_performance_state(dev, level);
+	if (ret)
+		dev_err(dev, "Failed to set performance state %u (%d)\n", level,
+			ret);
+
+	return ret;
+}
+
 static void _find_current_opp(struct device *dev, struct opp_table *opp_table)
 {
 	struct dev_pm_opp *opp = ERR_PTR(-ENODEV);
@@ -1154,8 +1176,13 @@ static int _disable_opp_table(struct device *dev, struct opp_table *opp_table)
 	if (opp_table->regulators)
 		regulator_disable(opp_table->regulators[0]);
 
+	ret = _set_opp_level(dev, opp_table, NULL);
+	if (ret)
+		goto out;
+
 	ret = _set_required_opps(dev, opp_table, NULL, false);
 
+out:
 	opp_table->enabled = false;
 	return ret;
 }
@@ -1197,6 +1224,10 @@ static int _set_opp(struct device *dev, struct opp_table *opp_table,
 			dev_err(dev, "Failed to set required opps: %d\n", ret);
 			return ret;
 		}
+
+		ret = _set_opp_level(dev, opp_table, opp);
+		if (ret)
+			return ret;
 
 		ret = _set_opp_bw(opp_table, opp, dev);
 		if (ret) {
@@ -1240,6 +1271,10 @@ static int _set_opp(struct device *dev, struct opp_table *opp_table,
 			dev_err(dev, "Failed to set bw: %d\n", ret);
 			return ret;
 		}
+
+		ret = _set_opp_level(dev, opp_table, opp);
+		if (ret)
+			return ret;
 
 		ret = _set_required_opps(dev, opp_table, opp, false);
 		if (ret) {
@@ -2035,6 +2070,7 @@ int _opp_add_v1(struct opp_table *opp_table, struct device *dev,
 
 	/* populate the opp table */
 	new_opp->rates[0] = data->freq;
+	new_opp->level = data->level;
 	tol = u_volt * opp_table->voltage_tolerance_v1 / 100;
 	new_opp->supplies[0].u_volt = u_volt;
 	new_opp->supplies[0].u_volt_min = u_volt - tol;

@@ -8,6 +8,7 @@
 #ifdef CONFIG_ANDROID_USB_CONFIGFS_UEVENT
 #include <linux/device.h>
 #include <linux/workqueue.h>
+#include <linux/mutex.h>
 
 struct android_uevent_opts {
 	struct device *dev;

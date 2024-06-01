@@ -23,11 +23,13 @@
 
 #include <asm/alternative.h>
 #include <asm/insn.h>
+#include <asm/kvm_hyptrace.h>
+#include <asm/kvm_hypevents_defs.h>
 #include <asm/scs.h>
 #include <asm/sections.h>
 
-u64 module_direct_base __ro_after_init = 0;
-u64 module_plt_base __ro_after_init = 0;
+static u64 module_direct_base __ro_after_init = 0;
+static u64 module_plt_base __ro_after_init = 0;
 
 /*
  * Choose a random page-aligned base address for a window of 'size' bytes which
@@ -587,6 +589,7 @@ static int module_init_hyp(const Elf_Ehdr *hdr, const Elf_Shdr *sechdrs,
 			   struct module *mod)
 {
 #ifdef CONFIG_KVM
+	struct pkvm_el2_module *hyp_mod = &mod->arch.hyp;
 	const Elf_Shdr *s;
 
 	/*
@@ -597,7 +600,7 @@ static int module_init_hyp(const Elf_Ehdr *hdr, const Elf_Shdr *sechdrs,
 	if (!s || !s->sh_size)
 		return 0;
 
-	mod->arch.hyp.text = (struct pkvm_module_section) {
+	hyp_mod->text = (struct pkvm_module_section) {
 		.start	= (void *)s->sh_addr,
 		.end	= (void *)s->sh_addr + s->sh_size,
 	};
@@ -631,6 +634,31 @@ static int module_init_hyp(const Elf_Ehdr *hdr, const Elf_Shdr *sechdrs,
 			.start	= (void *)s->sh_addr,
 			.end	= (void *)s->sh_addr + s->sh_size,
 		};
+	}
+
+	s = find_section(hdr, sechdrs, "_hyp_events");
+	if (s) {
+		hyp_mod->hyp_events = (void *)s->sh_addr;
+		hyp_mod->nr_hyp_events = s->sh_size /
+			sizeof(*hyp_mod->hyp_events);
+
+		s = find_section(hdr, sechdrs, ".hyp.event_ids");
+		if (s) {
+			mod->arch.hyp.event_ids = (struct pkvm_module_section) {
+				.start	= (void *)s->sh_addr,
+				.end	= (void *)s->sh_addr + s->sh_size,
+			};
+		} else {
+			hyp_mod->hyp_events = NULL;
+			hyp_mod->nr_hyp_events = 0;
+			WARN(1, "%s: Did you forget define_events.h in the EL2 (hyp) code?",
+				mod->name);
+		}
+	} else {
+		s = find_section(hdr, sechdrs, ".hyp.event_ids");
+		WARN(s && s->sh_size,
+		     "%s: Did you forget kvm_define_hypevents.h in the EL1 code?",
+		     mod->name);
 	}
 #endif
 	return 0;

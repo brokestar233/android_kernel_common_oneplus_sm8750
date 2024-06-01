@@ -25,6 +25,7 @@
 #include <ufs/ufs.h>
 #include <ufs/ufs_quirks.h>
 #include <ufs/ufshci.h>
+#include <linux/android_kabi.h>
 
 #define UFSHCD "ufshcd"
 
@@ -201,6 +202,8 @@ struct ufshcd_lrb {
 #endif
 
 	bool req_abort_skip;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 /**
@@ -413,6 +416,8 @@ struct ufs_clk_gating {
 	bool is_initialized;
 	int active_reqs;
 	struct workqueue_struct *clk_gating_workq;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 /**
@@ -454,6 +459,8 @@ struct ufs_clk_scaling {
 	bool is_initialized;
 	bool is_busy_started;
 	bool is_suspended;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 #define UFS_EVENT_HIST_LENGTH 8
@@ -1283,6 +1290,12 @@ unsigned long ufshcd_mcq_poll_cqe_lock(struct ufs_hba *hba,
 void ufshcd_mcq_make_queues_operational(struct ufs_hba *hba);
 void ufshcd_mcq_enable_esi(struct ufs_hba *hba);
 void ufshcd_mcq_config_esi(struct ufs_hba *hba, struct msi_msg *msg);
+void ufshcd_complete_requests(struct ufs_hba *hba, bool force_compl);
+void ufshcd_release_scsi_cmd(struct ufs_hba *hba,
+				    struct ufshcd_lrb *lrbp);
+void ufshcd_err_handling_prepare(struct ufs_hba *hba);
+void ufshcd_err_handling_unprepare(struct ufs_hba *hba);
+
 
 /**
  * ufshcd_set_variant - set variant specific data to the hba

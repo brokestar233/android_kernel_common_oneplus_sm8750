@@ -73,8 +73,13 @@
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
 #include <asm/mmu_context.h>
+<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 #include <trace/hooks/mm.h>
 #include <trace/hooks/dtask.h>
+||||||| merged common ancestors
+=======
+#include <trace/hooks/dtask.h>
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 
 /*
  * The default value should be high enough to not crash a system that randomly
