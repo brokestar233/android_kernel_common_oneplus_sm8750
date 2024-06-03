@@ -5924,13 +5924,7 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	}
 	hlist_add_head(&proc->proc_node, &binder_procs);
 	mutex_unlock(&binder_procs_lock);
-<<<<<<< HEAD 郭健:80238437:平台软件开发中心 
-	trace_android_vh_binder_preset(&binder_procs, &binder_procs_lock);
-||||||| merged common ancestors
-
-=======
 	trace_android_vh_binder_preset(&binder_procs, &binder_procs_lock, proc);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	if (binder_debugfs_dir_entry_proc && !existing_pid) {
 		char strbuf[11];
 

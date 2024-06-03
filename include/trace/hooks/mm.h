@@ -11,13 +11,8 @@
 
 struct shmem_inode_info;
 struct folio;
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-struct page_vma_mapped_walk;
-||||||| merged common ancestors
-=======
 struct page_vma_mapped_walk;
 struct track;
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 
 DECLARE_RESTRICTED_HOOK(android_rvh_shmem_get_folio,
 			TP_PROTO(struct shmem_inode_info *info, struct folio **folio),

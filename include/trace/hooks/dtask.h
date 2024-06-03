@@ -26,18 +26,6 @@ DECLARE_HOOK(android_vh_mutex_wait_start,
 DECLARE_HOOK(android_vh_mutex_wait_finish,
 	TP_PROTO(struct mutex *lock),
 	TP_ARGS(lock));
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-DECLARE_HOOK(android_vh_mutex_opt_spin_start,
-	TP_PROTO(struct mutex *lock, bool *time_out, int *cnt),
-	TP_ARGS(lock, time_out, cnt));
-DECLARE_HOOK(android_vh_mutex_opt_spin_finish,
-	TP_PROTO(struct mutex *lock, bool taken),
-	TP_ARGS(lock, taken));
-DECLARE_HOOK(android_vh_mutex_can_spin_on_owner,
-	TP_PROTO(struct mutex *lock, int *retval),
-	TP_ARGS(lock, retval));
-||||||| merged common ancestors
-=======
 DECLARE_HOOK(android_vh_mutex_opt_spin_start,
 	TP_PROTO(struct mutex *lock, bool *time_out, int *cnt),
 	TP_ARGS(lock, time_out, cnt));
@@ -50,7 +38,6 @@ DECLARE_HOOK(android_vh_mutex_can_spin_on_owner,
 DECLARE_HOOK(android_vh_mutex_init,
 	TP_PROTO(struct mutex *lock),
 	TP_ARGS(lock));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 
 DECLARE_HOOK(android_vh_rtmutex_wait_start,
 	TP_PROTO(struct rt_mutex_base *lock),
@@ -91,7 +78,6 @@ DECLARE_HOOK(android_vh_percpu_rwsem_wq_add,
 	TP_PROTO(struct percpu_rw_semaphore *sem, bool reader),
 	TP_ARGS(sem, reader));
 
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 struct mutex_waiter;
 DECLARE_HOOK(android_vh_alter_mutex_list_add,
 	TP_PROTO(struct mutex *lock,
@@ -137,54 +123,6 @@ DECLARE_HOOK(android_vh_record_rwsem_lock_starttime,
 DECLARE_HOOK(android_vh_record_pcpu_rwsem_starttime,
 	TP_PROTO(struct percpu_rw_semaphore *sem, unsigned long settime_jiffies),
 	TP_ARGS(sem, settime_jiffies));
-||||||| merged common ancestors
-=======
-struct mutex_waiter;
-DECLARE_HOOK(android_vh_alter_mutex_list_add,
-	TP_PROTO(struct mutex *lock,
-		struct mutex_waiter *waiter,
-		struct list_head *list,
-		bool *already_on_list),
-	TP_ARGS(lock, waiter, list, already_on_list));
-DECLARE_HOOK(android_vh_mutex_unlock_slowpath,
-	TP_PROTO(struct mutex *lock),
-	TP_ARGS(lock));
-
-DECLARE_HOOK(android_vh_exit_signal_whether_wake,
-	TP_PROTO(struct task_struct *p, bool *wake),
-	TP_ARGS(p, wake));
-
-DECLARE_HOOK(android_vh_exit_check,
-	TP_PROTO(struct task_struct *p),
-	TP_ARGS(p));
-
-DECLARE_HOOK(android_vh_freeze_whether_wake,
-	TP_PROTO(struct task_struct *t, bool *wake),
-	TP_ARGS(t, wake));
-
-struct rt_mutex_waiter;
-struct ww_acquire_ctx;
-DECLARE_HOOK(android_vh_task_blocks_on_rtmutex,
-	TP_PROTO(struct rt_mutex_base *lock, struct rt_mutex_waiter *waiter,
-		struct task_struct *task, struct ww_acquire_ctx *ww_ctx,
-		unsigned int *chwalk),
-	TP_ARGS(lock, waiter, task, ww_ctx, chwalk));
-DECLARE_HOOK(android_vh_rtmutex_waiter_prio,
-	TP_PROTO(struct task_struct *task, int *waiter_prio),
-	TP_ARGS(task, waiter_prio));
-DECLARE_HOOK(android_vh_record_mutex_lock_starttime,
-	TP_PROTO(struct task_struct *tsk, unsigned long settime_jiffies),
-	TP_ARGS(tsk, settime_jiffies));
-DECLARE_HOOK(android_vh_record_rtmutex_lock_starttime,
-	TP_PROTO(struct task_struct *tsk, unsigned long settime_jiffies),
-	TP_ARGS(tsk, settime_jiffies));
-DECLARE_HOOK(android_vh_record_rwsem_lock_starttime,
-	TP_PROTO(struct task_struct *tsk, unsigned long settime_jiffies),
-	TP_ARGS(tsk, settime_jiffies));
-DECLARE_HOOK(android_vh_record_pcpu_rwsem_starttime,
-	TP_PROTO(struct task_struct *tsk, unsigned long settime_jiffies),
-	TP_ARGS(tsk, settime_jiffies));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 #endif /* _TRACE_HOOK_DTASK_H */
 
 /* This part must be outside protection */

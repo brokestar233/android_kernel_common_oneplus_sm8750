@@ -31,14 +31,8 @@ static __always_inline int __rt_mutex_lock_common(struct rt_mutex *lock,
 	ret = __rt_mutex_lock(&lock->rtmutex, state);
 	if (ret)
 		mutex_release(&lock->dep_map, _RET_IP_);
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	else
 		trace_android_vh_record_rtmutex_lock_starttime(lock, jiffies);
-||||||| merged common ancestors
-=======
-	else
-		trace_android_vh_record_rtmutex_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	return ret;
 }
 
@@ -131,15 +125,8 @@ int __sched rt_mutex_trylock(struct rt_mutex *lock)
 		return 0;
 
 	ret = __rt_mutex_trylock(&lock->rtmutex);
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	if (ret) {
 		trace_android_vh_record_rtmutex_lock_starttime(lock, jiffies);
-||||||| merged common ancestors
-	if (ret)
-=======
-	if (ret) {
-		trace_android_vh_record_rtmutex_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		mutex_acquire(&lock->dep_map, 0, 1, _RET_IP_);
 	}
 
@@ -154,12 +141,7 @@ EXPORT_SYMBOL_GPL(rt_mutex_trylock);
  */
 void __sched rt_mutex_unlock(struct rt_mutex *lock)
 {
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_rtmutex_lock_starttime(lock, 0);
-||||||| merged common ancestors
-=======
-	trace_android_vh_record_rtmutex_lock_starttime(current, 0);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	mutex_release(&lock->dep_map, _RET_IP_);
 	__rt_mutex_unlock(&lock->rtmutex);
 }

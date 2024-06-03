@@ -254,12 +254,7 @@ static inline bool rwsem_read_trylock(struct rw_semaphore *sem, long *cntp)
 
 	if (!(*cntp & RWSEM_READ_FAILED_MASK)) {
 		rwsem_set_reader_owned(sem);
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 		trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
-||||||| merged common ancestors
-=======
-		trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		return true;
 	}
 
@@ -271,12 +266,7 @@ static inline bool rwsem_write_trylock(struct rw_semaphore *sem)
 	long tmp = RWSEM_UNLOCKED_VALUE;
 
 	if (atomic_long_try_cmpxchg_acquire(&sem->count, &tmp, RWSEM_WRITER_LOCKED)) {
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 		trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
-||||||| merged common ancestors
-=======
-		trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		rwsem_set_owner(sem);
 		return true;
 	}
@@ -1066,12 +1056,7 @@ wake_readers:
 			raw_spin_unlock_irq(&sem->wait_lock);
 			wake_up_q(&wake_q);
 		}
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 		trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
-||||||| merged common ancestors
-=======
-		trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		return sem;
 	}
 	/*
@@ -1147,12 +1132,7 @@ queue:
 	trace_android_vh_rwsem_read_wait_finish(sem);
 	lockevent_inc(rwsem_rlock);
 	trace_contention_end(sem, 0);
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
-||||||| merged common ancestors
-=======
-	trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	return sem;
 
 out_nolock:
@@ -1177,12 +1157,7 @@ rwsem_down_write_slowpath(struct rw_semaphore *sem, int state)
 	/* do optimistic spinning and steal lock if possible */
 	if (rwsem_can_spin_on_owner(sem) && rwsem_optimistic_spin(sem)) {
 		/* rwsem_optimistic_spin() implies ACQUIRE on success */
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 		trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
-||||||| merged common ancestors
-=======
-		trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		return sem;
 	}
 
@@ -1263,12 +1238,7 @@ trylock_again:
 	raw_spin_unlock_irq(&sem->wait_lock);
 	lockevent_inc(rwsem_wlock);
 	trace_contention_end(sem, 0);
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
-||||||| merged common ancestors
-=======
-	trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	return sem;
 
 out_nolock:
@@ -1375,12 +1345,7 @@ static inline int __down_read_trylock(struct rw_semaphore *sem)
 						    tmp + RWSEM_READER_BIAS)) {
 			rwsem_set_reader_owned(sem);
 			ret = 1;
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 			trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
-||||||| merged common ancestors
-=======
-			trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 			break;
 		}
 	}
@@ -1445,12 +1410,7 @@ static inline void __up_read(struct rw_semaphore *sem)
 		clear_nonspinnable(sem);
 		rwsem_wake(sem);
 	}
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_rwsem_lock_starttime(sem, 0);
-||||||| merged common ancestors
-=======
-	trace_android_vh_record_rwsem_lock_starttime(current, 0);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	preempt_enable();
 }
 
@@ -1475,12 +1435,7 @@ static inline void __up_write(struct rw_semaphore *sem)
 	if (unlikely(tmp & RWSEM_FLAG_WAITERS))
 		rwsem_wake(sem);
 	preempt_enable();
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	trace_android_vh_record_rwsem_lock_starttime(sem, 0);
-||||||| merged common ancestors
-=======
-	trace_android_vh_record_rwsem_lock_starttime(current, 0);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 }
 
 /*

@@ -28,12 +28,6 @@ DECLARE_HOOK(android_vh_alter_rwsem_list_add,
 DECLARE_HOOK(android_vh_rwsem_downgrade_wake_finish,
 	TP_PROTO(struct rw_semaphore *sem),
 	TP_ARGS(sem));
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-DECLARE_HOOK(android_vh_rwsem_wake_finish,
-	TP_PROTO(struct rw_semaphore *sem),
-	TP_ARGS(sem));
-||||||| merged common ancestors
-=======
 DECLARE_HOOK(android_vh_rwsem_wake_finish,
 	TP_PROTO(struct rw_semaphore *sem),
 	TP_ARGS(sem));
@@ -56,7 +50,6 @@ DECLARE_HOOK(android_vh_record_rwsem_writer_owned,
 DECLARE_HOOK(android_vh_clear_rwsem_writer_owned,
 	TP_PROTO(struct rw_semaphore *sem),
 	TP_ARGS(sem));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 #endif /* _TRACE_HOOK_RWSEM_H */
 /* This part must be outside protection */
 #include <trace/define_trace.h>

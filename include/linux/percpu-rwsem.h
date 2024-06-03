@@ -55,13 +55,7 @@ static inline void percpu_down_read(struct percpu_rw_semaphore *sem)
 	might_sleep();
 
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	_trace_android_vh_record_pcpu_rwsem_starttime(sem, jiffies);
-||||||| merged common ancestors
-
-=======
-	_trace_android_vh_record_pcpu_rwsem_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	preempt_disable();
 	/*
 	 * We are in an RCU-sched read-side critical section, so the writer
@@ -100,15 +94,8 @@ static inline bool percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
 	 * bleeding the critical section out.
 	 */
 
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	if (ret) {
 		_trace_android_vh_record_pcpu_rwsem_starttime(sem, jiffies);
-||||||| merged common ancestors
-	if (ret)
-=======
-	if (ret) {
-		_trace_android_vh_record_pcpu_rwsem_starttime(current, jiffies);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 		rwsem_acquire_read(&sem->dep_map, 0, 1, _RET_IP_);
 	}
 
@@ -139,12 +126,7 @@ static inline void percpu_up_read(struct percpu_rw_semaphore *sem)
 		this_cpu_dec(*sem->read_count);
 		rcuwait_wake_up(&sem->writer);
 	}
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
 	_trace_android_vh_record_pcpu_rwsem_starttime(sem, 0);
-||||||| merged common ancestors
-=======
-	_trace_android_vh_record_pcpu_rwsem_starttime(current, 0);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 	preempt_enable();
 }
 
