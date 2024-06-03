@@ -3961,12 +3961,8 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	unsigned int cpuset_mems_cookie;
 	unsigned int zonelist_iter_cookie;
 	int reserve_flags;
-<<<<<<< HEAD 李杨欧文:80351790:平台与内核开发部 
 	bool should_alloc_retry = false;
-||||||| merged common ancestors
-=======
 	unsigned long alloc_start = jiffies;
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 
 restart:
 	compaction_retries = 0;

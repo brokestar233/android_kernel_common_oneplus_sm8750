@@ -15,15 +15,6 @@ DECLARE_RESTRICTED_HOOK(android_rvh_set_balance_anon_file_reclaim,
 DECLARE_HOOK(android_vh_tune_swappiness,
 	TP_PROTO(int *swappiness),
 	TP_ARGS(swappiness));
-<<<<<<< HEAD 翁乐:80379123:平台与内核开发部 
-DECLARE_HOOK(android_vh_do_shrink_slab,
-	TP_PROTO(struct shrinker *shrinker, long *freeable),
-	TP_ARGS(shrinker, freeable));
-DECLARE_HOOK(android_vh_check_folio_look_around_ref,
-	TP_PROTO(struct folio *folio, int *skip),
-	TP_ARGS(folio, skip));
-||||||| merged common ancestors
-=======
 DECLARE_HOOK(android_vh_shrink_slab_bypass,
 	TP_PROTO(gfp_t gfp_mask, int nid, struct mem_cgroup *memcg, int priority, bool *bypass),
 	TP_ARGS(gfp_mask, nid, memcg, priority, bypass));
@@ -33,7 +24,6 @@ DECLARE_HOOK(android_vh_check_folio_look_around_ref,
 DECLARE_HOOK(android_vh_do_shrink_slab,
 	TP_PROTO(struct shrinker *shrinker, long *freeable),
 	TP_ARGS(shrinker, freeable));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 #endif /* _TRACE_HOOK_VMSCAN_H */
 /* This part must be outside protection */
 #include <trace/define_trace.h>
