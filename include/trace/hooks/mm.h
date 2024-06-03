@@ -49,7 +49,6 @@ DECLARE_HOOK(android_vh_kmalloc_large_alloced,
 DECLARE_RESTRICTED_HOOK(android_rvh_ctl_dirty_rate,
 	TP_PROTO(void *unused),
 	TP_ARGS(unused), 1);
-<<<<<<< HEAD 杨文博:80398275:平台与内核开发部 
 DECLARE_HOOK(android_vh_free_unref_page_bypass,
 	TP_PROTO(struct page *page, int order, int migratetype, bool *bypass),
 	TP_ARGS(page, order, migratetype, bypass));
@@ -75,9 +74,6 @@ DECLARE_HOOK(android_vh_tune_mmap_readaround,
 	TP_PROTO(unsigned int ra_pages, pgoff_t pgoff,
 		pgoff_t *start, unsigned int *size, unsigned int *async_size),
 	TP_ARGS(ra_pages, pgoff, start, size, async_size));
-DECLARE_HOOK(android_vh_adjust_kvmalloc_flags,
-	TP_PROTO(unsigned int order, gfp_t *alloc_flags),
-	TP_ARGS(order, alloc_flags));
 DECLARE_HOOK(android_vh_meminfo_proc_show,
 	TP_PROTO(struct seq_file *m),
 	TP_ARGS(m));
@@ -112,19 +108,6 @@ DECLARE_HOOK(android_vh_look_around,
 	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
 		struct vm_area_struct *vma, int *referenced),
 	TP_ARGS(pvmw, folio, vma, referenced));
-||||||| merged common ancestors
-=======
-DECLARE_HOOK(android_vh_test_clear_look_around_ref,
-	TP_PROTO(struct page *page),
-	TP_ARGS(page));
-DECLARE_HOOK(android_vh_look_around_migrate_folio,
-	TP_PROTO(struct folio *old_folio, struct folio *new_folio),
-	TP_ARGS(old_folio, new_folio));
-DECLARE_HOOK(android_vh_look_around,
-	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
-		struct vm_area_struct *vma, int *referenced),
-	TP_ARGS(pvmw, folio, vma, referenced));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 
 struct mem_cgroup;
 DECLARE_HOOK(android_vh_mem_cgroup_alloc,

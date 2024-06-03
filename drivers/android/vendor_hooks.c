@@ -153,7 +153,6 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_freq_qos_update_request);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_freq_qos_remove_request);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_set_balance_anon_file_reclaim);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_show_max_freq);
-<<<<<<< HEAD 李杨欧文:80351790:平台与内核开发部 
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_free_unref_page_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_kvmalloc_node_use_vmalloc);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_should_alloc_pages_retry);
@@ -161,10 +160,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_unreserve_highatomic_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rmqueue_bulk_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ra_tuning_max_page);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_tune_mmap_readaround);
-||||||| merged common ancestors
-=======
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_shrink_slab_bypass);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_selinux_avc_insert);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_selinux_avc_node_delete);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_selinux_avc_node_replace);
@@ -226,43 +222,13 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_mmc_resume);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_mmc_suspend);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mmc_update_mmc_queue);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_downgrade_wake_finish);
-<<<<<<< HEAD 杨文博:80398275:平台与内核开发部 
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_kvmalloc_flags);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_alloc_flags);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_meminfo_proc_show);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_mm);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_show_mem);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_print_slabinfo_header);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_cache_show);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_shrink_slab);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alloc_pages_reclaim_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alloc_pages_failure_bypass);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alloc_oem_binder_struct);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_transaction_received);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_free_oem_binder_struct);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_special_task);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_buffer_release);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_ioctl_end);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_looper_exited);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_spawn_new_thread);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_has_special_work_ilocked);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_preset);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_reply);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_trans);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alter_mutex_list_add);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mutex_unlock_slowpath);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_check_folio_look_around_ref);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_look_around);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_look_around_migrate_folio);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_test_clear_look_around_ref);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal_whether_wake);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_check);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_freeze_whether_wake);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_percpu_rwsem_wq_add);
-||||||| merged common ancestors
-=======
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_report_bug);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_watchdog_timer_softlockup);
@@ -332,4 +298,3 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_record_rwsem_reader_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_clear_rwsem_reader_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_record_rwsem_writer_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_clear_rwsem_writer_owned);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
