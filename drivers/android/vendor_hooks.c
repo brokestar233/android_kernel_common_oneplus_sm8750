@@ -53,10 +53,6 @@
 #include <trace/hooks/rwsem.h>
 #include <trace/hooks/futex.h>
 #include <trace/hooks/topology.h>
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-#include <trace/hooks/signal.h>
-||||||| merged common ancestors
-=======
 #include <trace/hooks/thermal.h>
 #include <trace/hooks/bug.h>
 #include <trace/hooks/softlockup.h>
@@ -65,22 +61,16 @@
 #include <trace/hooks/signal.h>
 #include <trace/hooks/logbuf.h>
 #include <trace/hooks/dmabuf.h>
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 
 /*
  * Export tracepoints that act as a bare tracehook (ie: have no trace event
  * associated with them) to allow external modules to probe them.
  */
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_send_sig_info);
-||||||| merged common ancestors
-=======
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_sk_alloc);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_sk_free);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_nf_conn_alloc);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_nf_conn_free);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_send_sig_info);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mutex_wait_start);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mutex_wait_finish);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mutex_init);
