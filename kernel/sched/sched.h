@@ -1185,11 +1185,6 @@ struct rq {
 	call_single_data_t	cfsb_csd;
 	struct list_head	cfsb_csd_list;
 #endif
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-
-	ANDROID_OEM_DATA_ARRAY(1, 16);
-||||||| merged common ancestors
-=======
 
 	ANDROID_OEM_DATA_ARRAY(1, 16);
 
@@ -1197,7 +1192,6 @@ struct rq {
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED

@@ -603,15 +603,9 @@
   drm_connector_attach_vrr_capable_property
   drm_connector_cleanup
   drm_connector_init
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-  drm_connector_list_iter_begin
-  drm_connector_list_iter_next
-||||||| merged common ancestors
-=======
   drm_connector_list_iter_begin
   drm_connector_list_iter_end
   drm_connector_list_iter_next
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
   drm_connector_set_vrr_capable_property
   drm_connector_unregister
   drm_connector_update_edid_property
@@ -789,17 +783,10 @@
   _find_last_bit
   _find_next_bit
   _find_next_zero_bit
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-  find_task_by_vpid
-  find_vma
-  find_vpid
-||||||| merged common ancestors
-=======
   find_task_by_vpid
   find_vma
   find_vm_area
   find_vpid
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
   finish_no_open
   finish_open
   finish_wait
@@ -1888,13 +1875,8 @@
   sg_alloc_table_from_pages_segment
   sg_copy_from_buffer
   sg_copy_to_buffer
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-  sget_dev
-||||||| merged common ancestors
-=======
   sget_dev
   sget_fc
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
   sg_free_table
   sg_init_one
   sg_init_table
@@ -2445,13 +2427,8 @@
   vmf_insert_pfn_prot
   vm_get_page_prot
   vm_insert_page
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-  vm_unmap_aliases
-||||||| merged common ancestors
-=======
   vm_node_stat
   vm_unmap_aliases
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
   vm_zone_stat
   vprintk
   vscnprintf

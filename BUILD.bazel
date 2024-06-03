@@ -113,28 +113,18 @@ filegroup(
         "android/abi_gki_aarch64_db845c",
         "android/abi_gki_aarch64_exynos",
         "android/abi_gki_aarch64_exynosauto",
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-        "android/abi_gki_aarch64_mtk",
-||||||| merged common ancestors
-=======
         "android/abi_gki_aarch64_galaxy",
         "android/abi_gki_aarch64_honor",
         "android/abi_gki_aarch64_imx",
         "android/abi_gki_aarch64_mtk",
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
         "android/abi_gki_aarch64_oplus",
         "android/abi_gki_aarch64_pixel",
         "android/abi_gki_aarch64_qcom",
         "android/abi_gki_aarch64_type_visibility",
         "android/abi_gki_aarch64_unisoc",
         "android/abi_gki_aarch64_virtual_device",
-<<<<<<< HEAD 方秋蓉:80350699:平台与内核开发部 
-        "android/abi_gki_aarch64_vivo",
-||||||| merged common ancestors
-=======
         "android/abi_gki_aarch64_vivo",
         "android/abi_gki_aarch64_xiaomi",
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
     ],
     visibility = ["//visibility:public"],
 )

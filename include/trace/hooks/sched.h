@@ -354,24 +354,6 @@ DECLARE_RESTRICTED_HOOK(android_rvh_find_new_ilb,
 	TP_PROTO(struct cpumask *nohz_idle_cpus_mask, int *ilb),
 	TP_ARGS(nohz_idle_cpus_mask, ilb), 1);
 
-<<<<<<< HEAD 周学文:80382115:平台与内核开发部 
-DECLARE_RESTRICTED_HOOK(android_rvh_set_cpus_allowed_comm,
-	TP_PROTO(struct task_struct *p, const struct cpumask *new_mask),
-	TP_ARGS(p, new_mask), 1);
-
-DECLARE_HOOK(android_vh_sched_setaffinity_early,
-	TP_PROTO(struct task_struct *p, const struct cpumask *new_mask, bool *retval),
-	TP_ARGS(p, new_mask, retval));
-
-struct cpufreq_policy;
-DECLARE_HOOK(android_vh_map_util_freq,
-	TP_PROTO(unsigned long util, unsigned long freq,
-		unsigned long cap, unsigned long *next_freq, struct cpufreq_policy *policy,
-		bool *need_freq_update),
-	TP_ARGS(util, freq, cap, next_freq, policy, need_freq_update));
-
-||||||| merged common ancestors
-=======
 DECLARE_HOOK(android_vh_sched_pelt_multiplier,
 	TP_PROTO(unsigned int old, unsigned int cur, int *ret),
 	TP_ARGS(old, cur, ret));
@@ -400,10 +382,12 @@ DECLARE_HOOK(android_vh_tick_nohz_idle_stop_tick,
 	TP_PROTO(void *unused),
 	TP_ARGS(unused));
 
+struct cpufreq_policy;
 DECLARE_HOOK(android_vh_map_util_freq,
 	TP_PROTO(unsigned long util, unsigned long freq,
-		unsigned long cap, unsigned long *next_freq),
-	TP_ARGS(util, freq, cap, next_freq));
+		unsigned long cap, unsigned long *next_freq, struct cpufreq_policy *policy,
+		bool *need_freq_update),
+	TP_ARGS(util, freq, cap, next_freq, policy, need_freq_update));
 
 struct cgroup_subsys_state;
 DECLARE_HOOK(android_vh_sched_move_task,
@@ -419,7 +403,6 @@ DECLARE_HOOK(android_vh_cpu_cgroup_css_free,
 	TP_PROTO(struct cgroup_subsys_state *css),
 	TP_ARGS(css));
 
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 /* macro versions of hooks are no longer required */
 
 #endif /* _TRACE_HOOK_SCHED_H */
