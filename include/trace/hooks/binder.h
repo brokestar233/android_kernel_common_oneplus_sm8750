@@ -30,27 +30,6 @@ DECLARE_HOOK(android_vh_binder_alloc_new_buf_locked,
 	TP_ARGS(size, free_async_space, is_async, should_fail));
 struct binder_proc;
 struct binder_thread;
-<<<<<<< HEAD 张正琪:80386171:器件与算法部 
-DECLARE_HOOK(android_vh_binder_preset,
-	TP_PROTO(struct hlist_head *hhead, struct mutex *lock),
-	TP_ARGS(hhead, lock));
-struct binder_transaction_data;
-DECLARE_HOOK(android_vh_binder_reply,
-	TP_PROTO(struct binder_proc *target_proc, struct binder_proc *proc,
-		struct binder_thread *thread, struct binder_transaction_data *tr),
-	TP_ARGS(target_proc, proc, thread, tr));
-DECLARE_HOOK(android_vh_binder_trans,
-	TP_PROTO(struct binder_proc *target_proc, struct binder_proc *proc,
-		struct binder_thread *thread, struct binder_transaction_data *tr),
-	TP_ARGS(target_proc, proc, thread, tr));
-DECLARE_HOOK(android_vh_binder_wakeup_ilocked,
-	TP_PROTO(struct task_struct *task, bool sync, struct binder_proc *proc),
-	TP_ARGS(task, sync, proc));
-||||||| merged common ancestors
-DECLARE_HOOK(android_vh_binder_wakeup_ilocked,
-	TP_PROTO(struct task_struct *task, bool sync, struct binder_proc *proc),
-	TP_ARGS(task, sync, proc));
-=======
 DECLARE_HOOK(android_vh_binder_preset,
 	TP_PROTO(struct hlist_head *hhead, struct mutex *lock, struct binder_proc *proc),
 	TP_ARGS(hhead, lock, proc));
@@ -63,7 +42,6 @@ DECLARE_HOOK(android_vh_binder_trans,
 	TP_PROTO(struct binder_proc *target_proc, struct binder_proc *proc,
 		struct binder_thread *thread, struct binder_transaction_data *tr),
 	TP_ARGS(target_proc, proc, thread, tr));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.019
 DECLARE_HOOK(android_vh_binder_wait_for_work,
 	TP_PROTO(bool do_proc_work, struct binder_thread *tsk, struct binder_proc *proc),
 	TP_ARGS(do_proc_work, tsk, proc));
