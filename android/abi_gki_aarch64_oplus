@@ -331,3 +331,11 @@
   is_ashmem_file
   __tracepoint_android_vh_meminfo_proc_show
   __traceiter_android_vh_meminfo_proc_show
+  __rtnl_link_register
+  neigh_xmit
+  netif_receive_skb_core
+  tcf_exts_init_ex
+  xt_register_match
+  xt_unregister_match
+  __tracepoint_android_rvh_set_balance_anon_file_reclaim
+  __traceiter_android_rvh_set_balance_anon_file_reclaim
