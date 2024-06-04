@@ -9,9 +9,6 @@
 #include <linux/rcu_sync.h>
 #include <linux/lockdep.h>
 
-void _trace_android_vh_record_pcpu_rwsem_starttime(
-		struct task_struct *tsk, unsigned long settime);
-
 struct percpu_rw_semaphore {
 	struct rcu_sync		rss;
 	unsigned int __percpu	*read_count;
