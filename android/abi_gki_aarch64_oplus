@@ -329,3 +329,5 @@
   is_dma_buf_file
   dma_buf_get_each
   is_ashmem_file
+  __tracepoint_android_vh_meminfo_proc_show
+  __traceiter_android_vh_meminfo_proc_show
