@@ -5160,6 +5160,7 @@ static void binder_free_proc(struct binder_proc *proc)
 	put_task_struct(proc->tsk);
 	put_cred(proc->cred);
 	binder_stats_deleted(BINDER_STAT_PROC);
+	trace_android_vh_binder_free_proc(proc);
 	kfree(proc);
 }
 
