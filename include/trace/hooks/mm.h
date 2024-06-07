@@ -74,19 +74,6 @@ DECLARE_HOOK(android_vh_tune_mmap_readaround,
 	TP_PROTO(unsigned int ra_pages, pgoff_t pgoff,
 		pgoff_t *start, unsigned int *size, unsigned int *async_size),
 	TP_ARGS(ra_pages, pgoff, start, size, async_size));
-<<<<<<< HEAD 杨文博:80398275:平台与内核开发部 
-||||||| merged common ancestors
-DECLARE_HOOK(android_vh_adjust_kvmalloc_flags,
-	TP_PROTO(unsigned int order, gfp_t *alloc_flags),
-	TP_ARGS(order, alloc_flags));
-=======
-DECLARE_HOOK(android_vh_adjust_kvmalloc_flags,
-	TP_PROTO(unsigned int order, gfp_t *alloc_flags),
-	TP_ARGS(order, alloc_flags));
-DECLARE_HOOK(android_vh_kmalloc_slab,
-	TP_PROTO(unsigned int index, gfp_t flags, struct kmem_cache **s),
-	TP_ARGS(index, flags, s));
->>>>>>> ec33307b791e5170063bd3eef92b4437213b8e62
 DECLARE_HOOK(android_vh_meminfo_proc_show,
 	TP_PROTO(struct seq_file *m),
 	TP_ARGS(m));
@@ -100,12 +87,6 @@ DECLARE_HOOK(android_vh_print_slabinfo_header,
 	TP_PROTO(struct seq_file *m),
 	TP_ARGS(m));
 struct slabinfo;
-DECLARE_HOOK(android_vh_save_vmalloc_stack,
-	TP_PROTO(unsigned long flags, struct vm_struct *vm),
-	TP_ARGS(flags, vm));
-DECLARE_HOOK(android_vh_show_stack_hash,
-	TP_PROTO(struct seq_file *m, struct vm_struct *v),
-	TP_ARGS(m, v));
 DECLARE_HOOK(android_vh_cache_show,
 	TP_PROTO(struct seq_file *m, struct slabinfo *sinfo, struct kmem_cache *s),
 	TP_ARGS(m, sinfo, s));
@@ -127,10 +108,6 @@ DECLARE_HOOK(android_vh_look_around,
 	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
 		struct vm_area_struct *vma, int *referenced),
 	TP_ARGS(pvmw, folio, vma, referenced));
-DECLARE_HOOK(android_vh_save_track_hash,
-	TP_PROTO(bool alloc, struct track *p),
-	TP_ARGS(alloc, p));
-
 struct mem_cgroup;
 DECLARE_HOOK(android_vh_mem_cgroup_alloc,
 	TP_PROTO(struct mem_cgroup *memcg),
@@ -167,6 +144,12 @@ DECLARE_HOOK(android_vh_try_to_unmap_one,
 	TP_PROTO(struct folio *folio, struct vm_area_struct *vma,
 		unsigned long addr, void *arg, bool ret),
 	TP_ARGS(folio, vma, addr, arg, ret));
+DECLARE_HOOK(android_vh_save_vmalloc_stack,
+	TP_PROTO(unsigned long flags, struct vm_struct *vm),
+	TP_ARGS(flags, vm));
+DECLARE_HOOK(android_vh_show_stack_hash,
+	TP_PROTO(struct seq_file *m, struct vm_struct *v),
+	TP_ARGS(m, v));
 #endif /* _TRACE_HOOK_MM_H */
 
 /* This part must be outside protection */
