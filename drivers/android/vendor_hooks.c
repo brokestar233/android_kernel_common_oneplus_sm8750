@@ -220,24 +220,10 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_mmc_resume);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_mmc_suspend);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mmc_update_mmc_queue);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_downgrade_wake_finish);
-<<<<<<< HEAD 杨文博:80398275:平台与内核开发部 
-||||||| merged common ancestors
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_kvmalloc_flags);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_alloc_flags);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_kmalloc_slab);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal);
-=======
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_kvmalloc_flags);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_alloc_flags);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_kmalloc_slab);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_free_proc);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_list_add_work);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_has_proc_work_ilocked);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_binder_release_special_work);
->>>>>>> origin/qcom/kernel.platform.4.0.r1/master
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_meminfo_proc_show);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_mm);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_show_mem);
