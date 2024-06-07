@@ -779,6 +779,9 @@
   __traceiter_android_vh_check_uninterruptible_tasks
   __traceiter_android_vh_check_uninterruptible_tasks_dn
   __traceiter_android_vh_do_send_sig_info
+  __tracepoint_android_vh_adjust_kvmalloc_flags
+  __tracepoint_android_vh_check_uninterruptible_tasks
+  __tracepoint_android_vh_check_uninterruptible_tasks_dn
   __tracepoint_android_vh_binder_reply
   __tracepoint_android_vh_binder_trans
   __tracepoint_android_vh_binder_preset
