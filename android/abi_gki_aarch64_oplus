@@ -322,7 +322,6 @@
   __tracepoint_android_vh_record_pcpu_rwsem_starttime
   __tracepoint_android_vh_record_rtmutex_lock_starttime
   __tracepoint_android_vh_record_rwsem_lock_starttime
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
   __tracepoint_android_vh_rt_mutex_steal
   __tracepoint_android_vh_rtmutex_waiter_prio
   __tracepoint_android_vh_task_blocks_on_rtmutex
@@ -340,18 +339,11 @@
   xt_unregister_match
   __tracepoint_android_rvh_set_balance_anon_file_reclaim
   __traceiter_android_rvh_set_balance_anon_file_reclaim
-||||||| merged common ancestors
-=======
-  __traceiter_android_vh_save_track_hash
-  __traceiter_android_vh_kmalloc_slab
   __traceiter_android_vh_save_vmalloc_stack
   __traceiter_android_vh_show_stack_hash
-  __tracepoint_android_vh_save_track_hash
-  __tracepoint_android_vh_kmalloc_slab
   __tracepoint_android_vh_save_vmalloc_stack
   __tracepoint_android_vh_show_stack_hash
   on_each_cpu_cond_mask
   stack_depot_fetch
   memcg_kmem_online_key
   stack_depot_print
->>>>>>> ec33307b791e5170063bd3eef92b4437213b8e62
