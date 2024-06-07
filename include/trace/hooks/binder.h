@@ -93,8 +93,7 @@ DECLARE_HOOK(android_vh_binder_spawn_new_thread,
 	TP_ARGS(thread, proc, force_spawn));
 DECLARE_HOOK(android_vh_binder_has_special_work_ilocked,
 	TP_PROTO(struct binder_thread *thread, bool do_proc_work, bool *has_work),
-	TP_ARGS(thread, do_proc_work, has_work));
-<<<<<<< HEAD 廖福椿:80048997:平台与内核开发部 
+	TP_ARGS(thread, do_proc_work, has_work)); 
 DECLARE_HOOK(android_vh_binder_proc_transaction,
 	TP_PROTO(struct task_struct *caller_task, struct task_struct *binder_proc_task,
 		struct task_struct *binder_th_task, int node_debug_id,
@@ -106,9 +105,6 @@ DECLARE_HOOK(android_vh_binder_new_ref,
 DECLARE_HOOK(android_vh_binder_del_ref,
 	TP_PROTO(struct task_struct *proc, uint32_t ref_desc),
 	TP_ARGS(proc, ref_desc));
-
-||||||| merged common ancestors
-=======
 DECLARE_HOOK(android_vh_binder_list_add_work,
 	TP_PROTO(struct binder_work *work, struct list_head *target_list),
 	TP_ARGS(work, target_list));
@@ -122,7 +118,6 @@ DECLARE_HOOK(android_vh_binder_free_proc,
 	TP_PROTO(struct binder_proc *proc),
 	TP_ARGS(proc));
 
->>>>>>> origin/qcom/kernel.platform.4.0.r1/master
 #endif /* _TRACE_HOOK_BINDER_H */
 /* This part must be outside protection */
 #include <trace/define_trace.h>
