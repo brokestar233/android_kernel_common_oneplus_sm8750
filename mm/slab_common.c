@@ -742,6 +742,9 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags, unsigned long caller)
 			return NULL;
 		index = fls(size - 1);
 	}
+	trace_android_vh_kmalloc_slab(index, flags, &s);
+	if (s)
+		return s;
 
 	trace_android_vh_kmalloc_slab(index, flags, &s);
 	if (s)

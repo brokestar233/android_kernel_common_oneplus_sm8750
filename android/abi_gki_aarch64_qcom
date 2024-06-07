@@ -1814,6 +1814,12 @@
   __traceiter_sched_switch
   __traceiter_sk_data_ready
   __traceiter_suspend_resume
+  __traceiter_android_rvh_enqueue_entity
+  __traceiter_android_rvh_dequeue_entity
+  __traceiter_android_vh_rtmutex_wait_start
+  __tracepoint_android_vh_rtmutex_wait_start
+  __tracepoint_android_rvh_enqueue_entity
+  __tracepoint_android_rvh_dequeue_entity
   __tracepoint_android_rvh_account_irq
   __tracepoint_android_rvh_build_perf_domains
   __tracepoint_android_rvh_can_migrate_task

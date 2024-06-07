@@ -220,11 +220,32 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_mmc_resume);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_mmc_suspend);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mmc_update_mmc_queue);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_downgrade_wake_finish);
+<<<<<<< HEAD 杨文博:80398275:平台与内核开发部 
+||||||| merged common ancestors
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_kvmalloc_flags);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_alloc_flags);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal);
+=======
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_kvmalloc_flags);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_adjust_alloc_flags);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_kmalloc_slab);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal);
+>>>>>>> ec33307b791e5170063bd3eef92b4437213b8e62
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_meminfo_proc_show);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_mm);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_show_mem);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_print_slabinfo_header);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_cache_show);
+<<<<<<< HEAD 谢晓宣:80398989:平台与内核开发部 
+||||||| merged common ancestors
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_shrink_slab);
+=======
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_save_vmalloc_stack);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_show_stack_hash);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_shrink_slab);
+>>>>>>> ec33307b791e5170063bd3eef92b4437213b8e62
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alloc_pages_reclaim_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alloc_pages_failure_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
@@ -277,6 +298,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_check_folio_look_around_ref);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_look_around);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_look_around_migrate_folio);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_test_clear_look_around_ref);
+<<<<<<< HEAD 谢晓宣:80398989:平台与内核开发部 
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_dma_buf_release);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ufs_perf_huristic_ctrl);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ufs_send_command_post_change);
@@ -296,3 +318,15 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_record_rwsem_reader_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_clear_rwsem_reader_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_record_rwsem_writer_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_clear_rwsem_writer_owned);
+||||||| merged common ancestors
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal_whether_wake);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_check);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_freeze_whether_wake);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_percpu_rwsem_wq_add);
+=======
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal_whether_wake);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_check);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_freeze_whether_wake);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_percpu_rwsem_wq_add);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_save_track_hash);
+>>>>>>> ec33307b791e5170063bd3eef92b4437213b8e62
