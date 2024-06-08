@@ -51,6 +51,7 @@ static DEFINE_STATIC_KEY_FALSE(use_tasklet_enabled);
 struct dm_verity_prefetch_work {
 	struct work_struct work;
 	struct dm_verity *v;
+	unsigned short ioprio;
 	sector_t block;
 	unsigned int n_blocks;
 };
@@ -294,6 +295,7 @@ static int verity_verify_level(struct dm_verity *v, struct dm_verity_io *io,
 	int r;
 	sector_t hash_block;
 	unsigned int offset;
+	struct bio *bio = dm_bio_from_per_bio_data(io, v->ti->per_io_data_size);
 
 	verity_hash_at_level(v, block, level, &hash_block, &offset);
 
@@ -307,8 +309,10 @@ static int verity_verify_level(struct dm_verity *v, struct dm_verity_io *io,
 			 */
 			return -EAGAIN;
 		}
-	} else
-		data = dm_bufio_read(v->bufio, hash_block, &buf);
+	} else {
+		data = dm_bufio_read_with_ioprio(v->bufio, hash_block,
+						&buf, bio_prio(bio));
+	}
 
 	if (IS_ERR(data))
 		return PTR_ERR(data);
@@ -482,6 +486,63 @@ int verity_for_bv_block(struct dm_verity *v, struct dm_verity_io *io,
 	return 0;
 }
 
+static int verity_recheck_copy(struct dm_verity *v, struct dm_verity_io *io,
+			       u8 *data, size_t len)
+{
+	memcpy(data, io->recheck_buffer, len);
+	io->recheck_buffer += len;
+
+	return 0;
+}
+
+static noinline int verity_recheck(struct dm_verity *v, struct dm_verity_io *io,
+				   struct bvec_iter start, sector_t cur_block)
+{
+	struct page *page;
+	void *buffer;
+	int r;
+	struct dm_io_request io_req;
+	struct dm_io_region io_loc;
+
+	page = mempool_alloc(&v->recheck_pool, GFP_NOIO);
+	buffer = page_to_virt(page);
+
+	io_req.bi_opf = REQ_OP_READ;
+	io_req.mem.type = DM_IO_KMEM;
+	io_req.mem.ptr.addr = buffer;
+	io_req.notify.fn = NULL;
+	io_req.client = v->io;
+	io_loc.bdev = v->data_dev->bdev;
+	io_loc.sector = cur_block << (v->data_dev_block_bits - SECTOR_SHIFT);
+	io_loc.count = 1 << (v->data_dev_block_bits - SECTOR_SHIFT);
+	r = dm_io(&io_req, 1, &io_loc, NULL, IOPRIO_DEFAULT);
+	if (unlikely(r))
+		goto free_ret;
+
+	r = verity_hash(v, verity_io_hash_req(v, io), buffer,
+			1 << v->data_dev_block_bits,
+			verity_io_real_digest(v, io), true);
+	if (unlikely(r))
+		goto free_ret;
+
+	if (memcmp(verity_io_real_digest(v, io),
+		   verity_io_want_digest(v, io), v->digest_size)) {
+		r = -EIO;
+		goto free_ret;
+	}
+
+	io->recheck_buffer = buffer;
+	r = verity_for_bv_block(v, io, &start, verity_recheck_copy);
+	if (unlikely(r))
+		goto free_ret;
+
+	r = 0;
+free_ret:
+	mempool_free(page, &v->recheck_pool);
+
+	return r;
+}
+
 static int verity_bv_zero(struct dm_verity *v, struct dm_verity_io *io,
 			  u8 *data, size_t len)
 {
@@ -508,9 +569,7 @@ static int verity_verify_io(struct dm_verity_io *io)
 {
 	bool is_zero;
 	struct dm_verity *v = io->v;
-#if defined(CONFIG_DM_VERITY_FEC)
 	struct bvec_iter start;
-#endif
 	struct bvec_iter iter_copy;
 	struct bvec_iter *iter;
 	struct crypto_wait wait;
@@ -561,10 +620,7 @@ static int verity_verify_io(struct dm_verity_io *io)
 		if (unlikely(r < 0))
 			return r;
 
-#if defined(CONFIG_DM_VERITY_FEC)
-		if (verity_fec_is_enabled(v))
-			start = *iter;
-#endif
+		start = *iter;
 		r = verity_for_io_block(v, io, iter, &wait);
 		if (unlikely(r < 0))
 			return r;
@@ -586,6 +642,10 @@ static int verity_verify_io(struct dm_verity_io *io)
 			 * tasklet since it may sleep, so fallback to work-queue.
 			 */
 			return -EAGAIN;
+		} else if (verity_recheck(v, io, start, cur_block) == 0) {
+			if (v->validated_blocks)
+				set_bit(cur_block, v->validated_blocks);
+			continue;
 #if defined(CONFIG_DM_VERITY_FEC)
 		} else if (verity_fec_decode(v, io, DM_VERITY_BLOCK_TYPE_DATA,
 					     cur_block, NULL, &start) == 0) {
@@ -645,23 +705,6 @@ static void verity_work(struct work_struct *w)
 	verity_finish_io(io, errno_to_blk_status(verity_verify_io(io)));
 }
 
-static void verity_tasklet(unsigned long data)
-{
-	struct dm_verity_io *io = (struct dm_verity_io *)data;
-	int err;
-
-	io->in_tasklet = true;
-	err = verity_verify_io(io);
-	if (err == -EAGAIN || err == -ENOMEM) {
-		/* fallback to retrying with work-queue */
-		INIT_WORK(&io->work, verity_work);
-		queue_work(io->v->verify_wq, &io->work);
-		return;
-	}
-
-	verity_finish_io(io, errno_to_blk_status(err));
-}
-
 static void verity_end_io(struct bio *bio)
 {
 	struct dm_verity_io *io = bio->bi_private;
@@ -674,13 +717,8 @@ static void verity_end_io(struct bio *bio)
 		return;
 	}
 
-	if (static_branch_unlikely(&use_tasklet_enabled) && io->v->use_tasklet) {
-		tasklet_init(&io->tasklet, verity_tasklet, (unsigned long)io);
-		tasklet_schedule(&io->tasklet);
-	} else {
-		INIT_WORK(&io->work, verity_work);
-		queue_work(io->v->verify_wq, &io->work);
-	}
+	INIT_WORK(&io->work, verity_work);
+	queue_work(io->v->verify_wq, &io->work);
 }
 
 /*
@@ -718,14 +756,16 @@ static void verity_prefetch_io(struct work_struct *work)
 				hash_block_end = v->hash_blocks - 1;
 		}
 no_prefetch_cluster:
-		dm_bufio_prefetch(v->bufio, hash_block_start,
-				  hash_block_end - hash_block_start + 1);
+		dm_bufio_prefetch_with_ioprio(v->bufio, hash_block_start,
+					hash_block_end - hash_block_start + 1,
+					pw->ioprio);
 	}
 
 	kfree(pw);
 }
 
-static void verity_submit_prefetch(struct dm_verity *v, struct dm_verity_io *io)
+static void verity_submit_prefetch(struct dm_verity *v, struct dm_verity_io *io,
+				   unsigned short ioprio)
 {
 	sector_t block = io->block;
 	unsigned int n_blocks = io->n_blocks;
@@ -753,6 +793,7 @@ static void verity_submit_prefetch(struct dm_verity *v, struct dm_verity_io *io)
 	pw->v = v;
 	pw->block = block;
 	pw->n_blocks = n_blocks;
+	pw->ioprio = ioprio;
 	queue_work(v->verify_wq, &pw->work);
 }
 
@@ -795,7 +836,7 @@ static int verity_map(struct dm_target *ti, struct bio *bio)
 
 	verity_fec_init_io(io);
 
-	verity_submit_prefetch(v, io);
+	verity_submit_prefetch(v, io, bio_prio(bio));
 
 	submit_bio_noacct(bio);
 
@@ -962,6 +1003,10 @@ static void verity_dtr(struct dm_target *ti)
 
 	if (v->verify_wq)
 		destroy_workqueue(v->verify_wq);
+
+	mempool_exit(&v->recheck_pool);
+	if (v->io)
+		dm_io_client_destroy(v->io);
 
 	if (v->bufio)
 		dm_bufio_client_destroy(v->bufio);
@@ -1400,6 +1445,20 @@ static int verity_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		hash_position += s;
 	}
 	v->hash_blocks = hash_position;
+
+	r = mempool_init_page_pool(&v->recheck_pool, 1, 0);
+	if (unlikely(r)) {
+		ti->error = "Cannot allocate mempool";
+		goto bad;
+	}
+
+	v->io = dm_io_client_create();
+	if (IS_ERR(v->io)) {
+		r = PTR_ERR(v->io);
+		v->io = NULL;
+		ti->error = "Cannot allocate dm io";
+		goto bad;
+	}
 
 	v->bufio = dm_bufio_client_create(v->hash_dev->bdev,
 		1 << v->hash_dev_block_bits, 1, sizeof(struct buffer_aux),

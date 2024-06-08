@@ -1,7 +1,8 @@
 . ${ROOT_DIR}/${KERNEL_DIR}/build.config.constants
 
-KMI_GENERATION=0
+KMI_GENERATION=3
 
+BRANCH=android15-6.6
 LLVM=1
 DEPMOD=depmod
 CLANG_PREBUILT_BIN=prebuilts/clang/host/linux-x86/clang-${CLANG_VERSION}/bin

@@ -1248,7 +1248,7 @@ impl Thread {
         T: FnOnce(&Arc<Self>, &BinderTransactionDataSg) -> BinderResult,
     {
         if let Err(err) = inner(self, tr) {
-            if err.reply != BR_TRANSACTION_COMPLETE {
+            if err.should_pr_warn() {
                 let mut ee = self.inner.lock().extended_error;
                 ee.command = err.reply;
                 ee.param = err.as_errno();
@@ -1475,17 +1475,13 @@ impl Thread {
         let initial_len = writer.len();
         while writer.len() >= size_of::<bindings::binder_transaction_data_secctx>() + 4 {
             match getter(self, wait && initial_len == writer.len()) {
-                Ok(Some(work)) => {
-                    let work_ty = work.debug_name();
-                    match work.into_arc().do_work(self, &mut writer) {
-                        Ok(true) => {}
-                        Ok(false) => break,
-                        Err(err) => {
-                            pr_warn!("Failure inside do_work of type {}.", work_ty);
-                            return Err(err);
-                        }
+                Ok(Some(work)) => match work.into_arc().do_work(self, &mut writer) {
+                    Ok(true) => {}
+                    Ok(false) => break,
+                    Err(err) => {
+                        return Err(err);
                     }
-                }
+                },
                 Ok(None) => {
                     break;
                 }
@@ -1633,6 +1629,9 @@ impl DeliverToRead for ThreadError {
         writer.write(&code)?;
         Ok(true)
     }
+
+    fn cancel(self: DArc<Self>) {}
+    fn on_thread_selected(&self, _thread: &Thread) {}
 
     fn should_sync_wakeup(&self) -> bool {
         false

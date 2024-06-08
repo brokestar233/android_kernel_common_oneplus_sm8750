@@ -5,12 +5,14 @@
  */
 
 #include <nvhe/alloc.h>
+#include <nvhe/alloc_mgt.h>
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
 
 #include <linux/build_bug.h>
 #include <linux/hash.h>
+#include <linux/kvm_host.h>
 #include <linux/list.h>
 
 #define MIN_ALLOC 8UL
@@ -158,7 +160,7 @@ static void hyp_allocator_unmap(struct hyp_allocator *allocator,
 		phys_addr_t pa = __pkvm_private_range_pa((void *)__va);
 		void *page = hyp_phys_to_virt(pa);
 
-		push_hyp_memcache(mc, page, hyp_virt_to_phys);
+		push_hyp_memcache(mc, page, hyp_virt_to_phys, 0);
 		__va += PAGE_SIZE;
 	}
 
@@ -189,13 +191,15 @@ static int hyp_allocator_map(struct hyp_allocator *allocator,
 
 	while (nr_pages < (size >> PAGE_SHIFT)) {
 		void *page;
+		unsigned long order;
 
-		page = pop_hyp_memcache(mc, hyp_phys_to_virt);
-		WARN_ON(!page);
+		page = pop_hyp_memcache(mc, hyp_phys_to_virt, &order);
+		/* We only expect 1 page at a time for now. */
+		WARN_ON(!page || order);
 
 		ret = __hyp_allocator_map(va, hyp_virt_to_phys(page));
 		if (ret) {
-			push_hyp_memcache(mc, page, hyp_virt_to_phys);
+			push_hyp_memcache(mc, page, hyp_virt_to_phys, 0);
 			break;
 		}
 		va += PAGE_SIZE;
@@ -372,6 +376,7 @@ static size_t chunk_dec_map(struct chunk_hdr *chunk,
 
 	end = chunk_unmapped_region(chunk);
 	reclaimable = min(end - start, reclaim_target);
+	start = end - reclaimable;
 
 	hyp_allocator_unmap(allocator, start, reclaimable);
 
@@ -598,6 +603,31 @@ end:
 	return ret ? NULL : chunk_data(chunk);
 }
 
+static size_t hyp_alloc_size(void *addr)
+{
+	struct hyp_allocator *allocator = &hyp_allocator;
+	char *chunk_data = (char *)addr;
+	struct chunk_hdr *chunk;
+	size_t size;
+
+	hyp_spin_lock(&allocator->lock);
+	chunk = chunk_get(container_of(chunk_data, struct chunk_hdr, data));
+	size = chunk->alloc_size;
+	hyp_spin_unlock(&allocator->lock);
+
+	return size;
+}
+
+void *hyp_alloc_account(size_t size, struct kvm *host_kvm)
+{
+	void *addr = hyp_alloc(size);
+
+	if (addr)
+		atomic64_add(hyp_alloc_size(addr),
+			     &host_kvm->stat.protected_hyp_mem);
+	return addr;
+}
+
 void hyp_free(void *addr)
 {
 	struct chunk_hdr *chunk, *prev_chunk, *next_chunk;
@@ -620,6 +650,15 @@ void hyp_free(void *addr)
 		WARN_ON(chunk_merge(chunk, allocator));
 
 	hyp_spin_unlock(&allocator->lock);
+}
+
+void hyp_free_account(void *addr, struct kvm *host_kvm)
+{
+	size_t size = hyp_alloc_size(addr);
+
+	hyp_free(addr);
+
+	atomic64_sub(size, &host_kvm->stat.protected_hyp_mem);
 }
 
 /*
@@ -715,9 +754,11 @@ void hyp_alloc_reclaim(struct kvm_hyp_memcache *mc, int target)
 		alloc_mc = per_cpu_ptr(&hyp_allocator_mc, cpu);
 
 		while (alloc_mc->nr_pages) {
-			void *page = pop_hyp_memcache(alloc_mc, hyp_phys_to_virt);
+			unsigned long order;
+			void *page = pop_hyp_memcache(alloc_mc, hyp_phys_to_virt, &order);
 
-			push_hyp_memcache(mc, page, hyp_virt_to_phys);
+			WARN_ON(order);
+			push_hyp_memcache(mc, page, hyp_virt_to_phys, 0);
 			WARN_ON(__pkvm_hyp_donate_host(hyp_virt_to_pfn(page), 1));
 
 			target--;
@@ -741,10 +782,12 @@ void hyp_alloc_reclaim(struct kvm_hyp_memcache *mc, int target)
 
 	alloc_mc = this_cpu_ptr(&hyp_allocator_mc);
 	while (alloc_mc->nr_pages) {
-		void *page = pop_hyp_memcache(alloc_mc, hyp_phys_to_virt);
+		unsigned long order;
+		void *page = pop_hyp_memcache(alloc_mc, hyp_phys_to_virt, &order);
 
+		WARN_ON(order);
 		memset(page, 0, PAGE_SIZE);
-		push_hyp_memcache(mc, page, hyp_virt_to_phys);
+		push_hyp_memcache(mc, page, hyp_virt_to_phys, 0);
 		WARN_ON(__pkvm_hyp_donate_host(hyp_virt_to_pfn(page), 1));
 	}
 done:
@@ -797,3 +840,9 @@ u8 hyp_alloc_missing_donations(void)
 
 	return __missing;
 }
+
+struct hyp_mgt_allocator_ops hyp_alloc_ops = {
+	.refill = hyp_alloc_refill,
+	.reclaim = hyp_alloc_reclaim,
+	.reclaimable = hyp_alloc_reclaimable,
+};

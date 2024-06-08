@@ -260,6 +260,16 @@ enum kvm_pgtable_prot {
  */
 #define KVM_INVALID_PTE_LOCKED		BIT(10)
 
+/* This corresponds to page-table locking order */
+enum pkvm_component_id {
+	PKVM_ID_HOST,
+	PKVM_ID_HYP,
+	PKVM_ID_FFA,
+	PKVM_ID_GUEST,
+	PKVM_ID_PROTECTED,
+	PKVM_ID_MAX = PKVM_ID_PROTECTED,
+};
+
 /* Indicates a valid MMIO mapping registered via ioguard. */
 #define KVM_INVALID_PTE_MMIO_NOTE	BIT(11)
 
@@ -281,7 +291,7 @@ enum kvm_pgtable_prot {
 
 #define KVM_HOST_S2_DEFAULT_MMIO_PTE		\
 	(KVM_HOST_S2_DEFAULT_MEM_PTE |		\
-	KVM_PTE_LEAF_ATTR_HI_S2_XN)
+	FIELD_PREP(KVM_PTE_LEAF_ATTR_HI_S2_XN, KVM_PTE_LEAF_ATTR_HI_S2_XN_XN))
 
 #define PAGE_HYP		KVM_PGTABLE_PROT_RW
 #define PAGE_HYP_EXEC		(KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_X)
@@ -455,6 +465,28 @@ struct kvm_pgtable {
 	struct kvm_s2_mmu			*mmu;
 	enum kvm_pgtable_stage2_flags		flags;
 	struct kvm_pgtable_pte_ops		*pte_ops;
+};
+
+/**
+ * struct kvm_pgtable_snapshot - Snapshot page-table.
+ * @pgtable:		The page-table configuration.
+ * @mc:			Memcache used for pagetable pages allocation.
+ * @pgd_hva:		Host virtual address of a physically contiguous buffer
+ *			used for storing the PGD.
+ * @pgd_pages:		The size of the phyisically contiguous buffer in pages.
+ * @used_pages_hva:	Host virtual address of a physically contiguous buffer
+ *			used for storing the consumed pages from the memcache.
+ * @num_used_pages		The size of the used buffer in pages.
+ * @used_pages_idx		The current index of the used pages array.
+ */
+struct kvm_pgtable_snapshot {
+	struct kvm_pgtable			pgtable;
+	struct kvm_hyp_memcache			mc;
+	void					*pgd_hva;
+	size_t					pgd_pages;
+	phys_addr_t				*used_pages_hva;
+	size_t					num_used_pages;
+	size_t					used_pages_idx;
 };
 
 /**
@@ -775,6 +807,28 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 				   enum kvm_pgtable_prot prot);
 
 /**
+ * __kvm_pgtable_stage2_relax_perms() - Relax the permissions enforced by a
+ *				        page-table entry.
+ * @pgt:	Page-table structure initialised by kvm_pgtable_stage2_init*().
+ * @addr:	Intermediate physical address to identify the page-table entry.
+ * @prot:	Additional permissions to grant for the mapping.
+ * @flags:	Flags for the page-table walker
+ *
+ * The offset of @addr within a page is ignored.
+ *
+ * If there is a valid, leaf page-table entry used to translate @addr, then
+ * relax the permissions in that entry according to the read, write and
+ * execute permissions specified by @prot. No permissions are removed, and
+ * TLB invalidation is performed after updating the entry. Software bits cannot
+ * be set or cleared using kvm_pgtable_stage2_relax_perms().
+ *
+ * Return: 0 on success, negative error code on failure.
+ */
+int __kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
+				     enum kvm_pgtable_prot prot,
+				     enum kvm_pgtable_walk_flags flags);
+
+/**
  * kvm_pgtable_stage2_flush_range() - Clean and invalidate data cache to Point
  * 				      of Coherency for guest stage-2 address
  *				      range.
@@ -881,4 +935,24 @@ enum kvm_pgtable_prot kvm_pgtable_hyp_pte_prot(kvm_pte_t pte);
  */
 void kvm_tlb_flush_vmid_range(struct kvm_s2_mmu *mmu,
 				phys_addr_t addr, size_t size);
+
+#ifdef CONFIG_NVHE_EL2_DEBUG
+/**
+ * kvm_pgtable_stage2_snapshot() - Snapshot the pagetable
+ *
+ * @dest_pgt:	Destination pagetable
+ * @src_pgt:	Source pagetable
+ * @pgd_len:	The size of the PGD
+ */
+int kvm_pgtable_stage2_snapshot(struct kvm_pgtable_snapshot *dest_pgt,
+				struct kvm_pgtable *src_pgt,
+				size_t pgd_len);
+#else
+static inline int kvm_pgtable_stage2_snapshot(struct kvm_pgtable_snapshot *dest_pgt,
+					      struct kvm_pgtable *src_pgt,
+					      size_t pgd_len)
+{
+	return -EPERM;
+}
+#endif	/* CONFIG_NVHE_EL2_DEBUG */
 #endif	/* __ARM64_KVM_PGTABLE_H__ */

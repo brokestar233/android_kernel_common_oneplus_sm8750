@@ -32,6 +32,7 @@ struct xhci_sideband {
 	struct xhci_virt_device         *vdev;
 	struct xhci_virt_ep             *eps[EP_CTX_PER_DEV];
 	struct xhci_interrupter         *ir;
+	struct mutex			mutex;
 };
 
 struct xhci_sideband *
@@ -53,9 +54,11 @@ xhci_sideband_get_endpoint_buffer(struct xhci_sideband *sb,
 struct sg_table *
 xhci_sideband_get_event_buffer(struct xhci_sideband *sb);
 
+int xhci_sideband_enable_interrupt(struct xhci_sideband *sb, u32 imod_interval);
+
 int
-xhci_sideband_create_interrupter(struct xhci_sideband *sb,
-				 int intr_num);
+xhci_sideband_create_interrupter(struct xhci_sideband *sb, int num_seg,
+				 int intr_num, bool ip_autoclear);
 
 void
 xhci_sideband_remove_interrupter(struct xhci_sideband *sb);

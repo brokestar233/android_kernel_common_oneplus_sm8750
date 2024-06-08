@@ -67,7 +67,6 @@
 #include <linux/task_work.h>
 #include <linux/sizes.h>
 #include <linux/ktime.h>
-#include <linux/android_vendor.h>
 
 #include <uapi/linux/sched/types.h>
 #include <uapi/linux/android/binder.h>
@@ -76,6 +75,7 @@
 
 #include "binder_internal.h"
 #include "binder_trace.h"
+#include "binder_pick_impl.h"
 #include <trace/hooks/binder.h>
 
 static HLIST_HEAD(binder_deferred_list);
@@ -482,6 +482,16 @@ binder_enqueue_thread_work_ilocked(struct binder_thread *thread,
 {
 	WARN_ON(!list_empty(&thread->waiting_thread_node));
 	binder_enqueue_work_ilocked(work, &thread->todo);
+
+	/* (e)poll-based threads require an explicit wakeup signal when
+	 * queuing their own work; they rely on these events to consume
+	 * messages without I/O block. Without it, threads risk waiting
+	 * indefinitely without handling the work.
+	 */
+	if (thread->looper & BINDER_LOOPER_STATE_POLL &&
+	    thread->pid == current->pid && !thread->process_todo)
+		wake_up_interruptible_sync(&thread->wait);
+
 	thread->process_todo = true;
 }
 
@@ -581,7 +591,6 @@ static void binder_wakeup_poll_threads_ilocked(struct binder_proc *proc,
 		thread = rb_entry(n, struct binder_thread, rb_node);
 		if (thread->looper & BINDER_LOOPER_STATE_POLL &&
 		    binder_available_for_proc_work_ilocked(thread)) {
-			trace_android_vh_binder_wakeup_ilocked(thread->task, sync, proc);
 			if (sync)
 				wake_up_interruptible_sync(&thread->wait);
 			else
@@ -641,7 +650,6 @@ static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
 	assert_spin_locked(&proc->inner_lock);
 
 	if (thread) {
-		trace_android_vh_binder_wakeup_ilocked(thread->task, sync, proc);
 		if (sync)
 			wake_up_interruptible_sync(&thread->wait);
 		else
@@ -1296,6 +1304,7 @@ static struct binder_ref *binder_get_ref_for_node_olocked(
 		     "%d new ref %d desc %d for node %d\n",
 		      proc->pid, new_ref->data.debug_id, new_ref->data.desc,
 		      node->debug_id);
+	trace_android_vh_binder_new_ref(proc->tsk, new_ref->data.desc, new_ref->node->debug_id);
 	binder_node_unlock(node);
 	return new_ref;
 }
@@ -1463,6 +1472,8 @@ err_no_ref:
  */
 static void binder_free_ref(struct binder_ref *ref)
 {
+	trace_android_vh_binder_del_ref(ref->proc ? ref->proc->tsk : NULL,
+					ref->data.desc);
 	if (ref->node)
 		binder_free_node(ref->node);
 	kfree(ref->death);
@@ -1880,8 +1891,10 @@ static size_t binder_get_object(struct binder_proc *proc,
 	size_t object_size = 0;
 
 	read_size = min_t(size_t, sizeof(*object), buffer->data_size - offset);
-	if (offset > buffer->data_size || read_size < sizeof(*hdr))
+	if (offset > buffer->data_size || read_size < sizeof(*hdr) ||
+	    !IS_ALIGNED(offset, sizeof(u32)))
 		return 0;
+
 	if (u) {
 		if (copy_from_user(object, u + offset, read_size))
 			return 0;
@@ -2968,6 +2981,10 @@ static int binder_proc_transaction(struct binder_transaction *t,
 
 	if (!thread && !pending_async)
 		thread = binder_select_thread_ilocked(proc);
+
+	trace_android_vh_binder_proc_transaction(current, proc->tsk,
+		thread ? thread->task : NULL, node->debug_id, t->code,
+		pending_async);
 
 	if (thread) {
 		binder_transaction_priority(thread, t, node);
@@ -5912,7 +5929,7 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	}
 	hlist_add_head(&proc->proc_node, &binder_procs);
 	mutex_unlock(&binder_procs_lock);
-	trace_android_vh_binder_preset(&binder_procs, &binder_procs_lock);
+	trace_android_vh_binder_preset(&binder_procs, &binder_procs_lock, proc);
 	if (binder_debugfs_dir_entry_proc && !existing_pid) {
 		char strbuf[11];
 
@@ -6810,49 +6827,6 @@ static int __init init_binder_device(const char *name)
 
 	return ret;
 }
-
-bool binder_use_rust;
-bool binder_driver_initialized;
-
-static int binder_param_set(const char *buffer, const struct kernel_param *kp)
-{
-	if (binder_driver_initialized)
-		return -EOPNOTSUPP;
-
-	if (!strcmp(buffer, "rust"))
-		binder_use_rust = true;
-	else if (!strcmp(buffer, "c"))
-		binder_use_rust = false;
-	else
-		return -EINVAL;
-
-	return 0;
-}
-
-static int binder_param_get(char *buffer, const struct kernel_param *kp)
-{
-	// The kernel_param_ops buffer is 4k bytes, so this will not overflow.
-	if (binder_use_rust) {
-		buffer[0] = 'r';
-		buffer[1] = 'u';
-		buffer[2] = 's';
-		buffer[3] = 't';
-		buffer[4] = '\n';
-		buffer[5] = 0;
-	} else {
-		buffer[0] = 'c';
-		buffer[1] = '\n';
-		buffer[2] = 0;
-	}
-	return strlen(buffer);
-}
-
-static const struct kernel_param_ops binder_param_ops = {
-	.set = binder_param_set,
-	.get = binder_param_get,
-};
-
-module_param_cb(impl, &binder_param_ops, NULL, 0444);
 
 static int __init binder_init(void)
 {

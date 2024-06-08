@@ -10,7 +10,6 @@
 #include <linux/sched/debug.h>
 #include <linux/errno.h>
 #include <trace/events/lock.h>
-
 #include <trace/hooks/dtask.h>
 
 /*

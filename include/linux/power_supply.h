@@ -17,6 +17,7 @@
 #include <linux/leds.h>
 #include <linux/spinlock.h>
 #include <linux/notifier.h>
+#include <linux/android_kabi.h>
 
 /*
  * All voltages, currents, charges, energies, time and temperatures in uV,
@@ -242,6 +243,8 @@ struct power_supply_config {
 
 	char **supplied_to;
 	size_t num_supplicants;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 /* Description of power supply */
@@ -283,6 +286,8 @@ struct power_supply_desc {
 	bool no_thermal;
 	/* For APM emulation, think legacy userspace. */
 	int use_for_apm;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 struct power_supply {
@@ -307,6 +312,7 @@ struct power_supply {
 	bool initialized;
 	bool removing;
 	atomic_t use_cnt;
+	struct power_supply_battery_info *battery_info;
 #ifdef CONFIG_THERMAL
 	struct thermal_zone_device *tzd;
 	struct thermal_cooling_device *tcd;
@@ -324,6 +330,8 @@ struct power_supply {
 	struct led_trigger *charging_blink_full_solid_trig;
 	char *charging_blink_full_solid_trig_name;
 #endif
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 /*
@@ -343,6 +351,7 @@ struct power_supply_info {
 	int energy_full_design;
 	int energy_empty_design;
 	int use_for_apm;
+	ANDROID_KABI_RESERVE(1);
 };
 
 struct power_supply_battery_ocv_table {
@@ -770,6 +779,7 @@ struct power_supply_battery_info {
 	int vbat2ri_charging_size;
 	int bti_resistance_ohm;
 	int bti_resistance_tolerance;
+	ANDROID_KABI_RESERVE(1);
 };
 
 extern struct blocking_notifier_head power_supply_notifier;
@@ -807,10 +817,17 @@ devm_power_supply_get_by_phandle(struct device *dev, const char *property)
 { return NULL; }
 #endif /* CONFIG_OF */
 
+extern const enum power_supply_property power_supply_battery_info_properties[];
+extern const size_t power_supply_battery_info_properties_size;
 extern int power_supply_get_battery_info(struct power_supply *psy,
 					 struct power_supply_battery_info **info_out);
 extern void power_supply_put_battery_info(struct power_supply *psy,
 					  struct power_supply_battery_info *info);
+extern bool power_supply_battery_info_has_prop(struct power_supply_battery_info *info,
+					       enum power_supply_property psp);
+extern int power_supply_battery_info_get_prop(struct power_supply_battery_info *info,
+					      enum power_supply_property psp,
+					      union power_supply_propval *val);
 extern int power_supply_ocv2cap_simple(struct power_supply_battery_ocv_table *table,
 				       int table_len, int ocv);
 extern struct power_supply_battery_ocv_table *

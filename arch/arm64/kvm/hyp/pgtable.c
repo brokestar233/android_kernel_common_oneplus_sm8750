@@ -1011,8 +1011,17 @@ static void stage2_map_prefault_idmap(struct kvm_pgtable_pte_ops *pte_ops,
 	for (i = 0; i < PTRS_PER_PTE; ++i, ++ptep, pa += granule) {
 		kvm_pte_t pte = kvm_init_valid_leaf_pte(
 			pa, block_pte, ctx->level + 1);
-		/* Skip ptes in the range being modified by the caller. */
-		if ((pa < ctx->addr) || (pa >= ctx->end)) {
+		/*
+		 * Skip ptes in the range being modified by the caller if we're
+		 * installing last level entries. Otherwise, we need to
+		 * temporarily put in a valid mapping to make sure the
+		 * prefaulting logic is triggered on the next
+		 * stage2_map_walk_leaf(). This adds an unnecessary TLBI as we'll
+		 * presumably re-break the freshly installed block, but that
+		 * should happen very infrequently.
+		 */
+		if ((ctx->level < (KVM_PGTABLE_MAX_LEVELS - 2)) ||
+				(pa < ctx->addr) || (pa >= ctx->end)) {
 			/* We can write non-atomically: ptep isn't yet live. */
 			*ptep = pte;
 		}
@@ -1084,7 +1093,12 @@ static int stage2_coalesce_walk_table_post(const struct kvm_pgtable_visit_ctx *c
 	 * of the page table page.
 	 */
 	if (mm_ops->page_count(childp) == 1) {
-		stage2_unmap_put_pte(ctx, data->mmu, mm_ops);
+		u64 size = kvm_granule_size(ctx->level);
+		u64 addr = ALIGN_DOWN(ctx->addr, size);
+
+		kvm_clear_pte(ctx->ptep);
+		kvm_tlb_flush_vmid_range(data->mmu, addr, size);
+		mm_ops->put_page(ctx->ptep);
 		mm_ops->put_page(childp);
 	}
 
@@ -1416,6 +1430,15 @@ bool kvm_pgtable_stage2_test_clear_young(struct kvm_pgtable *pgt, u64 addr,
 int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 				   enum kvm_pgtable_prot prot)
 {
+	return __kvm_pgtable_stage2_relax_perms(pgt, addr, prot,
+						KVM_PGTABLE_WALK_HANDLE_FAULT |
+						KVM_PGTABLE_WALK_SHARED);
+}
+
+int __kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
+				     enum kvm_pgtable_prot prot,
+				     enum kvm_pgtable_walk_flags flags)
+{
 	int ret;
 	u32 level;
 	kvm_pte_t set = 0, clr = 0;
@@ -1432,9 +1455,7 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
 	if (prot & KVM_PGTABLE_PROT_X)
 		clr |= KVM_PTE_LEAF_ATTR_HI_S2_XN;
 
-	ret = stage2_update_leaf_attrs(pgt, addr, 1, set, clr, NULL, &level,
-				       KVM_PGTABLE_WALK_HANDLE_FAULT |
-				       KVM_PGTABLE_WALK_SHARED);
+	ret = stage2_update_leaf_attrs(pgt, addr, 1, set, clr, NULL, &level, flags);
 	if (!ret)
 		kvm_call_hyp(__kvm_tlb_flush_vmid_ipa_nsh, pgt->mmu, addr, level);
 	return ret;
@@ -1724,3 +1745,53 @@ void kvm_pgtable_stage2_free_unlinked(struct kvm_pgtable_mm_ops *mm_ops,
 	WARN_ON(mm_ops->page_count(pgtable) != 1);
 	mm_ops->put_page(pgtable);
 }
+
+#ifdef CONFIG_NVHE_EL2_DEBUG
+static int snapshot_walker(const struct kvm_pgtable_visit_ctx *ctx,
+			   enum kvm_pgtable_walk_flags visit)
+{
+	struct kvm_pgtable_mm_ops *mm_ops = ctx->mm_ops;
+	void *copy_table, *original_addr;
+	kvm_pte_t new = ctx->old;
+
+	if (kvm_pte_table(ctx->old, ctx->level)) {
+		copy_table = mm_ops->zalloc_page(ctx->arg);
+		if (!copy_table)
+			return -ENOMEM;
+
+		original_addr = kvm_pte_follow(ctx->old, mm_ops);
+		WARN_ON(!PAGE_ALIGNED(original_addr));
+
+		memcpy(copy_table, original_addr, PAGE_SIZE);
+		new = kvm_init_table_pte(copy_table, mm_ops);
+	}
+
+	*ctx->ptep = new;
+
+	return 0;
+}
+
+int kvm_pgtable_stage2_snapshot(struct kvm_pgtable_snapshot *dest_pgt,
+				struct kvm_pgtable *src_pgt,
+				size_t pgd_len)
+{
+	struct kvm_pgtable *to_pgt = &dest_pgt->pgtable;
+	struct kvm_pgtable_walker walker = {
+		.cb	= snapshot_walker,
+		.flags	= KVM_PGTABLE_WALK_LEAF |
+			  KVM_PGTABLE_WALK_TABLE_PRE,
+		.arg	= &dest_pgt->mc,
+	};
+
+	if (!to_pgt->pgd || dest_pgt->pgd_pages < (pgd_len >> PAGE_SHIFT))
+		return -EINVAL;
+
+	/*
+	 * Walk the destination pagetable with the original PGD entries from
+	 * the source, then descend into the newly installed leafs.
+	 */
+	memcpy(to_pgt->pgd, src_pgt->pgd, pgd_len);
+
+	return kvm_pgtable_walk(to_pgt, 0, BIT(to_pgt->ia_bits), &walker);
+}
+#endif /* CONFIG_NVHE_EL2_DEBUG */

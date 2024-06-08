@@ -217,6 +217,7 @@ vm_fault_t kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf)
  */
 void kvm_arch_destroy_vm(struct kvm *kvm)
 {
+	kvm_uninit_stage2_mmu(kvm);
 	bitmap_free(kvm->arch.pmu_filter);
 	free_cpumask_var(kvm->arch.supported_cpus);
 
@@ -230,6 +231,10 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 	kvm_unshare_hyp(kvm, kvm + 1);
 
 	kvm_arm_teardown_hypercalls(kvm);
+
+	if (atomic64_read(&kvm->stat.protected_hyp_mem))
+		kvm_err("%lluB of donations to the nVHE hyp are missing\n",
+			atomic64_read(&kvm->stat.protected_hyp_mem));
 }
 
 static int kvm_check_extension(struct kvm *kvm, long ext)
@@ -496,10 +501,13 @@ void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 	if (vcpu_has_run_once(vcpu) && unlikely(!irqchip_in_kernel(vcpu->kvm)))
 		static_branch_dec(&userspace_irqchip_in_use);
 
-	if (is_protected_kvm_enabled())
-		free_hyp_memcache(&vcpu->arch.pkvm_memcache, 0);
-	else
+	if (is_protected_kvm_enabled()) {
+		atomic64_sub(vcpu->arch.stage2_mc.nr_pages << PAGE_SHIFT,
+			     &vcpu->kvm->stat.protected_hyp_mem);
+		free_hyp_memcache(&vcpu->arch.stage2_mc);
+	} else {
 		kvm_mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
+	}
 
 	kvm_timer_vcpu_terminate(vcpu);
 	kvm_pmu_vcpu_destroy(vcpu);
@@ -2267,7 +2275,7 @@ static void kvm_hyp_init_symbols(void)
 static unsigned long kvm_hyp_shrinker_count(struct shrinker *shrinker,
 					    struct shrink_control *sc)
 {
-	unsigned long reclaimable = kvm_call_hyp_nvhe(__pkvm_hyp_alloc_reclaimable);
+	unsigned long reclaimable = kvm_call_hyp_nvhe(__pkvm_hyp_alloc_mgt_reclaimable);
 
 	return reclaimable ? reclaimable : SHRINK_EMPTY;
 }
@@ -2275,7 +2283,7 @@ static unsigned long kvm_hyp_shrinker_count(struct shrinker *shrinker,
 static unsigned long kvm_hyp_shrinker_scan(struct shrinker *shrinker,
 					   struct shrink_control *sc)
 {
-	return __pkvm_reclaim_hyp_alloc(sc->nr_to_scan);
+	return __pkvm_reclaim_hyp_alloc_mgt(sc->nr_to_scan);
 }
 
 static struct shrinker kvm_hyp_shrinker = {

@@ -797,12 +797,14 @@ void icc_put(struct icc_path *path)
 
 	mutex_lock(&icc_lock);
 	mutex_lock(&icc_bw_lock);
+
 	for (i = 0; i < path->num_nodes; i++) {
 		node = path->reqs[i].node;
 		hlist_del(&path->reqs[i].req_node);
 		if (!WARN_ON(!node->provider->users))
 			node->provider->users--;
 	}
+
 	mutex_unlock(&icc_bw_lock);
 	mutex_unlock(&icc_lock);
 

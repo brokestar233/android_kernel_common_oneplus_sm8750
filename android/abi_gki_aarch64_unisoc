@@ -8,6 +8,7 @@
   __check_object_size
   class_create
   class_destroy
+  cpu_busy_with_softirqs
   _dev_err
   device_create
   device_destroy
@@ -93,7 +94,10 @@
   __traceiter_android_rvh_update_deadline
   __traceiter_android_rvh_update_misfit_status
   __traceiter_android_rvh_wake_up_new_task
+  __traceiter_android_vh_alloc_pages_slowpath
   __traceiter_android_vh_alter_rwsem_list_add
+  __traceiter_android_vh_binder_proc_transaction_finish
+  __traceiter_android_vh_binder_restore_priority
   __traceiter_android_vh_check_uninterruptible_tasks
   __traceiter_android_vh_check_uninterruptible_tasks_dn
   __traceiter_android_vh_cpu_idle_enter
@@ -110,11 +114,13 @@
   __traceiter_android_vh_rwsem_read_wait_start
   __traceiter_android_vh_rwsem_read_wait_finish
   __traceiter_android_vh_rwsem_wake
+  __traceiter_android_vh_rwsem_wake_finish
   __traceiter_android_vh_rwsem_write_wait_start
   __traceiter_android_vh_rwsem_write_wait_finish
   __traceiter_android_vh_sched_show_task
   __traceiter_android_vh_scheduler_tick
   __traceiter_android_vh_setscheduler_uclamp
+  __traceiter_android_vh_sync_txn_recvd
   __traceiter_android_vh_update_topology_flags_workfn
   __traceiter_clock_set_rate
   __traceiter_cpu_frequency_limits
@@ -158,7 +164,10 @@
   __tracepoint_android_rvh_update_deadline
   __tracepoint_android_rvh_update_misfit_status
   __tracepoint_android_rvh_wake_up_new_task
+  __tracepoint_android_vh_alloc_pages_slowpath
   __tracepoint_android_vh_alter_rwsem_list_add
+  __tracepoint_android_vh_binder_proc_transaction_finish
+  __tracepoint_android_vh_binder_restore_priority
   __tracepoint_android_vh_check_uninterruptible_tasks
   __tracepoint_android_vh_check_uninterruptible_tasks_dn
   __tracepoint_android_vh_cpu_idle_enter
@@ -175,11 +184,13 @@
   __tracepoint_android_vh_rwsem_read_wait_start
   __tracepoint_android_vh_rwsem_read_wait_finish
   __tracepoint_android_vh_rwsem_wake
+  __tracepoint_android_vh_rwsem_wake_finish
   __tracepoint_android_vh_rwsem_write_wait_start
   __tracepoint_android_vh_rwsem_write_wait_finish
   __tracepoint_android_vh_sched_show_task
   __tracepoint_android_vh_scheduler_tick
   __tracepoint_android_vh_setscheduler_uclamp
+  __tracepoint_android_vh_sync_txn_recvd
   __tracepoint_android_vh_update_topology_flags_workfn
   __tracepoint_clock_set_rate
   __tracepoint_cpu_frequency_limits
@@ -327,6 +338,23 @@
   bcmp
   memmove
 
+# required by zram.ko
+  bio_add_page
+  bio_alloc_bioset
+  bio_chain
+  bio_init
+  bio_put
+  blkdev_get_by_dev
+  blkdev_put
+  file_path
+  filp_close
+  fs_bio_set
+  kvfree
+  kvmalloc_node
+  rb_prev
+  submit_bio
+  submit_bio_wait
+
 # required by zsmalloc.ko
   __alloc_pages
   __ClearPageMovable
@@ -364,3 +392,9 @@
 # required by iowait.ko
   __traceiter_sched_stat_iowait
   __tracepoint_sched_stat_iowait
+
+# required inode_info.ko
+  __traceiter_mm_filemap_delete_from_page_cache
+  __traceiter_mm_filemap_add_to_page_cache
+  __tracepoint_mm_filemap_delete_from_page_cache
+  __tracepoint_mm_filemap_add_to_page_cache

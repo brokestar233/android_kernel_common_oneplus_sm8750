@@ -422,6 +422,7 @@
   device_release_driver
   device_remove_bin_file
   device_remove_file
+  device_remove_file_self
   device_rename
   __device_reset
   device_set_node
@@ -433,6 +434,22 @@
   device_unregister
   device_wakeup_disable
   device_wakeup_enable
+  devlink_alloc_ns
+  devlink_flash_update_status_notify
+  devlink_fmsg_binary_pair_nest_end
+  devlink_fmsg_binary_pair_nest_start
+  devlink_fmsg_binary_put
+  devlink_free
+  devlink_health_report
+  devlink_health_reporter_create
+  devlink_health_reporter_destroy
+  devlink_health_reporter_priv
+  devlink_health_reporter_state_update
+  devlink_priv
+  devlink_region_create
+  devlink_region_destroy
+  devlink_register
+  devlink_unregister
   _dev_info
   dev_kfree_skb_any_reason
   dev_kfree_skb_irq_reason
@@ -1735,6 +1752,7 @@
   out_of_line_wait_on_bit_timeout
   overflowgid
   overflowuid
+  page_frag_free
   page_pool_alloc_pages
   page_pool_create
   page_pool_destroy
@@ -1770,8 +1788,10 @@
   pci_dev_put
   pci_disable_ats
   pci_disable_device
+  pcie_capability_read_dword
   pci_enable_ats
   pci_find_ext_capability
+  pci_free_irq
   pci_free_irq_vectors
   pci_generic_config_read32
   pci_generic_config_write32
@@ -1792,6 +1812,7 @@
   pci_read_config_word
   __pci_register_driver
   pci_remove_root_bus
+  pci_request_irq
   pci_restore_state
   pci_save_state
   pci_set_master
@@ -1924,6 +1945,7 @@
   __pm_runtime_set_status
   __pm_runtime_suspend
   __pm_runtime_use_autosuspend
+  pm_schedule_suspend
   __pm_stay_awake
   pm_stay_awake
   pm_suspend_default_s2idle
@@ -1989,6 +2011,7 @@
   queue_delayed_work_on
   queue_work_on
   radix_tree_delete
+  radix_tree_gang_lookup
   radix_tree_insert
   radix_tree_lookup
   radix_tree_maybe_preload
@@ -2621,24 +2644,34 @@
   __traceiter_android_rvh_after_enqueue_task
   __traceiter_android_rvh_can_migrate_task
   __traceiter_android_rvh_check_preempt_wakeup
+  __traceiter_android_rvh_commit_creds
   __traceiter_android_rvh_cpu_cgroup_attach
   __traceiter_android_rvh_cpu_cgroup_online
   __traceiter_android_rvh_cpu_overutilized
+  __traceiter_android_rvh_cpu_util_cfs_boost
   __traceiter_android_rvh_dequeue_task
   __traceiter_android_rvh_dequeue_task_fair
   __traceiter_android_rvh_enqueue_task
   __traceiter_android_rvh_enqueue_task_fair
+  __traceiter_android_rvh_exit_creds
   __traceiter_android_rvh_find_busiest_group
   __traceiter_android_rvh_find_busiest_queue
+  __traceiter_android_rvh_find_energy_efficient_cpu
   __traceiter_android_rvh_find_lowest_rq
+  __traceiter_android_rvh_find_new_ilb
   __traceiter_android_rvh_finish_prio_fork
+  __traceiter_android_rvh_flush_task
   __traceiter_android_rvh_get_nohz_timer_target
   __traceiter_android_rvh_is_cpu_allowed
   __traceiter_android_rvh_new_task_stats
+  __traceiter_android_rvh_override_creds
+  __traceiter_android_rvh_post_init_entity_util_avg
   __traceiter_android_rvh_prepare_prio_fork
   __traceiter_android_rvh_replace_next_task_fair
+  __traceiter_android_rvh_revert_creds
   __traceiter_android_rvh_rtmutex_prepare_setprio
   __traceiter_android_rvh_rto_next_cpu
+  __traceiter_android_rvh_sched_cpu_starting
   __traceiter_android_rvh_sched_fork_init
   __traceiter_android_rvh_sched_newidle_balance
   __traceiter_android_rvh_schedule
@@ -2646,11 +2679,18 @@
   __traceiter_android_rvh_select_task_rq_rt
   __traceiter_android_rvh_set_cpus_allowed_by_task
   __traceiter_android_rvh_setscheduler
+  __traceiter_android_rvh_set_task_cpu
   __traceiter_android_rvh_set_task_comm
   __traceiter_android_rvh_set_user_nice
+  __traceiter_android_rvh_tick_entry
+  __traceiter_android_rvh_try_to_wake_up
+  __traceiter_android_rvh_try_to_wake_up_success
+  __traceiter_android_rvh_update_cpu_capacity
   __traceiter_android_rvh_wake_up_new_task
   __traceiter_android_vh_alter_futex_plist_add
   __traceiter_android_vh_alter_rwsem_list_add
+  __traceiter_android_vh_cpufreq_target
+  __traceiter_android_vh_arch_set_freq_scale
   __traceiter_android_vh_binder_restore_priority
   __traceiter_android_vh_binder_set_priority
   __traceiter_android_vh_binder_transaction_init
@@ -2668,10 +2708,18 @@
   __traceiter_android_vh_rwsem_read_wait_start
   __traceiter_android_vh_rwsem_write_wait_finish
   __traceiter_android_vh_rwsem_write_wait_start
+  __traceiter_android_vh_sched_pelt_multiplier
   __traceiter_android_vh_scheduler_tick
   __traceiter_android_vh_setscheduler_uclamp
   __traceiter_android_vh_show_resume_epoch_val
   __traceiter_android_vh_show_suspend_epoch_val
+  __traceiter_android_vh_ufs_abort_success_ctrl
+  __traceiter_android_vh_ufs_compl_rsp_check_done
+  __traceiter_android_vh_ufs_err_check_ctrl
+  __traceiter_android_vh_ufs_err_handler
+  __traceiter_android_vh_ufs_err_print_ctrl
+  __traceiter_android_vh_ufs_perf_huristic_ctrl
+  __traceiter_android_vh_ufs_send_command_post_change
   __traceiter_cpu_frequency
   __traceiter_gpu_mem_total
   __traceiter_ipi_entry
@@ -2689,24 +2737,34 @@
   __tracepoint_android_rvh_after_enqueue_task
   __tracepoint_android_rvh_can_migrate_task
   __tracepoint_android_rvh_check_preempt_wakeup
+  __tracepoint_android_rvh_commit_creds
   __tracepoint_android_rvh_cpu_cgroup_attach
   __tracepoint_android_rvh_cpu_cgroup_online
   __tracepoint_android_rvh_cpu_overutilized
+  __tracepoint_android_rvh_cpu_util_cfs_boost
   __tracepoint_android_rvh_dequeue_task
   __tracepoint_android_rvh_dequeue_task_fair
   __tracepoint_android_rvh_enqueue_task
   __tracepoint_android_rvh_enqueue_task_fair
+  __tracepoint_android_rvh_exit_creds
   __tracepoint_android_rvh_find_busiest_group
   __tracepoint_android_rvh_find_busiest_queue
+  __tracepoint_android_rvh_find_energy_efficient_cpu
   __tracepoint_android_rvh_find_lowest_rq
+  __tracepoint_android_rvh_find_new_ilb
   __tracepoint_android_rvh_finish_prio_fork
+  __tracepoint_android_rvh_flush_task
   __tracepoint_android_rvh_get_nohz_timer_target
   __tracepoint_android_rvh_is_cpu_allowed
   __tracepoint_android_rvh_new_task_stats
+  __tracepoint_android_rvh_override_creds
+  __tracepoint_android_rvh_post_init_entity_util_avg
   __tracepoint_android_rvh_prepare_prio_fork
   __tracepoint_android_rvh_replace_next_task_fair
+  __tracepoint_android_rvh_revert_creds
   __tracepoint_android_rvh_rtmutex_prepare_setprio
   __tracepoint_android_rvh_rto_next_cpu
+  __tracepoint_android_rvh_sched_cpu_starting
   __tracepoint_android_rvh_sched_fork_init
   __tracepoint_android_rvh_sched_newidle_balance
   __tracepoint_android_rvh_schedule
@@ -2715,10 +2773,17 @@
   __tracepoint_android_rvh_set_cpus_allowed_by_task
   __tracepoint_android_rvh_setscheduler
   __tracepoint_android_rvh_set_task_comm
+  __tracepoint_android_rvh_set_task_cpu
   __tracepoint_android_rvh_set_user_nice
+  __tracepoint_android_rvh_tick_entry
+  __tracepoint_android_rvh_try_to_wake_up
+  __tracepoint_android_rvh_try_to_wake_up_success
+  __tracepoint_android_rvh_update_cpu_capacity
   __tracepoint_android_rvh_wake_up_new_task
   __tracepoint_android_vh_alter_futex_plist_add
   __tracepoint_android_vh_alter_rwsem_list_add
+  __tracepoint_android_vh_cpufreq_target
+  __tracepoint_android_vh_arch_set_freq_scale
   __tracepoint_android_vh_binder_restore_priority
   __tracepoint_android_vh_binder_set_priority
   __tracepoint_android_vh_binder_transaction_init
@@ -2736,10 +2801,18 @@
   __tracepoint_android_vh_rwsem_read_wait_start
   __tracepoint_android_vh_rwsem_write_wait_finish
   __tracepoint_android_vh_rwsem_write_wait_start
+  __tracepoint_android_vh_sched_pelt_multiplier
   __tracepoint_android_vh_scheduler_tick
   __tracepoint_android_vh_setscheduler_uclamp
   __tracepoint_android_vh_show_resume_epoch_val
   __tracepoint_android_vh_show_suspend_epoch_val
+  __tracepoint_android_vh_ufs_abort_success_ctrl
+  __tracepoint_android_vh_ufs_compl_rsp_check_done
+  __tracepoint_android_vh_ufs_err_check_ctrl
+  __tracepoint_android_vh_ufs_err_handler
+  __tracepoint_android_vh_ufs_err_print_ctrl
+  __tracepoint_android_vh_ufs_perf_huristic_ctrl
+  __tracepoint_android_vh_ufs_send_command_post_change
   __tracepoint_cpu_frequency
   __tracepoint_gpu_mem_total
   __tracepoint_ipi_entry
@@ -2841,12 +2914,15 @@
   udp_tunnel6_xmit_skb
   udp_tunnel_sock_release
   udp_tunnel_xmit_skb
+  ufshcd_complete_requests
   ufshcd_config_pwr_mode
   ufshcd_delay_us
   ufshcd_dme_configure_adapt
   ufshcd_dme_get_attr
   ufshcd_dme_set_attr
   ufshcd_dump_regs
+  ufshcd_err_handling_unprepare
+  ufshcd_err_handling_prepare
   ufshcd_fixup_dev_quirks
   ufshcd_get_pwr_dev_param
   ufshcd_hba_enable
@@ -3223,6 +3299,12 @@
   work_busy
   work_on_cpu_key
   __write_overflow_field
+  wwan_create_port
+  wwan_port_rx
+  wwan_port_get_drvdata
+  wwan_register_ops
+  wwan_remove_port
+  wwan_unregister_ops
   ww_mutex_lock
   ww_mutex_trylock
   ww_mutex_unlock

@@ -3,7 +3,7 @@
  * Copyright (c) 2023 MediaTek Inc.
  */
 
-#include <linux/gzvm_drv.h>
+#include <linux/soc/mediatek/gzvm_drv.h>
 
 /**
  * hva_to_pa_fast() - converts hva to pa in generic fast way
@@ -60,7 +60,8 @@ static u64 __gzvm_gfn_to_pfn_memslot(struct gzvm_memslot *memslot, u64 gfn)
 {
 	u64 hva, pa;
 
-	hva = gzvm_gfn_to_hva_memslot(memslot, gfn);
+	if (gzvm_gfn_to_hva_memslot(memslot, gfn, &hva) != 0)
+		return GZVM_PA_ERR_BAD;
 
 	pa = gzvm_hva_to_pa_arch(hva);
 	if (pa != GZVM_PA_ERR_BAD)
@@ -123,6 +124,14 @@ static int cmp_ppages(struct rb_node *node, const struct rb_node *parent)
 	return 0;
 }
 
+/* Invoker of this function is responsible for locking */
+static int gzvm_insert_ppage(struct gzvm *vm, struct gzvm_pinned_page *ppage)
+{
+	if (rb_find_add(&ppage->node, &vm->pinned_pages, cmp_ppages))
+		return -EEXIST;
+	return 0;
+}
+
 static int rb_ppage_cmp(const void *key, const struct rb_node *node)
 {
 	struct gzvm_pinned_page *p = container_of(node,
@@ -131,14 +140,6 @@ static int rb_ppage_cmp(const void *key, const struct rb_node *node)
 	phys_addr_t ipa = (phys_addr_t)key;
 
 	return (ipa < p->ipa) ? -1 : (ipa > p->ipa);
-}
-
-/* Invoker of this function is responsible for locking */
-static int gzvm_insert_ppage(struct gzvm *vm, struct gzvm_pinned_page *ppage)
-{
-	if (rb_find_add(&ppage->node, &vm->pinned_pages, cmp_ppages))
-		return -EEXIST;
-	return 0;
 }
 
 /* Invoker of this function is responsible for locking */
@@ -167,6 +168,7 @@ static int pin_one_page(struct gzvm *vm, unsigned long hva, u64 gpa)
 	struct gzvm_pinned_page *ppage = NULL;
 	struct mm_struct *mm = current->mm;
 	struct page *page = NULL;
+	int ret;
 
 	ppage = kmalloc(sizeof(*ppage), GFP_KERNEL_ACCOUNT);
 	if (!ppage)
@@ -185,10 +187,25 @@ static int pin_one_page(struct gzvm *vm, unsigned long hva, u64 gpa)
 	ppage->ipa = gpa;
 
 	mutex_lock(&vm->mem_lock);
-	gzvm_insert_ppage(vm, ppage);
+	ret = gzvm_insert_ppage(vm, ppage);
+
+	/**
+	 * The return of -EEXIST from gzvm_insert_ppage is considered an
+	 * expected behavior in this context.
+	 * This situation arises when two or more VCPUs are concurrently
+	 * engaged in demand paging handling. The initial VCPU has already
+	 * allocated and pinned a page, while the subsequent VCPU attempts
+	 * to pin the same page again. As a result, we prompt the unpinning
+	 * and release of the allocated structure, followed by a return 0.
+	 */
+	if (ret == -EEXIST) {
+		kfree(ppage);
+		unpin_user_pages(&page, 1);
+		ret = 0;
+	}
 	mutex_unlock(&vm->mem_lock);
 
-	return 0;
+	return ret;
 }
 
 /**
@@ -210,9 +227,22 @@ int gzvm_handle_relinquish(struct gzvm_vcpu *vcpu, phys_addr_t ipa)
 	return 0;
 }
 
-static int handle_block_demand_page(struct gzvm *vm, int memslot_id, u64 gfn)
+int gzvm_vm_allocate_guest_page(struct gzvm *vm, struct gzvm_memslot *slot,
+				u64 gfn, u64 *pfn)
 {
 	unsigned long hva;
+
+	if (gzvm_gfn_to_pfn_memslot(slot, gfn, pfn) != 0)
+		return -EFAULT;
+
+	if (gzvm_gfn_to_hva_memslot(slot, gfn, (u64 *)&hva) != 0)
+		return -EINVAL;
+
+	return pin_one_page(vm, hva, PFN_PHYS(gfn));
+}
+
+static int handle_block_demand_page(struct gzvm *vm, int memslot_id, u64 gfn)
+{
 	u64 pfn, __gfn;
 	int ret, i;
 
@@ -222,24 +252,24 @@ static int handle_block_demand_page(struct gzvm *vm, int memslot_id, u64 gfn)
 	u32 total_pages = memslot->npages;
 	u64 base_gfn = memslot->base_gfn;
 
-	/* if the demand region is less than a block, adjust the nr_entries */
+	/*
+	 * If the start/end gfn of this demand paging block is outside the
+	 * memory region of memslot, adjust the start_gfn/nr_entries.
+	 */
+	if (start_gfn < base_gfn)
+		start_gfn = base_gfn;
+
 	if (start_gfn + nr_entries > base_gfn + total_pages)
 		nr_entries = base_gfn + total_pages - start_gfn;
 
 	mutex_lock(&vm->demand_paging_lock);
 	for (i = 0, __gfn = start_gfn; i < nr_entries; i++, __gfn++) {
-		ret = gzvm_gfn_to_pfn_memslot(&vm->memslot[memslot_id], __gfn,
-					      &pfn);
+		ret = gzvm_vm_allocate_guest_page(vm, memslot, __gfn, &pfn);
 		if (unlikely(ret)) {
 			ret = -ERR_FAULT;
 			goto err_unlock;
 		}
 		vm->demand_page_buffer[i] = pfn;
-
-		hva = gzvm_gfn_to_hva_memslot(&vm->memslot[memslot_id], __gfn);
-		ret = pin_one_page(vm, hva, PFN_PHYS(__gfn));
-		if (ret)
-			goto err_unlock;
 	}
 
 	ret = gzvm_arch_map_guest_block(vm->vm_id, memslot_id, start_gfn,
@@ -257,20 +287,17 @@ err_unlock:
 
 static int handle_single_demand_page(struct gzvm *vm, int memslot_id, u64 gfn)
 {
-	unsigned long hva;
 	int ret;
 	u64 pfn;
 
-	ret = gzvm_gfn_to_pfn_memslot(&vm->memslot[memslot_id], gfn, &pfn);
+	ret = gzvm_vm_allocate_guest_page(vm, &vm->memslot[memslot_id], gfn, &pfn);
 	if (unlikely(ret))
 		return -EFAULT;
 
 	ret = gzvm_arch_map_guest(vm->vm_id, memslot_id, pfn, gfn, 1);
 	if (unlikely(ret))
 		return -EFAULT;
-
-	hva = gzvm_gfn_to_hva_memslot(&vm->memslot[memslot_id], gfn);
-	return pin_one_page(vm, hva, PFN_PHYS(gfn));
+	return ret;
 }
 
 /**
@@ -291,6 +318,9 @@ int gzvm_handle_page_fault(struct gzvm_vcpu *vcpu)
 	gfn = PHYS_PFN(vcpu->run->exception.fault_gpa);
 	memslot_id = gzvm_find_memslot(vm, gfn);
 	if (unlikely(memslot_id < 0))
+		return -EFAULT;
+
+	if (unlikely(vm->mem_alloc_mode == GZVM_FULLY_POPULATED))
 		return -EFAULT;
 
 	if (vm->demand_page_gran == PAGE_SIZE)

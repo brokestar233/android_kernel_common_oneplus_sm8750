@@ -73,6 +73,7 @@
 #include <linux/uaccess.h>
 
 #include <trace/events/vmscan.h>
+#include <trace/hooks/mm.h>
 
 struct cgroup_subsys memory_cgrp_subsys __read_mostly;
 EXPORT_SYMBOL(memory_cgrp_subsys);
@@ -5171,6 +5172,7 @@ static DEFINE_IDR(mem_cgroup_idr);
 static void mem_cgroup_id_remove(struct mem_cgroup *memcg)
 {
 	if (memcg->id.id > 0) {
+		trace_android_vh_mem_cgroup_id_remove(memcg);
 		idr_remove(&mem_cgroup_idr, memcg->id.id);
 		memcg->id.id = 0;
 	}
@@ -5208,6 +5210,7 @@ struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
 	WARN_ON_ONCE(!rcu_read_lock_held());
 	return idr_find(&mem_cgroup_idr, id);
 }
+EXPORT_SYMBOL_GPL(mem_cgroup_from_id);
 
 #ifdef CONFIG_SHRINKER_DEBUG
 struct mem_cgroup *mem_cgroup_get_from_ino(unsigned long ino)
@@ -5269,6 +5272,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 {
 	int node;
 
+	trace_android_vh_mem_cgroup_free(memcg);
 	for_each_node(node)
 		free_mem_cgroup_per_node_info(memcg, node);
 	kfree(memcg->vmstats);
@@ -5341,6 +5345,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	memcg->deferred_split_queue.split_queue_len = 0;
 #endif
 	lru_gen_init_memcg(memcg);
+	trace_android_vh_mem_cgroup_alloc(memcg);
 	return memcg;
 fail:
 	mem_cgroup_id_remove(memcg);
@@ -5432,6 +5437,7 @@ static int mem_cgroup_css_online(struct cgroup_subsys_state *css)
 	 */
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
 
+	trace_android_vh_mem_cgroup_css_online(css, memcg);
 	return 0;
 offline_kmem:
 	memcg_offline_kmem(memcg);
@@ -5445,6 +5451,7 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 	struct mem_cgroup_event *event, *tmp;
 
+	trace_android_vh_mem_cgroup_css_offline(css, memcg);
 	/*
 	 * Unregister events and notify userspace.
 	 * Notify userspace about cgroup removing only after rmdir of cgroup
@@ -6703,6 +6710,8 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 
 	reclaim_options	= MEMCG_RECLAIM_MAY_SWAP | MEMCG_RECLAIM_PROACTIVE;
 	while (nr_reclaimed < nr_to_reclaim) {
+		/* Will converge on zero, but reclaim enforces a minimum */
+		unsigned long batch_size = (nr_to_reclaim - nr_reclaimed) / 4;
 		unsigned long reclaimed;
 
 		if (signal_pending(current))
@@ -6717,8 +6726,7 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 			lru_add_drain_all();
 
 		reclaimed = try_to_free_mem_cgroup_pages(memcg,
-					min(nr_to_reclaim - nr_reclaimed, SWAP_CLUSTER_MAX),
-					GFP_KERNEL, reclaim_options);
+					batch_size, GFP_KERNEL, reclaim_options);
 
 		if (!reclaimed && !nr_retries--)
 			return -EAGAIN;
@@ -7613,9 +7621,13 @@ bool mem_cgroup_swap_full(struct folio *folio)
 
 static int __init setup_swap_account(char *s)
 {
-	pr_warn_once("The swapaccount= commandline option is deprecated. "
-		     "Please report your usecase to linux-mm@kvack.org if you "
-		     "depend on this functionality.\n");
+	bool res;
+
+	if (!kstrtobool(s, &res) && !res)
+		pr_warn_once("The swapaccount=0 commandline option is deprecated "
+			     "in favor of configuring swap control via cgroupfs. "
+			     "Please report your usecase to linux-mm@kvack.org if you "
+			     "depend on this functionality.\n");
 	return 1;
 }
 __setup("swapaccount=", setup_swap_account);
