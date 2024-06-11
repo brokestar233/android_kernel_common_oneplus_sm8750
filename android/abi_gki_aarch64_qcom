@@ -1735,6 +1735,7 @@
   __traceiter_android_rvh_dequeue_task
   __traceiter_android_rvh_do_sched_yield
   __traceiter_android_rvh_enqueue_task
+  __traceiter_android_rvh_entity_tick
   __traceiter_android_rvh_find_busiest_queue
   __traceiter_android_rvh_find_lowest_rq
   __traceiter_android_rvh_flush_task
@@ -1830,6 +1831,7 @@
   __tracepoint_android_rvh_dequeue_task
   __tracepoint_android_rvh_do_sched_yield
   __tracepoint_android_rvh_enqueue_task
+  __tracepoint_android_rvh_entity_tick
   __tracepoint_android_rvh_find_busiest_queue
   __tracepoint_android_rvh_find_lowest_rq
   __tracepoint_android_rvh_flush_task
