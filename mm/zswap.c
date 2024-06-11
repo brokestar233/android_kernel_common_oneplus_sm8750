@@ -1566,6 +1566,17 @@ bool zswap_load(struct folio *folio)
 		return false;
 
 	/*
+	 * Large folios should not be swapped in while zswap is being used, as
+	 * they are not properly handled. Zswap does not properly load large
+	 * folios, and a large folio may only be partially in zswap.
+	 *
+	 * Return true without marking the folio uptodate so that an IO error is
+	 * emitted (e.g. do_swap_page() will sigbus).
+	 */
+	if (WARN_ON_ONCE(folio_test_large(folio)))
+		return true;
+
+	/*
 	 * When reading into the swapcache, invalidate our entry. The
 	 * swapcache can be the authoritative owner of the page and
 	 * its mappings, and the pressure that results from having two
@@ -1599,6 +1610,7 @@ bool zswap_load(struct folio *folio)
 		folio_mark_dirty(folio);
 	}
 
+	folio_mark_uptodate(folio);
 	return true;
 }
 
