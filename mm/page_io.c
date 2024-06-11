@@ -244,7 +244,7 @@ static bool kcompressd_store(struct folio *folio)
 		return false;
 
 	/* Swap device must be sync-efficient */
-	if (!is_zswap_enabled() &&
+	if (!zswap_is_enabled() &&
 	    !data_race(swp_swap_info(folio->swap)->flags & SWP_SYNCHRONOUS_IO))
 		return false;
 
