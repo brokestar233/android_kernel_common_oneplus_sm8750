@@ -32,11 +32,11 @@ bool zswap_load(struct folio *folio);
 void zswap_invalidate(swp_entry_t swp);
 int zswap_swapon(int type, unsigned long nr_pages);
 void zswap_swapoff(int type);
-bool zswap_never_enabled(void);
 void zswap_memcg_offline_cleanup(struct mem_cgroup *memcg);
 void zswap_lruvec_state_init(struct lruvec *lruvec);
 void zswap_folio_swapin(struct folio *folio);
 bool zswap_is_enabled(void);
+bool zswap_never_enabled(void);
 #else
 
 struct zswap_lruvec_state {};
@@ -59,15 +59,14 @@ static inline int zswap_swapon(int type, unsigned long nr_pages)
 static inline void zswap_swapoff(int type) {}
 static inline void zswap_memcg_offline_cleanup(struct mem_cgroup *memcg) {}
 
-static inline bool zswap_never_enabled(void)
-{
-	return true;
-}
-
 static inline void zswap_lruvec_state_init(struct lruvec *lruvec) {}
 static inline void zswap_folio_swapin(struct folio *folio) {}
 
 static inline bool zswap_is_enabled(void)
+{
+	return false;
+}
+static inline bool zswap_never_enabled(void)
 {
 	return false;
 }
