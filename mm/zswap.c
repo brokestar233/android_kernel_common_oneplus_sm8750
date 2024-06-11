@@ -126,10 +126,6 @@ module_param_named(accept_threshold_percent, zswap_accept_thr_percent,
 /* Number of zpools in zswap_pool (empirically determined for scalability) */
 #define ZSWAP_NR_ZPOOLS 32
 
-bool zswap_never_enabled(void)
-{
-	return !static_branch_maybe(CONFIG_ZSWAP_DEFAULT_ON, &zswap_ever_enabled);
-}
 /* Enable/disable memory pressure-based shrinker. */
 static bool zswap_shrinker_enabled = IS_ENABLED(
 		CONFIG_ZSWAP_SHRINKER_DEFAULT_ON);
@@ -138,6 +134,11 @@ module_param_named(shrinker_enabled, zswap_shrinker_enabled, bool, 0644);
 bool zswap_is_enabled(void)
 {
 	return zswap_enabled;
+}
+
+bool zswap_never_enabled(void)
+{
+	return !static_branch_maybe(CONFIG_ZSWAP_DEFAULT_ON, &zswap_ever_enabled);
 }
 
 /*********************************
