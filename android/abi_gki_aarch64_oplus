@@ -14,6 +14,7 @@
   cpufreq_frequency_table_get_index
   cpufreq_policy_transition_delay_us
   cpufreq_update_util_data
+  contpte_ptep_test_and_clear_young
   device_create_bin_file
   device_remove_bin_file
   devres_destroy
@@ -149,6 +150,7 @@
   __traceiter_android_vh_mem_cgroup_alloc
   __traceiter_android_vh_adjust_alloc_flags
   __traceiter_android_vh_reweight_entity
+  __traceiter_android_vh_rtmutex_wait_start
   __traceiter_android_vh_sched_move_task
   __traceiter_android_vh_sched_stat_runtime_rt
   __traceiter_android_vh_sched_setaffinity_early
@@ -245,6 +247,7 @@
   __tracepoint_android_vh_mem_cgroup_free
   __tracepoint_android_vh_mem_cgroup_alloc
   __tracepoint_android_vh_reweight_entity
+  __tracepoint_android_vh_rtmutex_wait_start
   __tracepoint_android_vh_sched_move_task
   __tracepoint_android_vh_sched_stat_runtime_rt
   __tracepoint_android_vh_sched_setaffinity_early
