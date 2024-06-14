@@ -2524,16 +2524,10 @@ void free_unref_page(struct page *page, unsigned int order)
 	 * excessively into the page allocator
 	 */
 	migratetype = pcpmigratetype = get_pcppage_migratetype(page);
-<<<<<<< HEAD 李杨欧文:80351790:平台与内核开发部 
 	trace_android_vh_free_unref_page_bypass(page, order, migratetype, &skip_free_unref_page);
 	if (skip_free_unref_page)
 		return;
-	if (unlikely(migratetype >= MIGRATE_PCPTYPES)) {
-||||||| merged common ancestors
-	if (unlikely(migratetype >= MIGRATE_PCPTYPES)) {
-=======
 	if (unlikely(migratetype > MIGRATE_RECLAIMABLE)) {
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.021
 		if (unlikely(is_migrate_isolate(migratetype))) {
 			free_one_page(page_zone(page), page, pfn, order, migratetype, FPI_NONE);
 			return;
