@@ -57,6 +57,7 @@
 #include <linux/seq_file.h>
 #include <trace/events/skb.h>
 #include "udp_impl.h"
+#include <trace/hooks/net.h>
 
 static void udpv6_destruct_sock(struct sock *sk)
 {
@@ -433,6 +434,8 @@ try_again:
 	if (flags & MSG_TRUNC)
 		err = ulen;
 
+	trace_android_rvh_udpv6_recvmsg(sk, msg, len, flags, addr_len);
+
 	skb_consume_udp(sk, skb, peeking ? -err : err);
 	return err;
 
@@ -450,7 +453,7 @@ csum_copy_err:
 	goto try_again;
 }
 
-DEFINE_STATIC_KEY_FALSE(udpv6_encap_needed_key);
+DECLARE_STATIC_KEY_FALSE(udpv6_encap_needed_key);
 void udpv6_encap_enable(void)
 {
 	static_branch_inc(&udpv6_encap_needed_key);
@@ -1339,6 +1342,8 @@ int udpv6_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 	int err;
 	int is_udplite = IS_UDPLITE(sk);
 	int (*getfrag)(void *, char *, int, int, int, struct sk_buff *);
+
+	trace_android_rvh_udpv6_sendmsg(sk, msg, len);
 
 	ipcm6_init(&ipc6);
 	ipc6.gso_size = READ_ONCE(up->gso_size);

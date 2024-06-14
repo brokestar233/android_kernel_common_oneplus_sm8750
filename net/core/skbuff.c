@@ -84,6 +84,8 @@
 #include <linux/indirect_call_wrapper.h>
 #include <linux/textsearch.h>
 
+#include <trace/hooks/net.h>
+
 #include "dev.h"
 #include "sock_destructor.h"
 
@@ -402,6 +404,8 @@ struct sk_buff *slab_build_skb(void *data)
 	data = __slab_build_skb(skb, data, &size);
 	__finalize_skb_around(skb, data, size);
 
+	trace_android_vh_build_skb_around(skb);
+
 	return skb;
 }
 EXPORT_SYMBOL(slab_build_skb);
@@ -419,6 +423,8 @@ static void __build_skb_around(struct sk_buff *skb, void *data,
 		data = __slab_build_skb(skb, data, &size);
 
 	__finalize_skb_around(skb, data, size);
+
+	trace_android_vh_build_skb_around(skb);
 }
 
 /**
@@ -6658,6 +6664,14 @@ static struct skb_ext *skb_ext_maybe_cow(struct skb_ext *old,
 
 		for (i = 0; i < sp->len; i++)
 			xfrm_state_hold(sp->xvec[i]);
+	}
+#endif
+#ifdef CONFIG_MCTP_FLOWS
+	if (old_active & (1 << SKB_EXT_MCTP)) {
+		struct mctp_flow *flow = skb_ext_get_ptr(old, SKB_EXT_MCTP);
+
+		if (flow->key)
+			refcount_inc(&flow->key->refs);
 	}
 #endif
 	__skb_ext_put(old);
