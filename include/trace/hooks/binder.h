@@ -105,7 +105,6 @@ DECLARE_HOOK(android_vh_binder_new_ref,
 DECLARE_HOOK(android_vh_binder_del_ref,
 	TP_PROTO(struct task_struct *proc, uint32_t ref_desc),
 	TP_ARGS(proc, ref_desc));
-<<<<<<< HEAD 廖福椿:80048997:平台与内核开发部 
 DECLARE_HOOK(android_vh_binder_list_add_work,
 	TP_PROTO(struct binder_work *work, struct list_head *target_list),
 	TP_ARGS(work, target_list));
@@ -118,18 +117,6 @@ DECLARE_HOOK(android_vh_binder_release_special_work,
 DECLARE_HOOK(android_vh_binder_free_proc,
 	TP_PROTO(struct binder_proc *proc),
 	TP_ARGS(proc));
-||||||| merged common ancestors
-=======
-DECLARE_HOOK(android_vh_binder_list_add_work,
-	TP_PROTO(struct binder_work *work, struct list_head *target_list),
-	TP_ARGS(work, target_list));
-DECLARE_HOOK(android_vh_binder_has_proc_work_ilocked,
-	TP_PROTO(struct binder_thread *thread, bool do_proc_work, bool *has_work),
-	TP_ARGS(thread, do_proc_work, has_work));
-DECLARE_HOOK(android_vh_binder_release_special_work,
-	TP_PROTO(struct binder_proc *proc, struct list_head **special_list),
-	TP_ARGS(proc, special_list));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.021
 
 #endif /* _TRACE_HOOK_BINDER_H */
 /* This part must be outside protection */
