@@ -319,16 +319,11 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_record_rwsem_reader_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_clear_rwsem_reader_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_record_rwsem_writer_owned);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_clear_rwsem_writer_owned);
-<<<<<<< HEAD 谢晓宣:80398989:平台与内核开发部 
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal_whether_wake);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_check);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_freeze_whether_wake);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_percpu_rwsem_wq_add);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_save_track_hash);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_vmscan_kswapd_done);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_tune_scan_type);
-||||||| merged common ancestors
-=======
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_compaction_exit);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_compaction_try_to_compact_exit);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mm_direct_reclaim_enter);
@@ -354,4 +349,3 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_read_trylock_failed);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_sd_init_unmap_multi_segment);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_sd_setup_unmap_multi_segment);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_tune_scan_type);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.021
