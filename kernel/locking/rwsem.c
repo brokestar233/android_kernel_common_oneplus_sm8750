@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+	// SPDX-License-Identifier: GPL-2.0
 /* kernel/rwsem.c: R/W semaphores, public implementation
  *
  * Written by David Howells (dhowells@redhat.com).
@@ -263,7 +263,7 @@ static inline bool rwsem_read_trylock(struct rw_semaphore *sem, long *cntp)
 	trace_android_vh_rwsem_read_trylock_failed(sem, cntp, &ret);
 	if (ret) {
 		rwsem_set_reader_owned(sem);
-		trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
+		trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
 		return true;
 	}
 
@@ -1363,7 +1363,7 @@ static inline int __down_read_trylock(struct rw_semaphore *sem)
 		trace_android_vh_rwsem_read_trylock_failed(sem, NULL, &ret);
 		if (ret) {
 			rwsem_set_reader_owned(sem);
-			trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
+			trace_android_vh_record_rwsem_lock_starttime(sem, jiffies);
 		}
 	}
 
