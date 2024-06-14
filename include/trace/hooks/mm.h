@@ -144,24 +144,11 @@ DECLARE_HOOK(android_vh_save_vmalloc_stack,
 DECLARE_HOOK(android_vh_show_stack_hash,
 	TP_PROTO(struct seq_file *m, struct vm_struct *v),
 	TP_ARGS(m, v));
-DECLARE_HOOK(android_vh_get_page_wmark,
-	TP_PROTO(unsigned int alloc_flags, unsigned long *page_wmark),
-	TP_ARGS(alloc_flags, page_wmark));
-DECLARE_HOOK(android_vh_page_add_new_anon_rmap,
-	TP_PROTO(struct page *page, struct vm_area_struct *vma,
-		unsigned long address),
-	TP_ARGS(page, vma, address));
 DECLARE_HOOK(android_vh_drain_all_pages_bypass,
 	TP_PROTO(gfp_t gfp_mask, unsigned int order, unsigned long alloc_flags,
 		int migratetype, unsigned long did_some_progress,
 		bool *bypass),
 	TP_ARGS(gfp_mask, order, alloc_flags, migratetype, did_some_progress, bypass));
-DECLARE_HOOK(android_vh_customize_alloc_gfp,
-	TP_PROTO(gfp_t *alloc_gfp, unsigned int order),
-	TP_ARGS(alloc_gfp, order));
-
-||||||| merged common ancestors
-=======
 DECLARE_HOOK(android_vh_mm_direct_reclaim_enter,
 	TP_PROTO(unsigned int order),
 	TP_ARGS(order));
@@ -199,7 +186,6 @@ DECLARE_HOOK(android_vh_customize_alloc_gfp,
 	TP_PROTO(gfp_t *alloc_gfp, unsigned int order),
 	TP_ARGS(alloc_gfp, order));
 
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.021
 #endif /* _TRACE_HOOK_MM_H */
 
 /* This part must be outside protection */
