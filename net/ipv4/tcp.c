@@ -279,6 +279,7 @@
 #include <linux/uaccess.h>
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
+#include <trace/hooks/net.h>
 
 /* Track pending CMSGs. */
 enum {
@@ -1337,6 +1338,7 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 {
 	int ret;
 
+	trace_android_rvh_tcp_sendmsg(sk, msg, size);
 	lock_sock(sk);
 	ret = tcp_sendmsg_locked(sk, msg, size);
 	release_sock(sk);
@@ -2589,6 +2591,9 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
 					 sizeof(msg->msg_inq), &msg->msg_inq);
 		}
 	}
+
+	trace_android_rvh_tcp_recvmsg(sk, msg, len, flags, addr_len);
+
 	return ret;
 }
 EXPORT_SYMBOL(tcp_recvmsg);
@@ -2931,6 +2936,8 @@ void tcp_close(struct sock *sk, long timeout)
 	lock_sock(sk);
 	__tcp_close(sk, timeout);
 	release_sock(sk);
+	if (!sk->sk_net_refcnt)
+		inet_csk_clear_xmit_timers_sync(sk);
 	sock_put(sk);
 }
 EXPORT_SYMBOL(tcp_close);
@@ -3967,10 +3974,10 @@ int do_tcp_getsockopt(struct sock *sk, int level,
 	if (copy_from_sockptr(&len, optlen, sizeof(int)))
 		return -EFAULT;
 
-	len = min_t(unsigned int, len, sizeof(int));
-
 	if (len < 0)
 		return -EINVAL;
+
+	len = min_t(unsigned int, len, sizeof(int));
 
 	switch (optname) {
 	case TCP_MAXSEG:

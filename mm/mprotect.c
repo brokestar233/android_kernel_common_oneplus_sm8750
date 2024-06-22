@@ -18,6 +18,7 @@
 #include <linux/security.h>
 #include <linux/mempolicy.h>
 #include <linux/page_size_compat.h>
+#include <linux/pgsize_migration.h>
 #include <linux/personality.h>
 #include <linux/syscalls.h>
 #include <linux/swap.h>
@@ -197,13 +198,13 @@ static long change_pte_range(struct mmu_gather *tlb,
 			pte_t newpte;
 
 			if (is_writable_migration_entry(entry)) {
-				struct page *page = pfn_swap_entry_to_page(entry);
+				struct folio *folio = pfn_swap_entry_folio(entry);
 
 				/*
 				 * A protection check is difficult so
 				 * just be safe and disable write
 				 */
-				if (PageAnon(page))
+				if (folio_test_anon(folio))
 					entry = make_readable_exclusive_migration_entry(
 							     swp_offset(entry));
 				else
@@ -659,7 +660,7 @@ success:
 	 * held in write mode.
 	 */
 	vma_start_write(vma);
-	vm_flags_reset(vma, newflags);
+	vm_flags_reset(vma, vma_pad_fixup_flags(vma, newflags));
 	if (vma_wants_manual_pte_write_upgrade(vma))
 		mm_cp_flags |= MM_CP_TRY_CHANGE_WRITABLE;
 	vma_set_page_prot(vma);

@@ -14,6 +14,7 @@
   cpufreq_frequency_table_get_index
   cpufreq_policy_transition_delay_us
   cpufreq_update_util_data
+  contpte_ptep_test_and_clear_young
   device_create_bin_file
   device_remove_bin_file
   devres_destroy
@@ -23,6 +24,7 @@
   filp_close
   folio_add_lru
   folio_mapping
+  folio_referenced
   for_each_kernel_tracepoint
   freq_qos_add_notifier
   freq_qos_remove_notifier
@@ -45,11 +47,13 @@
   jiffies_64_to_clock_t
   kick_process
   ktime_get_coarse_real_ts64
+  mem_cgroup_update_lru_size
   memory_cgrp_subsys
   memory_cgrp_subsys_enabled_key
   mem_cgroup_from_id
   mipi_dsi_generic_write
   mmc_wait_for_cmd
+  __mod_lruvec_state
   __mod_zone_page_state
   nf_ct_attach
   nf_ct_delete
@@ -75,6 +79,7 @@
   register_tcf_proto_ops
   regulator_map_voltage_linear_range
   remove_proc_subtree
+  root_mem_cgroup
   rtc_read_alarm
   rtc_set_alarm
   __rtnl_link_unregister
@@ -125,11 +130,14 @@
   __traceiter_android_vh_cgroup_set_task
   __traceiter_android_vh_cpufreq_acct_update_power
   __traceiter_android_vh_check_folio_look_around_ref
+  __traceiter_android_vh_customize_alloc_gfp
   __traceiter_android_vh_dup_task_struct
   __traceiter_android_vh_exit_signal
   __traceiter_android_vh_freq_qos_remove_request
   __traceiter_android_vh_freq_qos_update_request
   __traceiter_android_vh_freq_qos_add_request
+  __tracepoint_android_vh_get_page_wmark
+  __tracepoint_android_vh_page_add_new_anon_rmap
   __traceiter_android_vh_irqtime_account_process_tick
   __traceiter_android_vh_kmalloc_slab
   __traceiter_android_vh_free_oem_binder_struct
@@ -141,6 +149,8 @@
   __traceiter_android_vh_mem_cgroup_free
   __traceiter_android_vh_mem_cgroup_alloc
   __traceiter_android_vh_adjust_alloc_flags
+  __traceiter_android_vh_reweight_entity
+  __traceiter_android_vh_rtmutex_wait_start
   __traceiter_android_vh_sched_move_task
   __traceiter_android_vh_sched_stat_runtime_rt
   __traceiter_android_vh_sched_setaffinity_early
@@ -156,6 +166,7 @@
   __traceiter_android_vh_meminfo_cache_adjust
   __traceiter_android_vh_si_mem_available_adjust
   __traceiter_android_vh_si_meminfo_adjust
+  __traceiter_android_vh_tune_scan_type
   __traceiter_mm_vmscan_kswapd_wake
   __traceiter_block_bio_queue
   __traceiter_block_getrq
@@ -216,8 +227,11 @@
   __tracepoint_android_vh_cpu_cgroup_css_free
   __tracepoint_android_vh_cgroup_set_task
   __tracepoint_android_vh_cpufreq_acct_update_power
+  __tracepoint_android_vh_customize_alloc_gfp
   __tracepoint_android_vh_dup_task_struct
   __tracepoint_android_vh_exit_signal
+  __traceiter_android_vh_get_page_wmark
+  __traceiter_android_vh_page_add_new_anon_rmap
   __tracepoint_android_vh_do_shrink_slab
   __tracepoint_android_vh_freq_qos_remove_request
   __tracepoint_android_vh_freq_qos_update_request
@@ -232,6 +246,8 @@
   __tracepoint_android_vh_mem_cgroup_css_online
   __tracepoint_android_vh_mem_cgroup_free
   __tracepoint_android_vh_mem_cgroup_alloc
+  __tracepoint_android_vh_reweight_entity
+  __tracepoint_android_vh_rtmutex_wait_start
   __tracepoint_android_vh_sched_move_task
   __tracepoint_android_vh_sched_stat_runtime_rt
   __tracepoint_android_vh_sched_setaffinity_early
@@ -883,6 +899,7 @@
   __tracepoint_android_vh_rt_mutex_steal
   __tracepoint_android_vh_rtmutex_waiter_prio
   __tracepoint_android_vh_task_blocks_on_rtmutex
+  __tracepoint_android_vh_tune_scan_type
   wq_worker_comm
   is_dma_buf_file
   dma_buf_get_each

@@ -579,6 +579,8 @@ static void gpiodev_release(struct device *dev)
 	struct gpio_device *gdev = to_gpio_device(dev);
 	unsigned long flags;
 
+	printk(KERN_ERR "gpio device: %s\n", gdev->label);
+	dump_stack();
 	spin_lock_irqsave(&gpio_lock, flags);
 	list_del(&gdev->list);
 	spin_unlock_irqrestore(&gpio_lock, flags);
@@ -2192,7 +2194,7 @@ int gpiod_request(struct gpio_desc *desc, const char *label)
 	}
 
 	if (ret)
-		gpiod_dbg(desc, "%s: status %d\n", __func__, ret);
+		gpiod_err(desc, "%s: status %d\n", __func__, ret);
 
 	return ret;
 }
@@ -4021,13 +4023,13 @@ static struct gpio_desc *gpiod_find_by_fwnode(struct fwnode_handle *fwnode,
 	return desc;
 }
 
-static struct gpio_desc *gpiod_find_and_request(struct device *consumer,
-						struct fwnode_handle *fwnode,
-						const char *con_id,
-						unsigned int idx,
-						enum gpiod_flags flags,
-						const char *label,
-						bool platform_lookup_allowed)
+struct gpio_desc *gpiod_find_and_request(struct device *consumer,
+					 struct fwnode_handle *fwnode,
+					 const char *con_id,
+					 unsigned int idx,
+					 enum gpiod_flags flags,
+					 const char *label,
+					 bool platform_lookup_allowed)
 {
 	unsigned long lookupflags = GPIO_LOOKUP_FLAGS_DEFAULT;
 	struct gpio_desc *desc;
