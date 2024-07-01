@@ -179,22 +179,10 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rmqueue_bulk_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ra_tuning_max_page);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_tune_mmap_readaround);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_shrink_slab_bypass);
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_drain_all_pages_bypass);
-||||||| merged common ancestors
-=======
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_free_unref_page_bypass);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_kvmalloc_node_use_vmalloc);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_should_alloc_pages_retry);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_unreserve_highatomic_bypass);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rmqueue_bulk_bypass);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ra_tuning_max_page);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_tune_mmap_readaround);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_hw_protection_shutdown);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_dm_bufio_shrink_scan_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_cleanup_old_buffers_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_drain_all_pages_bypass);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.025
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_selinux_avc_insert);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_selinux_avc_node_delete);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_selinux_avc_node_replace);
