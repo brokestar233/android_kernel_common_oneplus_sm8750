@@ -116,8 +116,18 @@ void vma_set_pad_pages(struct vm_area_struct *vma,
 	if (!is_pgsize_migration_enabled())
 		return;
 
-	vm_flags_clear(vma, VM_PAD_MASK);
-	vm_flags_set(vma, nr_pages << VM_PAD_SHIFT);
+	/*
+	 * Usually modify vm_flags we need to take exclusive mmap_lock but here only have
+	 * the lock in read mode, to avoid all DONTNEED/DONTNEED_LOCKED calls needing the
+	 * write lock.
+	 *
+	 * The padding flags are only used to control the output in /proc/<pid>/[s]maps.
+	 * So we can safely update them without the write lock. It is possible readers of
+	 * /proc/<pid>/[s]maps, may not see the flag update but this race already exists
+	 * between the time of mmap() and madvise() calls.
+	 */
+	ACCESS_PRIVATE(vma, __vm_flags) &= ~VM_PAD_MASK;
+	ACCESS_PRIVATE(vma, __vm_flags) |= (nr_pages << VM_PAD_SHIFT);
 }
 
 unsigned long vma_pad_pages(struct vm_area_struct *vma)
