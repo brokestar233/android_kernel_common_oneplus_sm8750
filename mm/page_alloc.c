@@ -4089,7 +4089,6 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	unsigned int cpuset_mems_cookie;
 	unsigned int zonelist_iter_cookie;
 	int reserve_flags;
-	bool should_alloc_retry = false;
 	unsigned long alloc_start = jiffies;
 	bool should_alloc_retry = false;
 
