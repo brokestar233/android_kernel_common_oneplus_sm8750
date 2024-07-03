@@ -44,6 +44,9 @@
   generic_delete_inode
   __generic_file_fsync
   get_wchan
+  gnet_stats_add_queue
+  gnet_stats_copy_basic
+  gnet_stats_copy_queue
   gov_attr_set_get
   gpiod_to_chip
   have_governor_per_policy
@@ -82,15 +85,21 @@
   mntget
   __mod_lruvec_state
   __mod_zone_page_state
+<<<<<<< HEAD 韦龙平:80379614:软件技术规划与架设部 
   mount_nodev
   neigh_xmit
   netif_receive_skb_core
+||||||| merged common ancestors
+=======
+  __netif_schedule
+>>>>>>> d872fc1fdbcbce88f0974c1a3d99f120b58950f7
   nf_ct_attach
   nf_ct_delete
   nf_register_net_hook
   nf_register_net_hooks
   nf_unregister_net_hook
   nf_unregister_net_hooks
+<<<<<<< HEAD 韦龙平:80379614:软件技术规划与架设部 
   nla_find
   nla_memcpy
   __nla_parse
@@ -100,24 +109,43 @@
   nla_reserve_64bit
   nop_mnt_idmap
   notify_change
+||||||| merged common ancestors
+=======
+  noop_qdisc
+>>>>>>> d872fc1fdbcbce88f0974c1a3d99f120b58950f7
   nr_running
   of_css
   osq_lock
   osq_unlock
   override_creds
   __page_file_index
+<<<<<<< HEAD 韦龙平:80379614:软件技术规划与架设部 
   path_get
   platform_device_add
   platform_device_alloc
   platform_device_put
   platform_driver_unregister
+||||||| merged common ancestors
+=======
+  pfifo_qdisc_ops
+>>>>>>> d872fc1fdbcbce88f0974c1a3d99f120b58950f7
   pm_get_active_wakeup_sources
   prepare_creds
   prepare_to_wait_exclusive
   __printk_ratelimit
   proc_symlink
+  psched_ratecfg_precompute
   public_key_verify_signature
   put_pages_list
+  __qdisc_calculate_pkt_len
+  qdisc_create_dflt
+  qdisc_hash_add
+  qdisc_put
+  qdisc_reset
+  qdisc_tree_reduce_backlog
+  qdisc_watchdog_cancel
+  qdisc_watchdog_init
+  qdisc_watchdog_schedule_range_ns
   radix_tree_lookup_slot
   radix_tree_replace_slot
   _raw_write_trylock
@@ -151,6 +179,9 @@
   strncmp
   task_rq_lock
   tcf_action_exec
+  tcf_block_get
+  tcf_block_put
+  tcf_classify
   tcf_exts_destroy
   tcf_exts_dump
   tcf_exts_dump_stats
