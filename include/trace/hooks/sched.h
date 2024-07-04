@@ -128,10 +128,6 @@ DECLARE_RESTRICTED_HOOK(android_rvh_sched_setaffinity,
 	TP_PROTO(struct task_struct *p, const struct cpumask *in_mask, int *retval),
 	TP_ARGS(p, in_mask, retval), 1);
 
-DECLARE_RESTRICTED_HOOK(android_rvh_sched_getaffinity,
-	TP_PROTO(struct task_struct *p, struct cpumask *in_mask),
-	TP_ARGS(p, in_mask), 1);
-
 DECLARE_RESTRICTED_HOOK(android_rvh_set_task_cpu,
 	TP_PROTO(struct task_struct *p, unsigned int new_cpu),
 	TP_ARGS(p, new_cpu), 1);
@@ -254,6 +250,10 @@ DECLARE_RESTRICTED_HOOK(android_rvh_set_cpus_allowed_by_task,
 DECLARE_RESTRICTED_HOOK(android_rvh_do_sched_yield,
 	TP_PROTO(struct rq *rq),
 	TP_ARGS(rq), 1);
+
+DECLARE_RESTRICTED_HOOK(android_rvh_before_do_sched_yield,
+	TP_PROTO(long *unused),
+	TP_ARGS(unused), 1);
 
 DECLARE_HOOK(android_vh_free_task,
 	TP_PROTO(struct task_struct *p),
@@ -406,6 +406,11 @@ DECLARE_HOOK(android_vh_cpu_cgroup_css_free,
 DECLARE_HOOK(android_vh_reweight_entity,
 	TP_PROTO(struct sched_entity *se),
 	TP_ARGS(se));
+
+DECLARE_RESTRICTED_HOOK(android_rvh_context_switch,
+	TP_PROTO(struct task_struct *pre, struct task_struct *next),
+	TP_ARGS(pre, next), 1);
+
 /* macro versions of hooks are no longer required */
 
 #endif /* _TRACE_HOOK_SCHED_H */

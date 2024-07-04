@@ -4,6 +4,7 @@
   __tracepoint_android_vh_logbuf
   tracepoint_probe_register
   tracepoint_probe_unregister
+  cgroup_rm_cftypes
 
 # required by shrink memory module
   shrink_slab
@@ -11,3 +12,151 @@
   __tracepoint_android_vh_shrink_slab_bypass
   __traceiter_android_vh_do_shrink_slab
   __traceiter_android_vh_shrink_slab_bypass
+
+# required by SAGT module
+  __traceiter_android_rvh_before_do_sched_yield
+  __tracepoint_android_rvh_before_do_sched_yield
+
+# required by memory
+  ufshcd_alloc_host
+  ufshcd_dealloc_host
+
+#required by metis.ko module
+  __traceiter_android_vh_rwsem_read_wait_start
+  __traceiter_android_vh_rwsem_write_wait_start
+  __traceiter_android_vh_mutex_wait_start
+  __traceiter_android_vh_alter_mutex_list_add
+  __traceiter_android_rvh_cpuset_fork
+  __traceiter_android_vh_sched_setaffinity_early
+  __traceiter_android_rvh_set_cpus_allowed_comm
+  __traceiter_android_rvh_dequeue_task
+  __tracepoint_android_vh_rwsem_read_wait_start
+  __tracepoint_android_vh_rwsem_write_wait_start
+  __tracepoint_android_vh_mutex_wait_start
+  __tracepoint_android_vh_alter_mutex_list_add
+  __tracepoint_android_rvh_cpuset_fork
+  __tracepoint_android_vh_sched_setaffinity_early
+  __tracepoint_android_rvh_set_cpus_allowed_comm
+  __tracepoint_android_rvh_dequeue_task
+  cpuset_cpus_allowed
+  cpufreq_update_policy
+
+#required by millet.ko
+  __traceiter_android_rvh_refrigerator
+  __tracepoint_android_rvh_refrigerator
+  freezer_cgrp_subsys
+
+# required by trace_hook.ko
+  android_rvh_probe_register
+  __traceiter_android_rvh_context_switch
+  __tracepoint_android_rvh_context_switch
+
+# required by dw_wdt.ko
+  android_rvh_probe_register
+  __traceiter_android_rvh_fiq_dump
+  __tracepoint_android_rvh_fiq_dump
+
+#required by mi_sched.ko
+  __traceiter_android_vh_scheduler_tick
+  __traceiter_android_vh_free_user
+  __traceiter_android_vh_alloc_uid
+  __tracepoint_android_vh_scheduler_tick
+  __tracepoint_android_vh_free_user
+  __tracepoint_android_vh_alloc_uid
+  free_uid
+  find_user
+
+#required by mi_freqwdg.ko
+  __traceiter_android_vh_freq_qos_remove_request
+  __traceiter_android_vh_freq_qos_update_request
+  __traceiter_android_vh_freq_qos_add_request
+  __traceiter_android_rvh_entity_tick
+  __traceiter_android_rvh_dequeue_task_fair
+  __tracepoint_android_vh_freq_qos_remove_request
+  __tracepoint_android_vh_freq_qos_update_request
+  __tracepoint_android_vh_freq_qos_add_request
+  __tracepoint_android_rvh_dequeue_task_fair
+  __tracepoint_android_rvh_entity_tick
+
+#required by cifs.ko
+  add_swap_extent
+  asn1_ber_decoder
+  copy_page_from_iter
+  copy_page_to_iter
+  clear_nlink
+  deactivate_super
+  dentry_path_raw
+  d_drop
+  d_move
+  d_hash_and_lookup
+  d_alloc_parallel
+  d_invalidate
+  errseq_check
+  file_modified
+  fs_param_is_bool
+  fs_param_is_u32
+  fs_param_is_u64
+  fs_param_is_string
+  finish_no_open
+  finish_open
+  filemap_map_pages
+  folio_wait_private_2
+  folio_clear_dirty_for_io
+  generate_random_uuid
+  generic_permission
+  generic_file_write_iter
+  generic_setlease
+  generic_copy_file_range
+  generic_key_instantiate
+  iov_iter_discard
+  iov_iter_bvec
+  iov_iter_get_pages_alloc2
+  iget_failed
+  invalidate_inode_pages2
+  iov_iter_npages
+  kfree_link
+  key_type_logon
+  key_invalidate
+  key_revoke
+  key_validate
+  lock_two_nondirectories
+  lookup_positive_unlocked
+  locks_lock_inode_wait
+  look_up_OID
+  overflowgid
+  out_of_line_wait_on_bit_lock
+  override_creds
+  posix_lock_file
+  posix_test_lock
+  prepare_kernel_cred
+  request_key_tag
+  revert_creds
+  register_key_type
+  sget
+  set_anon_super
+  super_setup_bdi
+  seq_escape_mem
+  setattr_copy
+  sock_sendmsg
+  security_sb_eat_lsm_opts
+  sprint_oid
+  truncate_inode_pages_range
+  tcp_sock_set_nodelay
+  tcp_sock_set_cork
+  truncate_pagecache_range
+  unlock_two_nondirectories
+  utf8s_to_utf16s
+  utf8_to_utf32
+  unregister_key_type
+  user_describe
+  user_revoke
+  user_destroy
+  user_read
+  vfs_setpos
+  vfs_parse_fs_string
+  wait_on_page_writeback
+  __generic_file_write_iter
+  __folio_lock_killable
+  __break_lease
+  __d_lookup_unhash_wake
+  __fs_parse

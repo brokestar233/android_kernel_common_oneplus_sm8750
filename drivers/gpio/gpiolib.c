@@ -579,8 +579,6 @@ static void gpiodev_release(struct device *dev)
 	struct gpio_device *gdev = to_gpio_device(dev);
 	unsigned long flags;
 
-	printk(KERN_ERR "gpio device: %s\n", gdev->label);
-	dump_stack();
 	spin_lock_irqsave(&gpio_lock, flags);
 	list_del(&gdev->list);
 	spin_unlock_irqrestore(&gpio_lock, flags);
@@ -2194,7 +2192,7 @@ int gpiod_request(struct gpio_desc *desc, const char *label)
 	}
 
 	if (ret)
-		gpiod_err(desc, "%s: status %d\n", __func__, ret);
+		gpiod_dbg(desc, "%s: status %d\n", __func__, ret);
 
 	return ret;
 }
