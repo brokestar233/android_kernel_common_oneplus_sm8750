@@ -4036,13 +4036,14 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 		 */
 		assoc_data->link[link_id].status = WLAN_STATUS_SUCCESS;
 		if (elems->ml_basic) {
-			if (!(elems->ml_basic->control &
-					cpu_to_le16(IEEE80211_MLC_BASIC_PRES_BSS_PARAM_CH_CNT))) {
+			int bss_param_ch_cnt =
+				ieee80211_mle_get_bss_param_ch_cnt((const void *)elems->ml_basic);
+
+			if (bss_param_ch_cnt < 0) {
 				ret = false;
 				goto out;
 			}
-			link->u.mgd.bss_param_ch_cnt =
-				ieee80211_mle_get_bss_param_ch_cnt(elems->ml_basic);
+			link->u.mgd.bss_param_ch_cnt = bss_param_ch_cnt;
 		}
 	} else if (!elems->prof ||
 		   !(elems->prof->control & prof_bss_param_ch_present)) {
@@ -5859,7 +5860,7 @@ static void ieee80211_ml_reconfiguration(struct ieee80211_sub_if_data *sdata,
 		 */
 		if (control &
 		    IEEE80211_MLE_STA_RECONF_CONTROL_AP_REM_TIMER_PRESENT)
-			link_removal_timeout[link_id] = le16_to_cpu(*(__le16 *)pos);
+			link_removal_timeout[link_id] = get_unaligned_le16(pos);
 	}
 
 	removed_links &= sdata->vif.valid_links;
@@ -5884,8 +5885,11 @@ static void ieee80211_ml_reconfiguration(struct ieee80211_sub_if_data *sdata,
 			continue;
 		}
 
-		link_delay = link_conf->beacon_int *
-			link_removal_timeout[link_id];
+		if (link_removal_timeout[link_id] < 1)
+			link_delay = 0;
+		else
+			link_delay = link_conf->beacon_int *
+				(link_removal_timeout[link_id] - 1);
 
 		if (!delay)
 			delay = link_delay;
