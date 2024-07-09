@@ -2691,7 +2691,7 @@ void f2fs_update_meta_page(struct f2fs_sb_info *sbi,
 {
 	struct page *page = f2fs_grab_meta_page(sbi, blk_addr);
 
-	memcpy(page_address(page), src, PAGE_SIZE);
+	copy_page(page_address(page), src);
 	set_page_dirty(page);
 	f2fs_put_page(page, 1);
 }

@@ -1444,7 +1444,7 @@ static void commit_checkpoint(struct f2fs_sb_info *sbi,
 
 	f2fs_wait_on_page_writeback(page, META, true, true);
 
-	memcpy(page_address(page), src, PAGE_SIZE);
+	copy_page(page_address(page), src);
 
 	set_page_dirty(page);
 	if (unlikely(!clear_page_dirty_for_io(page)))
