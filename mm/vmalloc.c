@@ -2086,7 +2086,21 @@ static void *new_vmap_block(unsigned int order, gfp_t gfp_mask)
 		return ERR_PTR(err);
 	}
 
+<<<<<<< HEAD 谢晓宣:80398989:平台与内核开发部 
 	vbq = per_cpu_ptr(&vmap_block_queue, vb->cpu);
+||||||| merged common ancestors
+	vbq = raw_cpu_ptr(&vmap_block_queue);
+=======
+	/*
+	* list_add_tail_rcu could happened in another core
+	* rather than vb->cpu due to task migration, which
+	* is safe as list_add_tail_rcu will ensure the list's
+	* integrity together with list_for_each_rcu from read
+	* side.
+	*/
+	vb->cpu = raw_smp_processor_id();
+	vbq = per_cpu_ptr(&vmap_block_queue, vb->cpu);
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
 	spin_lock(&vbq->lock);
 	list_add_tail_rcu(&vb->free_list, &vbq->free);
 	spin_unlock(&vbq->lock);
@@ -2114,8 +2128,15 @@ static void free_vmap_block(struct vmap_block *vb)
 static bool purge_fragmented_block(struct vmap_block *vb,
 		struct list_head *purge_list, bool force_purge)
 {
+<<<<<<< HEAD 谢晓宣:80398989:平台与内核开发部 
 	struct vmap_block_queue *vbq = &per_cpu(vmap_block_queue, vb->cpu);
 
+||||||| merged common ancestors
+=======
+	struct vmap_block_queue *vbq = &per_cpu(vmap_block_queue,
+					vb->cpu);
+
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
 	if (vb->free + vb->dirty != VMAP_BBMAP_BITS ||
 	    vb->dirty == VMAP_BBMAP_BITS)
 		return false;

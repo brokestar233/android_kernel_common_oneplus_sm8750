@@ -4,6 +4,7 @@
   alt_cb_patch_nops
   __arch_copy_from_user
   __arch_copy_to_user
+  blk_crypto_reprogram_all_keys
   capable
   __check_object_size
   class_create
@@ -16,8 +17,13 @@
   devm_extcon_register_notifier_all
   devm_hwspin_lock_request_specific
   _dev_info
+  dev_pm_opp_calc_power
+  dev_pm_opp_of_register_em
   dev_set_name
   __dynamic_netdev_dbg
+  em_dev_update_chip_binning
+  em_dev_update_perf_domain
+  em_pd_get
   finish_wait
   fortify_panic
   idr_alloc
@@ -260,6 +266,12 @@
   blkcg_policy_register
   __traceiter_android_rvh_ctl_dirty_rate
   __tracepoint_android_rvh_ctl_dirty_rate
+
+# required by kprobe_dmverity_debug.ko
+  dm_bio_from_per_bio_data
+  dm_bufio_read
+  dm_disk
+  dm_table_get_md
 
 # required by ledtrig-pattern.ko
   led_get_default_pattern
@@ -612,6 +624,10 @@
   __tracepoint_mm_filemap_delete_from_page_cache
   __tracepoint_mm_filemap_add_to_page_cache
 
+# required printk_cpuid.ko
+  __traceiter_android_vh_printk_ext_header
+  __tracepoint_android_vh_printk_ext_header
+
 # required by mali_gondul.ko
   anon_inode_getfd
   __arch_clear_user
@@ -663,7 +679,6 @@
   of_clk_get_parent_count
   of_devfreq_cooling_register_power
   of_dma_is_coherent
-  of_machine_is_compatible
   of_property_read_variable_u64_array
   of_property_read_variable_u8_array
   param_array_ops

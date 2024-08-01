@@ -2443,6 +2443,8 @@ static int filemap_update_page(struct kiocb *iocb,
 {
 	int error;
 
+	trace_android_vh_filemap_update_page(mapping, folio, iocb->ki_filp);
+
 	if (iocb->ki_flags & IOCB_NOWAIT) {
 		if (!filemap_invalidate_trylock_shared(mapping))
 			return -EAGAIN;
@@ -3126,33 +3128,39 @@ unlock:
 static int lock_folio_maybe_drop_mmap(struct vm_fault *vmf, struct folio *folio,
 				     struct file **fpin)
 {
+	struct task_struct *tsk = NULL;
+
 	if (folio_trylock(folio))
 		return 1;
 
 	/*
 	 * NOTE! This will make us return with VM_FAULT_RETRY, but with
-	 * the mmap_lock still held. That's how FAULT_FLAG_RETRY_NOWAIT
+	 * the fault lock still held. That's how FAULT_FLAG_RETRY_NOWAIT
 	 * is supposed to work. We have way too many special cases..
 	 */
 	if (vmf->flags & FAULT_FLAG_RETRY_NOWAIT)
 		return 0;
 
 	*fpin = maybe_unlock_mmap_for_io(vmf, *fpin);
+	trace_android_vh_lock_folio_drop_mmap_start(&tsk, vmf, folio, *fpin);
 	if (vmf->flags & FAULT_FLAG_KILLABLE) {
 		if (__folio_lock_killable(folio)) {
 			/*
-			 * We didn't have the right flags to drop the mmap_lock,
-			 * but all fault_handlers only check for fatal signals
-			 * if we return VM_FAULT_RETRY, so we need to drop the
-			 * mmap_lock here and return 0 if we don't have a fpin.
+			 * We didn't have the right flags to drop the
+			 * fault lock, but all fault_handlers only check
+			 * for fatal signals if we return VM_FAULT_RETRY,
+			 * so we need to drop the fault lock here and
+			 * return 0 if we don't have a fpin.
 			 */
 			if (*fpin == NULL)
-				mmap_read_unlock(vmf->vma->vm_mm);
+				release_fault_lock(vmf);
+			trace_android_vh_lock_folio_drop_mmap_end(false, &tsk, vmf, folio, *fpin);
 			return 0;
 		}
 	} else
 		__folio_lock(folio);
 
+	trace_android_vh_lock_folio_drop_mmap_end(true, &tsk, vmf, folio, *fpin);
 	return 1;
 }
 

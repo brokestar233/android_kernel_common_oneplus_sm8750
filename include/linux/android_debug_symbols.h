@@ -14,6 +14,12 @@ enum android_debug_symbol {
 	ADS_SEND,
 	ADS_MEM_BLOCK,
 	ADS_INIT_MM,
+	ADS_ITERATE_SUPERS,
+	ADS_DROP_SLAB,
+	ADS_FREE_PAGES,
+	ADS_COMPACT_PAGES,
+	ADS_SHOW_MEM, /* for debugging memory usage */
+	ADS_TOTAL_CMA, /* for debugging total cma pages */
 	ADS_END
 };
 

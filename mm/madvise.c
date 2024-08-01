@@ -40,6 +40,8 @@
 #include "internal.h"
 #include "swap.h"
 
+#include <trace/hooks/madvise.h>
+
 struct madvise_walk_private {
 	struct mmu_gather *tlb;
 	bool pageout;
@@ -100,6 +102,7 @@ struct anon_vma_name *anon_vma_name(struct vm_area_struct *vma)
 
 	return vma->anon_name;
 }
+EXPORT_SYMBOL_GPL(anon_vma_name);
 
 /* mmap_lock should be write-locked */
 static int replace_anon_vma_name(struct vm_area_struct *vma,
@@ -415,7 +418,7 @@ static int madvise_cold_or_pageout_pte_range(pmd_t *pmd,
 			err = split_folio(folio);
 			folio_unlock(folio);
 			folio_put(folio);
-			if (!err)
+			if (err >= 0)
 				goto regular_folio;
 			return 0;
 		}
@@ -457,6 +460,7 @@ regular_folio:
 	flush_tlb_batched_pending(mm);
 	arch_enter_lazy_mmu_mode();
 	for (; addr < end; pte += nr, addr += nr * PAGE_SIZE) {
+		bool need_skip = false;
 		nr = 1;
 		ptent = ptep_get(pte);
 
@@ -468,6 +472,12 @@ regular_folio:
 
 		folio = vm_normal_folio(vma, addr, ptent);
 		if (!folio || folio_is_zone_device(folio))
+			continue;
+
+		trace_android_vh_madvise_cold_pageout_skip(vma, folio, pageout,
+			&need_skip);
+
+		if (need_skip)
 			continue;
 
 		/*
@@ -506,7 +516,7 @@ regular_folio:
 				if (!start_pte)
 					break;
 				arch_enter_lazy_mmu_mode();
-				if (!err)
+				if (err >= 0)
 					nr = 0;
 				continue;
 			}
@@ -739,7 +749,7 @@ static int madvise_free_pte_range(pmd_t *pmd, unsigned long addr,
 				if (!start_pte)
 					break;
 				arch_enter_lazy_mmu_mode();
-				if (!err)
+				if (err >= 0)
 					nr = 0;
 				continue;
 			}
@@ -1319,6 +1329,7 @@ static int madvise_vma_anon_name(struct vm_area_struct *vma,
 	if (vma->vm_file && !vma_is_anon_shmem(vma))
 		return -EBADF;
 
+	trace_android_vh_update_vma_flags(vma);
 	error = madvise_update_vma(vma, prev, start, end, vma->vm_flags,
 				   (struct anon_vma_name *)anon_name);
 

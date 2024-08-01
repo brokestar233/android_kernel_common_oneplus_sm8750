@@ -96,6 +96,7 @@ unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
  * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
  */
 unsigned int sysctl_sched_base_slice			= 750000ULL;
+EXPORT_SYMBOL_GPL(sysctl_sched_base_slice);
 static unsigned int normalized_sysctl_sched_base_slice	= 750000ULL;
 
 /*
@@ -3807,6 +3808,7 @@ void reweight_task(struct task_struct *p, int prio)
 	reweight_entity(cfs_rq, se, weight);
 	load->inv_weight = sched_prio_to_wmult[prio];
 }
+EXPORT_SYMBOL_GPL(reweight_task);
 
 static inline int throttled_hierarchy(struct cfs_rq *cfs_rq);
 
@@ -3949,6 +3951,29 @@ static inline void update_cfs_group(struct sched_entity *se)
 {
 }
 #endif /* CONFIG_FAIR_GROUP_SCHED */
+
+static inline void cfs_rq_util_change(struct cfs_rq *cfs_rq, int flags)
+{
+	struct rq *rq = rq_of(cfs_rq);
+
+	if (&rq->cfs == cfs_rq) {
+		/*
+		 * There are a few boundary cases this might miss but it should
+		 * get called often enough that that should (hopefully) not be
+		 * a real problem.
+		 *
+		 * It will not get called when we go idle, because the idle
+		 * thread is a different class (!fair), nor will the utilization
+		 * number include things like RT tasks.
+		 *
+		 * As is, the util number is not freq-invariant (we'd have to
+		 * implement arch_scale_freq_capacity() for that).
+		 *
+		 * See cpu_util_cfs().
+		 */
+		cpufreq_update_util(rq, flags);
+	}
+}
 
 #ifdef CONFIG_SMP
 static inline bool load_avg_is_decayed(struct sched_avg *sa)
@@ -4559,6 +4584,8 @@ static void attach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	else
 		se->avg.load_sum = 1;
 
+	trace_android_rvh_attach_entity_load_avg(cfs_rq, se);
+
 	enqueue_load_avg(cfs_rq, se);
 	cfs_rq->avg.util_avg += se->avg.util_avg;
 	cfs_rq->avg.util_sum += se->avg.util_sum;
@@ -4566,6 +4593,8 @@ static void attach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	cfs_rq->avg.runnable_sum += se->avg.runnable_sum;
 
 	add_tg_cfs_propagate(cfs_rq, se->avg.load_sum);
+
+	cfs_rq_util_change(cfs_rq, 0);
 
 	trace_pelt_cfs_tp(cfs_rq);
 }
@@ -4580,6 +4609,8 @@ static void attach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
  */
 static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
+	trace_android_rvh_detach_entity_load_avg(cfs_rq, se);
+
 	dequeue_load_avg(cfs_rq, se);
 	sub_positive(&cfs_rq->avg.util_avg, se->avg.util_avg);
 	sub_positive(&cfs_rq->avg.util_sum, se->avg.util_sum);
@@ -4594,6 +4625,8 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 					      cfs_rq->avg.runnable_avg * PELT_MIN_DIVIDER);
 
 	add_tg_cfs_propagate(cfs_rq, -se->avg.load_sum);
+
+	cfs_rq_util_change(cfs_rq, 0);
 
 	trace_pelt_cfs_tp(cfs_rq);
 }
@@ -4610,7 +4643,7 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
 	u64 now = cfs_rq_clock_pelt(cfs_rq);
-	unsigned long prev_util_avg = cfs_rq->avg.util_avg;
+	int decayed;
 
 	/*
 	 * Track task load average for carrying it to new CPU after migrated, and
@@ -4619,8 +4652,10 @@ static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	if (se->avg.last_update_time && !(flags & SKIP_AGE_LOAD))
 		__update_load_avg_se(now, cfs_rq, se);
 
-	cfs_rq->decayed |= update_cfs_rq_load_avg(now, cfs_rq);
-	cfs_rq->decayed |= propagate_entity_load_avg(se);
+	decayed  = update_cfs_rq_load_avg(now, cfs_rq);
+	decayed |= propagate_entity_load_avg(se);
+
+	trace_android_rvh_update_load_avg(now, cfs_rq, se);
 
 	if (!se->avg.last_update_time && (flags & DO_ATTACH)) {
 
@@ -4641,19 +4676,12 @@ static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 		 */
 		detach_entity_load_avg(cfs_rq, se);
 		update_tg_load_avg(cfs_rq);
-	} else if (cfs_rq->decayed && (flags & UPDATE_TG)) {
-		update_tg_load_avg(cfs_rq);
-	}
+	} else if (decayed) {
+		cfs_rq_util_change(cfs_rq, 0);
 
-	/*
-	 * This field is used to indicate whether a trigger of cpufreq update
-	 * is required. When the CPU is saturated, other load signals could
-	 * still be changing, but util_avg would have settled down, so ensure
-	 * that we don't trigger unnecessary updates as from fair policy point
-	 * of view, nothing has changed to cause a cpufreq update.
-	 */
-	if (cfs_rq->decayed && prev_util_avg == cfs_rq->avg.util_avg)
-		cfs_rq->decayed = false;
+		if (flags & UPDATE_TG)
+			update_tg_load_avg(cfs_rq);
+	}
 }
 
 /*
@@ -4685,6 +4713,8 @@ static void remove_entity_load_avg(struct sched_entity *se)
 	 */
 
 	sync_entity_load_avg(se);
+
+	trace_android_rvh_remove_entity_load_avg(cfs_rq, se);
 
 	raw_spin_lock_irqsave(&cfs_rq->removed.lock, flags);
 	++cfs_rq->removed.nr;
@@ -4859,7 +4889,12 @@ static inline int util_fits_cpu(unsigned long util,
 {
 	unsigned long capacity_orig, capacity_orig_thermal;
 	unsigned long capacity = capacity_of(cpu);
-	bool fits, uclamp_max_fits;
+	bool fits, uclamp_max_fits, done = false;
+
+	trace_android_rvh_util_fits_cpu(util, uclamp_min, uclamp_max, cpu, &fits, &done);
+
+	if (done)
+		return fits;
 
 	/*
 	 * Check if the real util fits without any uclamp boost/cap applied.
@@ -4998,7 +5033,7 @@ static inline int is_misfit_task(struct task_struct *p, struct rq *rq,
 	return 1;
 }
 
-static inline void update_misfit_status(struct task_struct *p, struct rq *rq)
+inline void update_misfit_status(struct task_struct *p, struct rq *rq)
 {
 	bool need_update = true;
 	misfit_reason_t reason;
@@ -5020,6 +5055,7 @@ static inline void update_misfit_status(struct task_struct *p, struct rq *rq)
 	rq->misfit_task_load = max_t(unsigned long, task_h_load(p), 1);
 	rq->misfit_reason = reason;
 }
+EXPORT_SYMBOL_GPL(update_misfit_status);
 
 #else /* CONFIG_SMP */
 
@@ -5035,6 +5071,7 @@ static inline bool cfs_rq_is_decayed(struct cfs_rq *cfs_rq)
 
 static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se, int not_used1)
 {
+	cfs_rq_util_change(cfs_rq, 0);
 }
 
 static inline void remove_entity_load_avg(struct sched_entity *se) {}
@@ -6612,6 +6649,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int idle_h_nr_running = task_has_idle_policy(p);
 	int task_new = !(flags & ENQUEUE_WAKEUP);
+	int should_iowait_boost;
 
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
@@ -6620,6 +6658,16 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 * estimated utilization, before we update schedutil.
 	 */
 	util_est_enqueue(&rq->cfs, p);
+
+	/*
+	 * If in_iowait is set, the code below may not trigger any cpufreq
+	 * utilization updates, so do it here explicitly with the IOWAIT flag
+	 * passed.
+	 */
+	should_iowait_boost = p->in_iowait;
+	trace_android_rvh_set_iowait(p, rq, &should_iowait_boost);
+	if (should_iowait_boost)
+		cpufreq_update_util(rq, SCHED_CPUFREQ_IOWAIT);
 
 	for_each_sched_entity(se) {
 		if (se->on_rq)
@@ -9070,7 +9118,7 @@ static int detach_tasks(struct lb_env *env)
 		case migrate_util:
 			util = task_util_est(p);
 
-			if (util > env->imbalance)
+			if (shr_bound(util, env->sd->nr_balance_failed) > env->imbalance)
 				goto next;
 
 			env->imbalance -= util;
@@ -9230,6 +9278,10 @@ static bool __update_blocked_others(struct rq *rq, bool *done)
 	unsigned long thermal_pressure;
 	bool decayed;
 
+	/*
+	 * update_load_avg() can call cpufreq_update_util(). Make sure that RT,
+	 * DL and IRQ signals have been updated before updating CFS.
+	 */
 	curr_class = rq->curr->sched_class;
 
 	thermal_pressure = arch_scale_thermal_pressure(cpu_of(rq));
@@ -9252,6 +9304,8 @@ static bool __update_blocked_fair(struct rq *rq, bool *done)
 	struct cfs_rq *cfs_rq, *pos;
 	bool decayed = false;
 	int cpu = cpu_of(rq);
+
+	trace_android_rvh_update_blocked_fair(rq);
 
 	/*
 	 * Iterates the task_group tree in a bottom up fashion, see
@@ -12605,7 +12659,6 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 
 	update_misfit_status(curr, rq);
 	update_overutilized_status(task_rq(curr));
-	cpufreq_update_util(rq, 0);
 
 	task_tick_core(rq, curr);
 }
