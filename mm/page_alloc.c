@@ -55,10 +55,6 @@
 #include <linux/delayacct.h>
 #include <trace/hooks/vmscan.h>
 #include <trace/hooks/mm.h>
-
-#undef CREATE_TRACE_POINTS
-#include <trace/hooks/mm.h>
-
 #include <asm/div64.h>
 #include "internal.h"
 #include "shuffle.h"
@@ -71,16 +67,9 @@
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/mm.h>
 
-<<<<<<< HEAD 李杨欧文:80351790:平台与内核开发部 
-#undef CREATE_TRACE_POINTS
-#include <trace/hooks/mm.h>
-
-||||||| merged common ancestors
-=======
 EXPORT_TRACEPOINT_SYMBOL_GPL(mm_page_alloc);
 EXPORT_TRACEPOINT_SYMBOL_GPL(mm_page_free);
 
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
 /* Free Page Internal flags: for internal, non-pcp variants of free_pages(). */
 typedef int __bitwise fpi_t;
 
