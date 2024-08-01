@@ -280,12 +280,7 @@
   __traceiter_android_vh_record_rtmutex_lock_starttime
   __traceiter_android_vh_record_rwsem_lock_starttime
   __traceiter_android_vh_reweight_entity
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-  __traceiter_android_vh_rtmutex_wait_start
-||||||| merged common ancestors
-=======
   __traceiter_android_vh_read_lazy_flag
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
   __traceiter_android_vh_rmqueue_bulk_bypass
   __traceiter_android_vh_rt_mutex_steal
   __traceiter_android_vh_rtmutex_waiter_prio
@@ -465,13 +460,8 @@
   __tracepoint_android_vh_save_track_hash
   __tracepoint_android_vh_save_vmalloc_stack
   __tracepoint_android_vh_sched_move_task
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-  __tracepoint_android_rvh_sched_setaffinity
-||||||| merged common ancestors
-=======
   __tracepoint_android_rvh_sched_setaffinity
   __tracepoint_android_vh_set_tsk_need_resched_lazy
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
   __tracepoint_android_vh_sched_setaffinity_early
   __tracepoint_android_vh_sched_stat_runtime_rt
   __tracepoint_android_vh_should_alloc_pages_retry
@@ -507,30 +497,8 @@
   __tracepoint_sched_stat_wait
   __tracepoint_sched_waking
   __tracepoint_task_rename
-<<<<<<< HEAD 周茂炜:80264515:平台与内核开发部 
-  __tracepoint_android_vh_binder_list_add_work
-  __tracepoint_android_vh_binder_has_proc_work_ilocked
-  __tracepoint_android_vh_binder_release_special_work
-  __tracepoint_android_vh_binder_free_proc
-  __tracepoint_android_vh_alloc_pages_reclaim_bypass
-  __tracepoint_android_vh_alloc_pages_failure_bypass
-  __tracepoint_android_vh_free_unref_page_bypass
-  __tracepoint_android_vh_kvmalloc_node_use_vmalloc
-  __tracepoint_android_vh_should_alloc_pages_retry
-  __tracepoint_android_vh_unreserve_highatomic_bypass
-  __tracepoint_android_vh_tune_mmap_readaround
-  __tracepoint_android_vh_ra_tuning_max_page
-  __tracepoint_block_bio_queue
-  __tracepoint_block_getrq
-  __tracepoint_block_rq_complete
-  __tracepoint_block_rq_issue
-  __tracepoint_block_rq_merge
-  __tracepoint_block_rq_requeue
-||||||| merged common ancestors
-=======
   folio_total_mapcount
   page_mapping
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
   __trace_puts
   truncate_inode_pages
   try_to_free_mem_cgroup_pages
