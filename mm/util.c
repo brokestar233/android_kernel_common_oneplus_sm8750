@@ -827,7 +827,7 @@ int sysctl_overcommit_memory __read_mostly = OVERCOMMIT_GUESS;
 int sysctl_overcommit_ratio __read_mostly = 50;
 unsigned long sysctl_overcommit_kbytes __read_mostly;
 int sysctl_max_map_count __read_mostly = DEFAULT_MAX_MAP_COUNT;
-unsigned long sysctl_user_reserve_kbytes __read_mostly = 1UL << 17; /* 128MB */
+unsigned long sysctl_user_reserve_kbytes __read_mostly; /* 0MB */
 unsigned long sysctl_admin_reserve_kbytes __read_mostly; /* 0MB */
 
 int overcommit_ratio_handler(struct ctl_table *table, int write, void *buffer,
