@@ -49,36 +49,8 @@ DECLARE_HOOK(android_vh_kmalloc_large_alloced,
 	TP_PROTO(struct page *page, unsigned int order, gfp_t flags),
 	TP_ARGS(page, order, flags));
 DECLARE_RESTRICTED_HOOK(android_rvh_ctl_dirty_rate,
-<<<<<<< HEAD 李培锋:80248179:平台与内核开发部 
 	TP_PROTO(void *unused),
 	TP_ARGS(unused), 1);
-||||||| merged common ancestors
-	TP_PROTO(void *unused),
-	TP_ARGS(unused), 1);
-DECLARE_HOOK(android_vh_test_clear_look_around_ref,
-	TP_PROTO(struct page *page),
-	TP_ARGS(page));
-DECLARE_HOOK(android_vh_look_around_migrate_folio,
-	TP_PROTO(struct folio *old_folio, struct folio *new_folio),
-	TP_ARGS(old_folio, new_folio));
-DECLARE_HOOK(android_vh_look_around,
-	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
-		struct vm_area_struct *vma, int *referenced),
-	TP_ARGS(pvmw, folio, vma, referenced));
-=======
-	TP_PROTO(struct inode *inode),
-	TP_ARGS(inode), 1);
-DECLARE_HOOK(android_vh_test_clear_look_around_ref,
-	TP_PROTO(struct page *page),
-	TP_ARGS(page));
-DECLARE_HOOK(android_vh_look_around_migrate_folio,
-	TP_PROTO(struct folio *old_folio, struct folio *new_folio),
-	TP_ARGS(old_folio, new_folio));
-DECLARE_HOOK(android_vh_look_around,
-	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
-		struct vm_area_struct *vma, int *referenced),
-	TP_ARGS(pvmw, folio, vma, referenced));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
 DECLARE_HOOK(android_vh_free_unref_page_bypass,
 	TP_PROTO(struct page *page, int order, int migratetype, bool *bypass),
 	TP_ARGS(page, order, migratetype, bypass));
@@ -113,7 +85,6 @@ DECLARE_HOOK(android_vh_tune_mmap_readaround,
 	TP_PROTO(unsigned int ra_pages, pgoff_t pgoff,
 		pgoff_t *start, unsigned int *size, unsigned int *async_size),
 	TP_ARGS(ra_pages, pgoff, start, size, async_size));
-<<<<<<< HEAD 翁乐:80379123:平台与内核开发部 
 DECLARE_HOOK(android_vh_meminfo_proc_show,
 	TP_PROTO(struct seq_file *m),
 	TP_ARGS(m));
@@ -148,12 +119,9 @@ DECLARE_HOOK(android_vh_look_around,
 	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
 		struct vm_area_struct *vma, int *referenced),
 	TP_ARGS(pvmw, folio, vma, referenced));
-||||||| merged common ancestors
-=======
 DECLARE_HOOK(android_vh_madvise_cold_pageout_skip,
 	TP_PROTO(struct vm_area_struct *vma, struct folio *folio, bool pageout, bool *need_skip),
 	TP_ARGS(vma, folio, pageout, need_skip));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
 struct mem_cgroup;
 DECLARE_HOOK(android_vh_mem_cgroup_alloc,
 	TP_PROTO(struct mem_cgroup *memcg),
@@ -278,31 +246,6 @@ DECLARE_HOOK(android_vh_oom_swapmem_gather_init,
 DECLARE_HOOK(android_vh_oom_swapmem_gather_finish,
 	TP_PROTO(struct mm_struct *mm),
 	TP_ARGS(mm));
-<<<<<<< HEAD 谢柳杰:80233409:平台与内核开发部 
-||||||| merged common ancestors
-DECLARE_HOOK(android_vh_drain_all_pages_bypass,
-	TP_PROTO(gfp_t gfp_mask, unsigned int order, unsigned long alloc_flags,
-		int migratetype, unsigned long did_some_progress,
-		bool *bypass),
-	TP_ARGS(gfp_mask, order, alloc_flags, migratetype, did_some_progress, bypass));
-DECLARE_HOOK(android_vh_save_vmalloc_stack,
-	TP_PROTO(unsigned long flags, struct vm_struct *vm),
-	TP_ARGS(flags, vm));
-DECLARE_HOOK(android_vh_show_stack_hash,
-	TP_PROTO(struct seq_file *m, struct vm_struct *v),
-	TP_ARGS(m, v));
-=======
-DECLARE_HOOK(android_vh_drain_all_pages_bypass,
-	TP_PROTO(gfp_t gfp_mask, unsigned int order, unsigned long alloc_flags,
-		int migratetype, unsigned long did_some_progress,
-		bool *bypass),
-	TP_ARGS(gfp_mask, order, alloc_flags, migratetype, did_some_progress, bypass));
-DECLARE_HOOK(android_vh_save_vmalloc_stack,
-	TP_PROTO(unsigned long flags, struct vm_struct *vm),
-	TP_ARGS(flags, vm));
-DECLARE_HOOK(android_vh_show_stack_hash,
-	TP_PROTO(struct seq_file *m, struct vm_struct *v),
-	TP_ARGS(m, v));
 DECLARE_HOOK(android_vh_update_page_mapcount,
 	TP_PROTO(struct page *page, bool inc_size, bool compound,
 			int *first_mapping, bool *success),
@@ -341,7 +284,6 @@ DECLARE_HOOK(android_vh_filemap_update_page,
 	TP_PROTO(struct address_space *mapping, struct folio *folio,
 		struct file *file),
 	TP_ARGS(mapping, folio, file));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.034
 
 #endif /* _TRACE_HOOK_MM_H */
 
