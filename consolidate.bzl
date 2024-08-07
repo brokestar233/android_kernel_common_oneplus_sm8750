@@ -51,6 +51,7 @@ def define_consolidate():
         ],
         module_implicit_outs = get_gki_modules_list("arm64"),
         build_config = rule_base + "_build_config",
+        trim_nonlisted_kmi = False,
     )
 
     kernel_modules_install(

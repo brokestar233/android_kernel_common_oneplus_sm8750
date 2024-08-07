@@ -2066,14 +2066,6 @@ static void *new_vmap_block(unsigned int order, gfp_t gfp_mask)
 	vb->dirty = 0;
 	vb->dirty_min = VMAP_BBMAP_BITS;
 	vb->dirty_max = 0;
-	/*
-	 * list_add_tail_rcu could happened in another core
-	 * rather than vb->cpu due to task migration, which
-	 * is safe as list_add_tail_rcu will ensure the list's
-	 * integrity together with list_for_each_rcu from read
-	 * side.
-	 */
-	vb->cpu = raw_smp_processor_id();
 	bitmap_set(vb->used_map, 0, (1UL << order));
 	INIT_LIST_HEAD(&vb->free_list);
 
@@ -2086,6 +2078,14 @@ static void *new_vmap_block(unsigned int order, gfp_t gfp_mask)
 		return ERR_PTR(err);
 	}
 
+	/*
+	* list_add_tail_rcu could happened in another core
+	* rather than vb->cpu due to task migration, which
+	* is safe as list_add_tail_rcu will ensure the list's
+	* integrity together with list_for_each_rcu from read
+	* side.
+	*/
+	vb->cpu = raw_smp_processor_id();
 	vbq = per_cpu_ptr(&vmap_block_queue, vb->cpu);
 	spin_lock(&vbq->lock);
 	list_add_tail_rcu(&vb->free_list, &vbq->free);
@@ -2114,7 +2114,8 @@ static void free_vmap_block(struct vmap_block *vb)
 static bool purge_fragmented_block(struct vmap_block *vb,
 		struct list_head *purge_list, bool force_purge)
 {
-	struct vmap_block_queue *vbq = &per_cpu(vmap_block_queue, vb->cpu);
+	struct vmap_block_queue *vbq = &per_cpu(vmap_block_queue,
+					vb->cpu);
 
 	if (vb->free + vb->dirty != VMAP_BBMAP_BITS ||
 	    vb->dirty == VMAP_BBMAP_BITS)

@@ -622,9 +622,7 @@ struct cfs_rq {
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 #endif /* CONFIG_SMP */
 
-	/*
-	 * Store whether last update_load_avg() has decayed
-	 */
+	 /* Unused, only kept here to preserve the KMI after revert. */
 	bool			decayed;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -2209,6 +2207,8 @@ static inline int task_on_rq_migrating(struct task_struct *p)
 #define WF_SYNC         0x10 /* Waker goes to sleep after wakeup */
 #define WF_MIGRATED     0x20 /* Internal use, task got migrated */
 #define WF_CURRENT_CPU  0x40 /* Prefer to move the wakee to the current CPU. */
+
+#define WF_ANDROID_VENDOR	0x1000 /* Vendor specific for Android */
 
 #ifdef CONFIG_SMP
 static_assert(WF_EXEC == SD_BALANCE_EXEC);
