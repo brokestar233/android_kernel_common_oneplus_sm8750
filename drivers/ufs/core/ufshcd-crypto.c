@@ -6,9 +6,6 @@
 #include <ufs/ufshcd.h>
 #include "ufshcd-crypto.h"
 
-#undef CREATE_TRACE_POINTS
-#include <trace/hooks/ufshcd.h>
-
 /* Blk-crypto modes supported by UFS crypto */
 static const struct ufs_crypto_alg_entry {
 	enum ufs_crypto_alg ufs_alg;
@@ -125,13 +122,7 @@ bool ufshcd_crypto_enable(struct ufs_hba *hba)
 		return false;
 
 	/* Reset might clear all keys, so reprogram all the keys. */
-	if (hba->crypto_profile.num_slots) {
-		int err = -EOPNOTSUPP;
-
-		trace_android_rvh_ufs_reprogram_all_keys(hba, &err);
-		if (err == -EOPNOTSUPP)
-			blk_crypto_reprogram_all_keys(&hba->crypto_profile);
-	}
+	blk_crypto_reprogram_all_keys(&hba->crypto_profile);
 
 	if (hba->android_quirks & UFSHCD_ANDROID_QUIRK_BROKEN_CRYPTO_ENABLE)
 		return false;

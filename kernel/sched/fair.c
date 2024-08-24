@@ -9118,7 +9118,7 @@ static int detach_tasks(struct lb_env *env)
 		case migrate_util:
 			util = task_util_est(p);
 
-			if (shr_bound(util, env->sd->nr_balance_failed) > env->imbalance)
+			if (util > env->imbalance)
 				goto next;
 
 			env->imbalance -= util;

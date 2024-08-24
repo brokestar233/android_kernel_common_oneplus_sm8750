@@ -6,6 +6,7 @@
 #include "compress.h"
 #include <linux/module.h>
 #include <linux/lz4.h>
+#include <trace/hooks/lz4_decompress.h>
 
 #ifndef LZ4_DISTANCE_MAX	/* history window size */
 #define LZ4_DISTANCE_MAX 65535	/* set to maximum value by default */
@@ -55,7 +56,7 @@ static int z_erofs_load_lz4_config(struct super_block *sb,
 	sbi->lz4.max_distance_pages = distance ?
 					DIV_ROUND_UP(distance, PAGE_SIZE) + 1 :
 					LZ4_MAX_DISTANCE_PAGES;
-	return z_erofs_gbuf_growsize(sbi->lz4.max_pclusterblks);
+	return erofs_pcpubuf_growsize(sbi->lz4.max_pclusterblks);
 }
 
 /*
@@ -112,9 +113,8 @@ static int z_erofs_lz4_prepare_dstpages(struct z_erofs_lz4_decompress_ctx *ctx,
 			victim = availables[--top];
 			get_page(victim);
 		} else {
-			victim = __erofs_allocpage(pagepool, rq->gfp, true);
-			if (!victim)
-				return -ENOMEM;
+			victim = erofs_allocpage(pagepool,
+						 GFP_KERNEL | __GFP_NOFAIL);
 			set_page_private(victim, Z_EROFS_SHORTLIVED_PAGE);
 		}
 		rq->out[i] = victim;
@@ -160,7 +160,7 @@ static void *z_erofs_lz4_handle_overlap(struct z_erofs_lz4_decompress_ctx *ctx,
 docopy:
 	/* Or copy compressed data which can be overlapped to per-CPU buffer */
 	in = rq->in;
-	src = z_erofs_get_gbuf(ctx->inpages);
+	src = erofs_get_pcpubuf(ctx->inpages);
 	if (!src) {
 		DBG_BUGON(1);
 		kunmap_local(inpage);
@@ -213,6 +213,7 @@ static int z_erofs_lz4_decompress_mem(struct z_erofs_lz4_decompress_ctx *ctx,
 	unsigned int inputmargin;
 	u8 *out, *headpage, *src;
 	int ret, maptype;
+	bool lz4_decompression_bypass = false;
 
 	DBG_BUGON(*rq->in == NULL);
 	headpage = kmap_local_page(*rq->in);
@@ -238,6 +239,13 @@ static int z_erofs_lz4_decompress_mem(struct z_erofs_lz4_decompress_ctx *ctx,
 		return PTR_ERR(src);
 
 	out = dst + rq->pageofs_out;
+
+	trace_android_vh_lz4_decompress_bypass(src + inputmargin, out, rq->inputsize,
+			rq->outputsize, rq->inplace_io, &ret, &lz4_decompression_bypass);
+
+	if (lz4_decompression_bypass)
+		goto bypass_decompression;
+
 	/* legacy format could compress extra data in a pcluster. */
 	if (rq->partial_decoding || !support_0padding)
 		ret = LZ4_decompress_safe_partial(src + inputmargin, out,
@@ -246,6 +254,7 @@ static int z_erofs_lz4_decompress_mem(struct z_erofs_lz4_decompress_ctx *ctx,
 		ret = LZ4_decompress_safe(src + inputmargin, out,
 					  rq->inputsize, rq->outputsize);
 
+bypass_decompression:
 	if (ret != rq->outputsize) {
 		erofs_err(rq->sb, "failed to decompress %d in[%u, %u] out[%u]",
 			  ret, rq->inputsize, inputmargin, rq->outputsize);
@@ -267,7 +276,7 @@ static int z_erofs_lz4_decompress_mem(struct z_erofs_lz4_decompress_ctx *ctx,
 	} else if (maptype == 1) {
 		vm_unmap_ram(src, ctx->inpages);
 	} else if (maptype == 2) {
-		z_erofs_put_gbuf(src);
+		erofs_put_pcpubuf(src);
 	} else if (maptype != 3) {
 		DBG_BUGON(1);
 		return -EFAULT;

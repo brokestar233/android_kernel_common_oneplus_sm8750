@@ -26,11 +26,7 @@ enum Value {
 
 type Object = Vec<(String, Value)>;
 
-fn comma_sep<T>(
-    seq: &[T],
-    formatter: &mut Formatter<'_>,
-    f: impl Fn(&mut Formatter<'_>, &T) -> Result,
-) -> Result {
+fn comma_sep<T>(seq: &[T], formatter: &mut Formatter<'_>, f: impl Fn(&mut Formatter<'_>, &T) -> Result) -> Result {
     if let [ref rest @ .., ref last] = seq[..] {
         for v in rest {
             f(formatter, v)?;
@@ -56,9 +52,8 @@ impl Display for Value {
             }
             Value::Object(object) => {
                 formatter.write_str("{")?;
-                comma_sep(&object[..], formatter, |formatter, v| {
-                    write!(formatter, "\"{}\": {}", v.0, v.1)
-                })?;
+                comma_sep(&object[..], formatter, |formatter, v|
+                          write!(formatter, "\"{}\": {}", v.0, v.1))?;
                 formatter.write_str("}")
             }
         }
@@ -95,7 +90,7 @@ impl From<Object> for Value {
     }
 }
 
-impl<T: Into<Value>, const N: usize> From<[T; N]> for Value {
+impl <T: Into<Value>, const N: usize> From<[T; N]> for Value {
     fn from(i: [T; N]) -> Self {
         Self::Array(i.into_iter().map(|v| v.into()).collect())
     }
@@ -173,20 +168,7 @@ fn main() {
 
     // `llvm-target`s are taken from `scripts/Makefile.clang`.
     if cfg.has("ARM64") {
-        ts.push("arch", "aarch64");
-        ts.push(
-            "data-layout",
-            "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
-        );
-        ts.push("disable-redzone", true);
-        let mut features = "+v8a,+strict-align,-neon,-fp-armv8".to_string();
-        if cfg.has("SHADOW_CALL_STACK") {
-            features += ",+reserve-x18";
-        }
-        ts.push("features", features);
-        ts.push("llvm-target", "aarch64-linux-gnu");
-        ts.push("supported-sanitizers", ["kcfi"]);
-        ts.push("target-pointer-width", "64");
+        panic!("arm64 uses the builtin rustc aarch64-unknown-none target");
     } else if cfg.has("X86_64") {
         ts.push("arch", "x86_64");
         ts.push(
