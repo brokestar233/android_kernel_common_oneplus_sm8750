@@ -239,6 +239,7 @@ struct fsverity_info *fsverity_create_info(const struct inode *inode,
 			err = -ENOMEM;
 			goto fail;
 		}
+		spin_lock_init(&vi->hash_page_init_lock);
 	}
 
 	return vi;

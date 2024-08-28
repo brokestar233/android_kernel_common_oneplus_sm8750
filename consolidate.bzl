@@ -6,7 +6,7 @@ load(
     "kernel_modules_install",
 )
 load("//build/kernel/kleaf:constants.bzl", "aarch64_outs")
-load(":modules.bzl", "get_gki_modules_list")
+load(":modules.bzl", "get_gki_modules_list", "get_kunit_modules_list")
 
 rule_base = "kernel_aarch64_consolidate"
 
@@ -49,7 +49,7 @@ def define_consolidate():
             "Image.lz4",
             "Image.gz",
         ],
-        module_implicit_outs = get_gki_modules_list("arm64"),
+        module_implicit_outs = get_gki_modules_list("arm64") + get_kunit_modules_list("arm64"),
         build_config = rule_base + "_build_config",
         trim_nonlisted_kmi = False,
     )

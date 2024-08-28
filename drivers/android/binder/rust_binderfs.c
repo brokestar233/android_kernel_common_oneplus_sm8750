@@ -139,6 +139,8 @@ static int binderfs_binder_device_create(struct inode *ref_inode,
 	int minor, ret;
 	struct dentry *dentry, *root;
 	rust_binder_device device = NULL;
+	char *name = NULL;
+	size_t name_len;
 	struct inode *inode = NULL;
 	struct super_block *sb = ref_inode->i_sb;
 	struct binderfs_info *info = sb->s_fs_info;
@@ -166,8 +168,13 @@ static int binderfs_binder_device_create(struct inode *ref_inode,
 
 	ret = -ENOMEM;
 	req->name[BINDERFS_MAX_NAME] = '\0'; /* NUL-terminate */
+	name_len = strlen(req->name);
+	/* Make sure to include terminating NUL byte */
+	name = kmemdup(req->name, name_len + 1, GFP_KERNEL);
+	if (!name)
+		goto err;
 
-	device = rust_binder_new_device(req->name);
+	device = rust_binder_new_device(name);
 	if (!device)
 		goto err;
 
@@ -195,7 +202,7 @@ static int binderfs_binder_device_create(struct inode *ref_inode,
 	inode_lock(d_inode(root));
 
 	/* look it up */
-	dentry = lookup_one_len(req->name, root, strlen(req->name));
+	dentry = lookup_one_len(name, root, name_len);
 	if (IS_ERR(dentry)) {
 		inode_unlock(d_inode(root));
 		ret = PTR_ERR(dentry);
@@ -218,6 +225,7 @@ static int binderfs_binder_device_create(struct inode *ref_inode,
 	return 0;
 
 err:
+	kfree(name);
 	rust_binder_remove_device(device);
 	mutex_lock(&binderfs_minors_mutex);
 	--info->device_count;

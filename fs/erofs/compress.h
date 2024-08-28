@@ -11,12 +11,13 @@
 struct z_erofs_decompress_req {
 	struct super_block *sb;
 	struct page **in, **out;
+
 	unsigned short pageofs_in, pageofs_out;
 	unsigned int inputsize, outputsize;
 
-	unsigned int alg;       /* the algorithm for decompression */
+	/* indicate the algorithm will be used for decompression */
+	unsigned int alg;
 	bool inplace_io, partial_decoding, fillgaps;
-	gfp_t gfp;      /* allocation flags for extra temporary buffers */
 };
 
 struct z_erofs_decompressor {
