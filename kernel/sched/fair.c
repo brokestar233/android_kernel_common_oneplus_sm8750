@@ -12328,7 +12328,6 @@ static void _nohz_idle_balance(struct rq *this_rq, unsigned int flags)
 	unsigned long next_balance = now + 60*HZ;
 	bool has_blocked_load = false;
 	int update_next_balance = 0;
-	int this_cpu = this_rq->cpu;
 	int balance_cpu;
 	struct rq *rq;
 
@@ -12355,11 +12354,7 @@ static void _nohz_idle_balance(struct rq *this_rq, unsigned int flags)
 	 */
 	smp_mb();
 
-	/*
-	 * Start with the next CPU after this_cpu so we will end with this_cpu and let a
-	 * chance for other idle cpu to pull load.
-	 */
-	for_each_cpu_wrap(balance_cpu,  nohz.idle_cpus_mask, this_cpu+1) {
+	for_each_cpu(balance_cpu, nohz.idle_cpus_mask) {
 		if (!idle_cpu(balance_cpu))
 			continue;
 
