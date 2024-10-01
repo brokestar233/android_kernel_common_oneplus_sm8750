@@ -150,6 +150,10 @@ bool zswap_never_enabled(void)
 	return !static_branch_maybe(CONFIG_ZSWAP_DEFAULT_ON, &zswap_ever_enabled);
 }
 
+bool zswap_is_enabled(void)
+{
+	return zswap_enabled;
+}
 /*********************************
 * data structures
 **********************************/

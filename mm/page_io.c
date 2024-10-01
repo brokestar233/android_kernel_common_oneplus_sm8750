@@ -200,6 +200,7 @@ int swap_writepage(struct page *page, struct writeback_control *wbc)
 	}
 	if (zswap_store(folio)) {
 		folio_start_writeback(folio);
+		count_mthp_stat(folio_order(folio), MTHP_STAT_ZSWPOUT);
 		folio_unlock(folio);
 		folio_end_writeback(folio);
 		return 0;
