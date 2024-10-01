@@ -338,7 +338,7 @@ static struct zram_pp_slot *select_pp_slot(struct zram_pp_ctl *ctl)
 	s32 idx = NUM_PP_BUCKETS - 1;
 
 	/* The higher the bucket id the more optimal slot post-processing is */
-	while (idx > 0) {
+	while (idx >= 0) {
 		pps = list_first_entry_or_null(&ctl->pp_buckets[idx],
 					       struct zram_pp_slot,
 					       entry);
