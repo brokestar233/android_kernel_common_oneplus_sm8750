@@ -16,6 +16,7 @@ void zswap_invalidate(int type, pgoff_t offset);
 void zswap_swapon(int type);
 void zswap_swapoff(int type);
 bool zswap_never_enabled(void);
+bool zswap_is_enabled(void);
 
 #else
 
@@ -38,6 +39,10 @@ static inline bool zswap_never_enabled(void)
 	return true;
 }
 
+static inline bool zswap_is_enabled(void)
+{
+	return true;
+}
 #endif
 
 #endif /* _LINUX_ZSWAP_H */
