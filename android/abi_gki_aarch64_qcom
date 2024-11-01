@@ -105,11 +105,13 @@
   check_preempt_curr
   check_zeroed_user
   class_create
+  class_create_file_ns
   class_destroy
   class_find_device
   class_for_each_device
   class_interface_unregister
   class_register
+  class_remove_file_ns
   class_unregister
   cleanup_srcu_struct
   clear_page
@@ -664,6 +666,7 @@
   fwnode_property_read_u32_array
   gcd
   generic_device_group
+  generic_file_llseek
   generic_handle_domain_irq
   generic_handle_irq
   geni_icc_disable
@@ -785,6 +788,7 @@
   __hw_addr_init
   __hw_addr_sync
   __hw_addr_unsync
+  hwspin_lock_bust
   hwspin_lock_free
   hwspin_lock_request_specific
   __hwspin_lock_timeout
@@ -1421,8 +1425,10 @@
   pm_clk_suspend
   pm_generic_resume
   pm_generic_suspend
+  pm_genpd_add_device
   pm_genpd_add_subdomain
   pm_genpd_init
+  pm_genpd_remove_device
   pm_genpd_remove_subdomain
   pm_power_off
   __pm_relax
