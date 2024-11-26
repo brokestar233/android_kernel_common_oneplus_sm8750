@@ -44,6 +44,10 @@ enum cpufreq_table_sorting {
 	CPUFREQ_TABLE_SORTED_DESCENDING
 };
 
+ssize_t store_scaling_governor(struct cpufreq_policy *policy,
+                                        const char *buf, size_t count);
+ssize_t show_scaling_governor(struct cpufreq_policy *policy, char *buf);
+
 struct cpufreq_cpuinfo {
 	unsigned int		max_freq;
 	unsigned int		min_freq;

@@ -5869,6 +5869,7 @@ __setup("resched_latency_warn_ms=", setup_resched_latency_warn_ms);
 #else
 static inline u64 cpu_resched_latency(struct rq *rq) { return 0; }
 #endif /* CONFIG_SCHED_DEBUG */
+
 /*
  * This function gets called by the timer code, with HZ frequency.
  * We call it with interrupts disabled.
@@ -5925,7 +5926,7 @@ void scheduler_tick(void)
 #endif
 	trace_android_vh_scheduler_tick(rq);
 #ifdef CONFIG_HMBIRD_SCHED
-	scheduler_tick_handler(NULL,NULL);
+	scheduler_tick_handler(NULL, NULL);
 #endif
 }
 
@@ -6969,7 +6970,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 
 		trace_sched_switch(sched_mode & SM_MASK_PREEMPT, prev, next, prev_state);
 #ifdef CONFIG_HMBIRD_SCHED
-		sched_switch_handler(NULL,sched_mode & SM_MASK_PREEMPT, prev, next, prev_state);
+		sched_switch_handler(NULL, sched_mode & SM_MASK_PREEMPT, prev, next, prev_state);
 #endif
 		/* Also unlocks the rq: */
 		rq = context_switch(rq, prev, next, &rf);
@@ -7307,7 +7308,7 @@ static void __setscheduler_prio(struct task_struct *p, int prio)
 		;
 	else if (dl_prio(prio))
 		p->sched_class = &dl_sched_class;
-	else if (rt_prio(prio) && on_hmbird && !reject_change_to_hmbird(p, prio))
+	else if (rt_prio(prio) && on_hmbird)
 		p->sched_class = &hmbird_sched_class;
 	else if (rt_prio(prio))
 		p->sched_class = &rt_sched_class;

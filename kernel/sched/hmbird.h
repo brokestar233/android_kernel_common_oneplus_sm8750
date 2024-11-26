@@ -159,11 +159,13 @@ struct hmbird_rq {
 	cpumask_var_t		cpus_to_preempt;
 	cpumask_var_t		cpus_to_wait;
 	u64			pnt_seq;
-	u64*		hmbird_cpu_util;
+	u64*		prev_runnable_sum_fixed;
+	u32*		prev_window_size;
 	struct irq_work		kick_cpus_irq_work;
-	bool			es4g_select;
-	bool 			es4g_isolate;
-	bool 			es4g_low_isolate;
+	bool			pipeline;
+	bool 			exclusive;
+	bool 			period_disallow;
+	bool 			nonperiod_disallow;
 	struct rq		*rq;
 };
 

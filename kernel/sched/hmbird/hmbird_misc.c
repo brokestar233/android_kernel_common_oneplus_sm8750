@@ -73,7 +73,7 @@ void hmbird_skip_yield(long *skip)
 	int cpu = raw_smp_processor_id();
 	struct rq *rq = cpu_rq(cpu);
 
-	if ((get_hmbird_rq(rq)->es4g_select && get_hmbird_rq(rq)->es4g_isolate) && !(*skip)) {
+	if (get_hmbird_rq(rq)->exclusive && !(*skip)) {
 		ys = &per_cpu(ystate, cpu);
 		raw_spin_lock_irqsave(&ys->lock, flags);
 		if (ys->usleep > MIN_YIELD_SLEEP || ys->cnt >= DEFAULT_YIELD_SLEEP_TH) {

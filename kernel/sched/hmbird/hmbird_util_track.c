@@ -31,7 +31,7 @@ void hmbird_window_rollover_run_once(struct rq *rq)
 
 	for_each_online_cpu(cpu) {
 		tmp_rq = cpu_rq(cpu);
-		if (get_hmbird_rq(tmp_rq)->es4g_select && get_hmbird_rq(tmp_rq)->es4g_isolate) {
+		if (get_hmbird_rq(tmp_rq)->exclusive) {
 			ys = &per_cpu(ystate, cpu);
 			raw_spin_lock_irqsave(&ys->lock, flags);
 			if (ys->cnt >= DEFAULT_YIELD_SLEEP_TH || ys->usleep_times > 1) {

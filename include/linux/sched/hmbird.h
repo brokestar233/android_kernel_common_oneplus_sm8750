@@ -23,6 +23,32 @@
 #define get_hmbird_ops(rq)	\
 	((struct hmbird_ops *)(rq->android_oem_data1[HMBIRD_OPS_IDX]))
 
+#define SCHED_PROP_DEADLINE_MASK (0xFF) /* deadline for ext sched class */
+/*
+ * Every task has a DEADLINE_LEVEL which stands for
+ * max schedule latency this task can afford. LEVEL1~5
+ * for user-aware tasks, LEVEL6~9 for other tasks.
+ */
+#define SCHED_PROP_DEADLINE_LEVEL0 (0)
+#define SCHED_PROP_DEADLINE_LEVEL1 (1)
+#define SCHED_PROP_DEADLINE_LEVEL2 (2)
+#define SCHED_PROP_DEADLINE_LEVEL3 (3)
+#define SCHED_PROP_DEADLINE_LEVEL4 (4)
+#define SCHED_PROP_DEADLINE_LEVEL5 (5)
+#define SCHED_PROP_DEADLINE_LEVEL6 (6)
+#define SCHED_PROP_DEADLINE_LEVEL7 (7)
+#define SCHED_PROP_DEADLINE_LEVEL8 (8)
+#define SCHED_PROP_DEADLINE_LEVEL9 (9)
+/*
+ * Distinguish tasks into periodical tasks which requires
+ * low schedule latency and non-periodical tasks which are
+ * not sensitive to schedule latency.
+ */
+#define SCHED_HMBIRD_DSQ_TYPE_PERIOD            (0) /* period dsq of hmbird */
+#define SCHED_HMBIRD_DSQ_TYPE_NON_PERIOD        (1) /* non period dsq of hmbird */
+
+#define TOP_TASK_BITS_MASK      (0xFF)
+#define TOP_TASK_BITS           (8)
 #include <linux/llist.h>
 
 extern atomic_t non_hmbird_task;
@@ -31,6 +57,7 @@ extern atomic_t __hmbird_ops_enabled;
 
 enum hmbird_consts {
 	HMBIRD_SLICE_DFL		= 1 * NSEC_PER_MSEC,
+	HMBIRD_SLICE_ISO		= 8 * HMBIRD_SLICE_DFL,
 	HMBIRD_SLICE_INF		= U64_MAX,	/* infinite, implies nohz */
 };
 
@@ -94,7 +121,7 @@ struct hmbird_dispatch_q {
 enum hmbird_ent_flags {
 	HMBIRD_TASK_QUEUED		= 1 << 0, /* on hmbird runqueue */
 	HMBIRD_TASK_BAL_KEEP	= 1 << 1, /* balance decided to keep current */
-	HMBIRD_TASK_ENQ_LOCAL	= 1 << 2, /* used by hmbird_select_cpu_dfl() to set HMBIRD_ENQ_LOCAL */
+	HMBIRD_TASK_ENQ_LOCAL	= 1 << 2, /* used by hmbird_select_cpu_dfl, set HMBIRD_ENQ_LOCAL */
 
 	HMBIRD_TASK_OPS_PREPPED	= 1 << 8, /* prepared for BPF scheduler enable */
 	HMBIRD_TASK_OPS_ENABLED	= 1 << 9, /* task has BPF scheduler enabled */
@@ -147,6 +174,7 @@ struct hmbird_entity {
 	u64			slice;
 	u64			dsq_vtime;
 	bool			disallow;	/* reject switching into HMBIRD */
+	u16			demand_scaled;
 
 	/* cold fields */
 	struct list_head	tasks_node;
@@ -159,7 +187,6 @@ struct hmbird_entity {
 	int                     gdsq_idx;
 
 	s32			critical_affinity_cpu;
-
 };
 
 struct hmbird_ops {
@@ -171,4 +198,4 @@ struct hmbird_ops {
 
 void hmbird_free(struct task_struct *p);
 
-#endif	/* _LINUX_SCHED_EXT_H */
+#endif	/* _LINUX_SCHED_HMBIRD_H */

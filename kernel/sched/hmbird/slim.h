@@ -6,10 +6,23 @@
 extern atomic_t __hmbird_ops_enabled;
 extern atomic_t non_hmbird_task;
 extern int cgroup_ids_table[NUMS_CGROUP_KINDS];
+extern int heartbeat;
+extern int heartbeat_enable;
+extern int watchdog_enable;
+extern int isolate_ctrl;
+extern int parctrl_high_ratio;
+extern int parctrl_low_ratio;
+extern int isoctrl_high_ratio;
+extern int isoctrl_low_ratio;
+extern int iso_free_rescue;
 
 extern noinline int tracing_mark_write(const char *buf);
 int task_top_id(struct task_struct *p);
 void stats_print(char *buf, int len);
 extern spinlock_t hmbird_tasks_lock;
+
+
+#define MAX_GOV_LEN     (16)
+extern char saved_gov[NR_CPUS][MAX_GOV_LEN];
 
 #endif
