@@ -408,11 +408,17 @@ static void check_preempt_curr_idle(struct rq *rq, struct task_struct *p, int fl
 
 static void put_prev_task_idle(struct rq *rq, struct task_struct *prev)
 {
+#ifdef CONFIG_HMBIRD_SCHED
+	hmbird_update_idle(rq, false);
+#endif
 }
 
 static void set_next_task_idle(struct rq *rq, struct task_struct *next, bool first)
 {
 	update_idle_core(rq);
+#ifdef CONFIG_HMBIRD_SCHED
+	hmbird_update_idle(rq, true);
+#endif
 	schedstat_inc(rq->sched_goidle);
 }
 
