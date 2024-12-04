@@ -52,15 +52,15 @@ struct bal_irq {
 	struct list_head move_node;
 	struct rcu_head rcu;
 	struct irq_desc *desc;
-	unsigned long delta_nr;
-	unsigned long old_nr;
+	unsigned int delta_nr;
+	unsigned int old_nr;
 	int prev_cpu;
 };
 
 struct bal_domain {
 	struct list_head movable_irqs;
-	unsigned long intrs;
 	unsigned long old_total;
+	unsigned int intrs;
 	int cpu;
 };
 
