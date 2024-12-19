@@ -32,6 +32,7 @@
 #include <linux/sysrq.h>
 #include <linux/percpu-rwsem.h>
 #endif
+
 #include <uapi/linux/sched/types.h>
 
 #include "sched.h"
@@ -56,9 +57,9 @@
 #include "deadline.c"
 
 #ifdef CONFIG_HMBIRD_SCHED
-#include "hmbird.c"
-#include "hmbird/hmbird_misc.c"
 #include "hmbird/hmbird_util_track.c"
 #include "hmbird/hmbird_sched_proc.c"
 #include "hmbird/hmbird_shadow_tick.c"
+#include "hmbird/hmbird.c"
+#include "hmbird/hmbird_misc.c"
 #endif

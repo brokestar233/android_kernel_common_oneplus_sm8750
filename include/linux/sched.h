@@ -290,15 +290,6 @@ struct user_event_mm;
 
 #define get_current_state()	READ_ONCE(current->__state)
 
-#define HMBIRD_TS_IDX 1
-#define HMBIRD_RQ_IDX 15
-
-#define get_hmbird_ts(p)	\
-	((struct hmbird_entity *)(p->android_oem_data1[HMBIRD_TS_IDX]))
-
-#define get_hmbird_rq(rq)	\
-	((struct hmbird_rq *)(rq->android_oem_data1[HMBIRD_RQ_IDX]))
-
 /*
  * Define the task command name length as enum, then it can be visible to
  * BPF programs.
@@ -1934,32 +1925,6 @@ static inline int task_nice(const struct task_struct *p)
 }
 
 #ifdef CONFIG_HMBIRD_SCHED
-#define SCHED_PROP_DEADLINE_MASK (0xFF) /* deadline for ext sched class */
-/*
- * Every task has a DEADLINE_LEVEL which stands for 
- * max schedule latency this task can afford. LEVEL1~5
- * for user-aware tasks, LEVEL6~9 for other tasks.
- */
-#define SCHED_PROP_DEADLINE_LEVEL1 (1)  /* 1ms for user-aware audio tasks */
-#define SCHED_PROP_DEADLINE_LEVEL2 (2)  /* 2ms for user-aware touch tasks */
-#define SCHED_PROP_DEADLINE_LEVEL3 (3)  /* 4ms for user aware dispaly tasks */
-#define SCHED_PROP_DEADLINE_LEVEL4 (4)  /* 6ms */
-#define SCHED_PROP_DEADLINE_LEVEL5 (5)  /* 8ms */
-#define SCHED_PROP_DEADLINE_LEVEL6 (6)  /* 16ms */
-#define SCHED_PROP_DEADLINE_LEVEL7 (7)  /* 32ms */
-#define SCHED_PROP_DEADLINE_LEVEL8 (8)  /* 64ms */
-#define SCHED_PROP_DEADLINE_LEVEL9 (9)  /* 128ms */
-/*
- * Distinguish tasks into periodical tasks which requires 
- * low schedule latency and non-periodical tasks which are
- * not sensitive to schedule latency.
- */
-#define SCHED_HMBIRD_DSQ_TYPE_PERIOD		(0) /* period dsq of hmbird */
-#define SCHED_HMBIRD_DSQ_TYPE_NON_PERIOD	(1) /* non period dsq of hmbird */
-
-#define TOP_TASK_BITS_MASK	(0xFF)
-#define TOP_TASK_BITS		(8)
-
 static inline bool task_is_top_task(struct task_struct *p)
 {
 	return (((struct hmbird_entity *)(p->android_oem_data1[HMBIRD_TS_IDX]))
@@ -2003,15 +1968,6 @@ static inline unsigned long hmbird_get_dsq_id(struct task_struct *p)
 {
 	return (get_hmbird_ts(p)->sched_prop & SCHED_PROP_DEADLINE_MASK);
 }
-
-/* For why we choose (MAX_RT_PRIO / 2), see sched_set_fifo(). */
-static inline bool reject_change_to_hmbird(struct task_struct *p, int prio)
-{
-	int sp_dl = get_hmbird_ts(p)->sched_prop & SCHED_PROP_DEADLINE_MASK;
-
-	return (prio < (MAX_RT_PRIO >> 1)) && (sp_dl < SCHED_PROP_DEADLINE_LEVEL3);
-}
-bool task_is_hmbird(struct task_struct *p);
 #endif
 
 extern int can_nice(const struct task_struct *p, const int nice);
