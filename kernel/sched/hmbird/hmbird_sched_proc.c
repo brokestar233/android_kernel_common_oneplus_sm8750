@@ -11,6 +11,7 @@
 #include "hmbird_sched_proc.h"
 #include <linux/sched/hmbird_version.h>
 
+#include "hmbird_util_track.h"
 #include "slim.h"
 
 #define HMBIRD_SCHED_PROC_DIR "hmbird_sched"
@@ -47,15 +48,16 @@ int heartbeat;
 int heartbeat_enable;
 int watchdog_enable;
 int save_gov;
+unsigned int cpu_cluster_masks;
 
 char saved_gov[NR_CPUS][MAX_GOV_LEN];
 
 static int set_proc_buf_val(struct file *file, const char __user *buf, size_t count, int *val)
 {
-	char kbuf[5] = {0};
+	char kbuf[32] = {0};
 	int err;
 
-	if (count >= 5)
+	if (count >= 32)
 		return -EFAULT;
 
 	if (copy_from_user(kbuf, buf, count)) {
@@ -107,7 +109,8 @@ static ssize_t scx_enable_proc_write(struct file *file, const char __user *buf,
 	if (set_proc_buf_val(file, buf, count, pval))
 		return -EFAULT;
 
-	hmbird_ctrl(*pval);
+	if (hmbird_ctrl(*pval))
+		return -EFAULT;
 
 	return count;
 }
@@ -142,9 +145,7 @@ static ssize_t sched_ravg_window_frame_per_sec_proc_write(struct file *file,
 	if (set_proc_buf_val(file, buf, count, pval))
 		return -EFAULT;
 
-#ifdef CONFIG_SCX_USE_UTIL_TRACK
 	sched_ravg_window_change(*pval);
-#endif
 
 	return count;
 }
@@ -158,17 +159,45 @@ static ssize_t save_gov_str(struct file *file, const char __user *buf,
 	int cpu;
 	struct cpufreq_policy *policy;
 
-	for_each_present_cpu(cpu) {
+	for_each_possible_cpu(cpu) {
 		policy = cpufreq_cpu_get(cpu);
-		if (cpu != policy->cpu)
+		if (!policy || (cpu != policy->cpu))
 			continue;
 		WARN_ON(show_scaling_governor(policy, saved_gov[cpu]) <= 0);
 		hmbird_info_systrace("<gov_restore>:save origin gov : %s\n", saved_gov[cpu]);
 	}
 	return count;
 }
-HMBIRD_PROC_OPS(save_gov, hmbird_common_open,
-                        save_gov_str);
+HMBIRD_PROC_OPS(save_gov, hmbird_common_open, save_gov_str);
+
+static ssize_t cpu_cluster_proc_write(struct file *file, const char __user *buf,
+							size_t count, loff_t *ppos)
+{
+	int *pval = (int *)pde_data(file_inode(file));
+
+	if (set_proc_buf_val(file, buf, count, pval))
+		return -EFAULT;
+
+	if (scx_enable == 0)
+		set_cpu_cluster(*pval);
+
+	return count;
+}
+HMBIRD_PROC_OPS(cpu_cluster_masks, hmbird_common_open, cpu_cluster_proc_write);
+
+static ssize_t slim_walt_ctrl_write(struct file *file, const char __user *buf,
+					size_t count, loff_t *ppos)
+{
+	int *pval = (int *)pde_data(file_inode(file));
+
+	if (set_proc_buf_val(file, buf, count, pval))
+		return -EFAULT;
+
+	slim_walt_enable(*pval);
+
+	return count;
+}
+HMBIRD_PROC_OPS(slim_walt_ctrl, hmbird_common_open, slim_walt_ctrl_write);
 
 static int __init hmbird_proc_init(void)
 {
@@ -241,6 +270,11 @@ static int __init hmbird_proc_init(void)
 					hmbird_dir,
 					&hmbird_common_proc_ops,
 					&cpu7_tl);
+
+	HMBIRD_CREATE_PROC_ENTRY_DATA("cpu_cluster_masks", HMBIRD_PROC_PERMISSION,
+					hmbird_dir,
+					&cpu_cluster_masks_proc_ops,
+					&cpu_cluster_masks);
 
 	HMBIRD_CREATE_PROC_ENTRY_DATA("save_gov", HMBIRD_PROC_PERMISSION,
 					hmbird_dir,
@@ -317,7 +351,7 @@ static int __init hmbird_proc_init(void)
 	/* /proc/hmbird_sched/slim_walt--begin */
 	HMBIRD_CREATE_PROC_ENTRY_DATA("slim_walt_ctrl", HMBIRD_PROC_PERMISSION,
 					load_track_dir,
-					&hmbird_common_proc_ops,
+					&slim_walt_ctrl_proc_ops,
 					&slim_walt_ctrl);
 
 	HMBIRD_CREATE_PROC_ENTRY_DATA("slim_walt_dump", HMBIRD_PROC_PERMISSION,

@@ -14,55 +14,6 @@ noinline int tracing_mark_write(const char *buf)
 	return 0;
 }
 
-#ifdef CONFIG_SCX_USE_UTIL_TRACK
-static void android_vh_hmbird_update_load_handler(
-					void *unused, struct task_struct *p,
-					struct rq *rq, int event, u64 wallclock)
-{
-	hmbird_update_task_ravg(p, rq, event, wallclock);
-}
-
-static void android_vh_hmbird_init_task_handler(
-					void *unused, struct task_struct *p)
-{
-	hmbird_sched_init_task(p);
-}
-
-static void android_vh_hmbird_update_load_enable_handler(
-					void *unused, bool enable)
-{
-	if (enable) {
-		oplus_lk_feat_enable(LK_FEATURE_MASK, false);
-		oplus_bd_feat_enable(BD_FEATURE_MASK, false);
-	} else {
-		oplus_lk_feat_enable(LK_FEATURE_MASK, true);
-		oplus_bd_feat_enable(BD_FEATURE_MASK, true);
-	}
-	slim_walt_enable(enable);
-	preempt_enable();
-	if (enable)
-		walt_disable_wait_for_completion();
-	else
-		walt_enable_wait_for_completion();
-	preempt_disable();
-}
-
-static void android_vh_get_util_handler(
-			void *unused, int cpu, struct task_struct *p, u64 *util)
-{
-	struct walt_task_struct *wts;
-	if ((cpu < 0) && NULL == p)
-		return;
-
-	if (p) {
-		wts = (struct walt_task_struct *) p->android_vendor_data1;
-		*util = wts->pred_demand_scaled;
-	} else {
-		*util = cpu_util(cpu);
-	}
-}
-#endif
-
 DEFINE_PER_CPU(struct sched_yield_state, ystate);
 void hmbird_skip_yield(long *skip)
 {

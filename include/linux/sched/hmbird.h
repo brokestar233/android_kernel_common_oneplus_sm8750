@@ -150,6 +150,15 @@ struct hmbird_sched_task_stats {
 	void			*sdsq;
 };
 
+struct hmbird_sched_rq_stats {
+	u64		window_start;
+	u64		latest_clock;
+	u32		prev_window_size;
+	u64		task_exec_scale;
+	u64		prev_runnable_sum;
+	u64		curr_runnable_sum;
+	int		*sched_ravg_window_ptr;
+};
 
 /*
  * The following is embedded in task_struct and contains all fields necessary
