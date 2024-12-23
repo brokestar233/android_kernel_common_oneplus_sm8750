@@ -64,23 +64,6 @@ DECLARE_HOOK(android_vh_kmalloc_large_alloced,
 	TP_PROTO(struct page *page, unsigned int order, gfp_t flags),
 	TP_ARGS(page, order, flags));
 DECLARE_RESTRICTED_HOOK(android_rvh_ctl_dirty_rate,
-<<<<<<< HEAD 李培锋:80248179:平台与内核开发部 
-	TP_PROTO(void *unused),
-	TP_ARGS(unused), 1);
-||||||| merged common ancestors
-	TP_PROTO(struct inode *inode),
-	TP_ARGS(inode), 1);
-DECLARE_HOOK(android_vh_test_clear_look_around_ref,
-	TP_PROTO(struct page *page),
-	TP_ARGS(page));
-DECLARE_HOOK(android_vh_look_around_migrate_folio,
-	TP_PROTO(struct folio *old_folio, struct folio *new_folio),
-	TP_ARGS(old_folio, new_folio));
-DECLARE_HOOK(android_vh_look_around,
-	TP_PROTO(struct page_vma_mapped_walk *pvmw, struct folio *folio,
-		struct vm_area_struct *vma, int *referenced),
-	TP_ARGS(pvmw, folio, vma, referenced));
-=======
 	TP_PROTO(struct inode *inode),
 	TP_ARGS(inode), 1);
 DECLARE_HOOK(android_vh_test_clear_look_around_ref,
@@ -96,7 +79,6 @@ DECLARE_HOOK(android_vh_look_around,
 DECLARE_HOOK(android_vh_mm_kcompactd_cpu_online,
 	TP_PROTO(int cpu),
 	TP_ARGS(cpu));
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.082
 DECLARE_HOOK(android_vh_free_unref_page_bypass,
 	TP_PROTO(struct page *page, int order, int migratetype, bool *bypass),
 	TP_ARGS(page, order, migratetype, bypass));
