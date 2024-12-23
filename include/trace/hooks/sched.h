@@ -475,7 +475,17 @@ DECLARE_HOOK(android_vh_prio_inheritance,
 DECLARE_HOOK(android_vh_prio_restore,
 	TP_PROTO(int saved_prio),
 	TP_ARGS(saved_prio));
+<<<<<<< HEAD 邹少军:80264721:平台与内核开发部 
 /* macro versions of hooks are no longer required */
+||||||| merged common ancestors
+
+/* macro versions of hooks are no longer required */
+=======
+
+DECLARE_HOOK(android_vh_set_task_comm,
+	TP_PROTO(struct task_struct *p),
+	TP_ARGS(p));
+>>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.082
 
 #endif /* _TRACE_HOOK_SCHED_H */
 /* This part must be outside protection */

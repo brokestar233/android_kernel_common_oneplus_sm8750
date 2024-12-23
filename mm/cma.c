@@ -39,6 +39,11 @@
 #include "internal.h"
 #include "cma.h"
 
+#undef CREATE_TRACE_POINTS
+#ifndef __GENKSYMS__
+#include <trace/hooks/mm.h>
+#endif
+
 struct cma cma_areas[MAX_CMA_AREAS];
 unsigned cma_area_count;
 static DEFINE_MUTEX(cma_mutex);
@@ -189,10 +194,6 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	}
 
 	if (!size || !memblock_is_region_reserved(base, size))
-		return -EINVAL;
-
-	/* alignment should be aligned with order_per_bit */
-	if (!IS_ALIGNED(CMA_MIN_ALIGNMENT_PAGES, 1 << order_per_bit))
 		return -EINVAL;
 
 	/* ensure minimal alignment required by mm core */
@@ -475,6 +476,7 @@ struct page *__cma_alloc(struct cma *cma, unsigned long count,
 	if (bitmap_count > bitmap_maxno)
 		goto out;
 
+	trace_android_vh_cma_alloc_retry(cma->name, &max_retries);
 	for (;;) {
 		spin_lock_irq(&cma->lock);
 		bitmap_no = bitmap_find_next_zero_area_off(cma->bitmap,

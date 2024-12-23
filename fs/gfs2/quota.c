@@ -75,9 +75,6 @@
 #define GFS2_QD_HASH_SIZE       BIT(GFS2_QD_HASH_SHIFT)
 #define GFS2_QD_HASH_MASK       (GFS2_QD_HASH_SIZE - 1)
 
-#define QC_CHANGE 0
-#define QC_SYNC 1
-
 /* Lock order: qd_lock -> bucket lock -> qd->lockref.lock -> lru lock */
 /*                     -> sd_bitmap_lock                              */
 static DEFINE_SPINLOCK(qd_lock);
@@ -128,7 +125,7 @@ static void gfs2_qd_dispose(struct gfs2_quota_data *qd)
 	hlist_bl_del_rcu(&qd->qd_hlist);
 	spin_unlock_bucket(qd->qd_hash);
 
-	if (!gfs2_withdrawn(sdp)) {
+	if (!gfs2_withdrawing_or_withdrawn(sdp)) {
 		gfs2_assert_warn(sdp, !qd->qd_change);
 		gfs2_assert_warn(sdp, !qd->qd_slot_ref);
 		gfs2_assert_warn(sdp, !qd->qd_bh_count);
@@ -697,7 +694,7 @@ static int sort_qd(const void *a, const void *b)
 	return 0;
 }
 
-static void do_qc(struct gfs2_quota_data *qd, s64 change, int qc_type)
+static void do_qc(struct gfs2_quota_data *qd, s64 change)
 {
 	struct gfs2_sbd *sdp = qd->qd_sbd;
 	struct gfs2_inode *ip = GFS2_I(sdp->sd_qc_inode);
@@ -722,18 +719,16 @@ static void do_qc(struct gfs2_quota_data *qd, s64 change, int qc_type)
 	qd->qd_change = x;
 	spin_unlock(&qd_lock);
 
-	if (qc_type == QC_CHANGE) {
-		if (!test_and_set_bit(QDF_CHANGE, &qd->qd_flags)) {
-			qd_hold(qd);
-			slot_hold(qd);
-		}
-	} else {
+	if (!x) {
 		gfs2_assert_warn(sdp, test_bit(QDF_CHANGE, &qd->qd_flags));
 		clear_bit(QDF_CHANGE, &qd->qd_flags);
 		qc->qc_flags = 0;
 		qc->qc_id = 0;
 		slot_put(qd);
 		qd_put(qd);
+	} else if (!test_and_set_bit(QDF_CHANGE, &qd->qd_flags)) {
+		qd_hold(qd);
+		slot_hold(qd);
 	}
 
 	if (change < 0) /* Reset quiet flag if we freed some blocks */
@@ -978,7 +973,7 @@ static int do_sync(unsigned int num_qd, struct gfs2_quota_data **qda)
 		if (error)
 			goto out_end_trans;
 
-		do_qc(qd, -qd->qd_change_sync, QC_SYNC);
+		do_qc(qd, -qd->qd_change_sync);
 		set_bit(QDF_REFRESH, &qd->qd_flags);
 	}
 
@@ -1300,7 +1295,7 @@ void gfs2_quota_change(struct gfs2_inode *ip, s64 change,
 
 		if (qid_eq(qd->qd_id, make_kqid_uid(uid)) ||
 		    qid_eq(qd->qd_id, make_kqid_gid(gid))) {
-			do_qc(qd, change, QC_CHANGE);
+			do_qc(qd, change);
 		}
 	}
 }
@@ -1528,7 +1523,7 @@ static void quotad_error(struct gfs2_sbd *sdp, const char *msg, int error)
 {
 	if (error == 0 || error == -EROFS)
 		return;
-	if (!gfs2_withdrawn(sdp)) {
+	if (!gfs2_withdrawing_or_withdrawn(sdp)) {
 		if (!cmpxchg(&sdp->sd_log_error, 0, error))
 			fs_err(sdp, "gfs2_quotad: %s error %d\n", msg, error);
 		wake_up(&sdp->sd_logd_waitq);
@@ -1572,7 +1567,7 @@ int gfs2_quotad(void *data)
 	unsigned long t = 0;
 
 	while (!kthread_should_stop()) {
-		if (gfs2_withdrawn(sdp))
+		if (gfs2_withdrawing_or_withdrawn(sdp))
 			break;
 
 		/* Update the master statfs file */
@@ -1596,7 +1591,7 @@ int gfs2_quotad(void *data)
 
 		t = wait_event_interruptible_timeout(sdp->sd_quota_wait,
 				sdp->sd_statfs_force_sync ||
-				gfs2_withdrawn(sdp) ||
+				gfs2_withdrawing_or_withdrawn(sdp) ||
 				kthread_should_stop(),
 				t);
 

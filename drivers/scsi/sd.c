@@ -1692,13 +1692,15 @@ static int sd_sync_cache(struct scsi_disk *sdkp)
 			    (sshdr.asc == 0x74 && sshdr.ascq == 0x71))	/* drive is password locked */
 				/* this is no error here */
 				return 0;
+
 			/*
-			 * This drive doesn't support sync and there's not much
-			 * we can do because this is called during shutdown
-			 * or suspend so just return success so those operations
-			 * can proceed.
+			 * If a format is in progress or if the drive does not
+			 * support sync, there is not much we can do because
+			 * this is called during shutdown or suspend so just
+			 * return success so those operations can proceed.
 			 */
-			if (sshdr.sense_key == ILLEGAL_REQUEST)
+			if ((sshdr.asc == 0x04 && sshdr.ascq == 0x04) ||
+			    sshdr.sense_key == ILLEGAL_REQUEST)
 				return 0;
 		}
 
@@ -3410,16 +3412,23 @@ static bool sd_validate_opt_xfer_size(struct scsi_disk *sdkp,
 
 static void sd_read_block_zero(struct scsi_disk *sdkp)
 {
-	unsigned int buf_len = sdkp->device->sector_size;
-	char *buffer, cmd[10] = { };
+	struct scsi_device *sdev = sdkp->device;
+	unsigned int buf_len = sdev->sector_size;
+	u8 *buffer, cmd[16] = { };
 
 	buffer = kmalloc(buf_len, GFP_KERNEL);
 	if (!buffer)
 		return;
 
-	cmd[0] = READ_10;
-	put_unaligned_be32(0, &cmd[2]); /* Logical block address 0 */
-	put_unaligned_be16(1, &cmd[7]);	/* Transfer 1 logical block */
+	if (sdev->use_16_for_rw) {
+		cmd[0] = READ_16;
+		put_unaligned_be64(0, &cmd[2]); /* Logical block address 0 */
+		put_unaligned_be32(1, &cmd[10]);/* Transfer 1 logical block */
+	} else {
+		cmd[0] = READ_10;
+		put_unaligned_be32(0, &cmd[2]); /* Logical block address 0 */
+		put_unaligned_be16(1, &cmd[7]);	/* Transfer 1 logical block */
+	}
 
 	scsi_execute_cmd(sdkp->device, cmd, REQ_OP_DRV_IN, buffer, buf_len,
 			 SD_TIMEOUT, sdkp->max_retries, NULL);
@@ -3831,6 +3840,7 @@ static int sd_start_stop_device(struct scsi_disk *sdkp, int start)
 	const struct scsi_exec_args exec_args = {
 		.sshdr = &sshdr,
 		.req_flags = BLK_MQ_REQ_PM,
+		.scmd_flags = SCMD_RETRY_PASSTHROUGH,
 	};
 	struct scsi_device *sdp = sdkp->device;
 	int res;
