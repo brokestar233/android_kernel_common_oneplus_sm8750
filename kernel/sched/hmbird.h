@@ -30,7 +30,7 @@
 #ifdef MAX_TASK_NR
 #define MAX_KEY_THREAD_RECORD		((MAX_TASK_NR + 1) >> 1)
 #else
-#define MAX_KEY_THREAD_RECORD		MAX_NR_CPUS
+#define MAX_KEY_THREAD_RECORD		(1 << 3)
 #endif /* MAX_TASK_NR */
 
 #define TOP_TASK_SHIFT				(8)
@@ -47,6 +47,15 @@
 
 #define hmbird_err(fmt, ...)	\
 	pr_err("<hmbird_sched>:"fmt, ##__VA_ARGS__)
+
+#define hmbird_deferred_err(fmt, ...) \
+	printk_deferred(KERN_ERR "<hmbird_sched>"fmt, ##__VA_ARGS__)
+
+#define hmbird_cond_deferred_err(cond, fmt, ...) \
+do {							\
+	if (unlikely(cond))				\
+		hmbird_deferred_err(#cond","fmt, ##__VA_ARGS__);	\
+} while (0)
 
 #define hmbird_info_trace(fmt, ...)			\
 do {						\
@@ -167,6 +176,7 @@ struct hmbird_rq {
 	bool 			period_disallow;
 	bool 			nonperiod_disallow;
 	struct rq		*rq;
+	struct hmbird_sched_rq_stats	*srq;
 };
 
 struct hmbird_sched_change_guard {
@@ -296,7 +306,7 @@ static inline void hmbird_update_idle(struct rq *rq, bool idle)
 		__hmbird_update_idle(rq, idle);
 }
 
-void hmbird_ctrl(bool enable);
+int hmbird_ctrl(bool enable);
 
 int hmbird_tg_online(struct task_group *tg);
 
@@ -309,4 +319,5 @@ u16 hmbird_cpu_util(int cpu);
 
 bool get_hmbird_ops_enabled(void);
 bool get_non_hmbird_task(void);
+void set_cpu_cluster(u64 cpu_cluster);
 #endif /*_EXT_H_*/

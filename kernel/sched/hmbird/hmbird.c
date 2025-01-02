@@ -9,23 +9,15 @@
  * Copyright (c) 2024 Taiyu Li <litaiyu@oppo.com>
  */
 
-#include "hmbird/slim.h"
-#include "hmbird/hmbird_sched.h"
+#include "slim.h"
+#include "hmbird_sched.h"
+#include "hmbird_util_track.h"
 #include <linux/sched/hmbird_proc_val.h>
 
 atomic_t __hmbird_ops_enabled = ATOMIC_INIT(0);
 atomic_t non_hmbird_task;
 atomic_t hmbird_module_loaded = ATOMIC_INIT(0);
 int cgroup_ids_table[NUMS_CGROUP_KINDS];
-
-enum task_event {
-	PUT_PREV_TASK   = 0,
-	PICK_NEXT_TASK  = 1,
-	TASK_WAKE       = 2,
-	TASK_MIGRATE    = 3,
-	TASK_UPDATE     = 4,
-	IRQ_UPDATE      = 5,
-};
 
 enum hmbird_internal_consts {
 	HMBIRD_WATCHDOG_MAX_TIMEOUT = 30 * HZ,
@@ -198,16 +190,6 @@ struct pcp_sched_info {
  */
 atomic64_t pcp_dsq_round;
 static DEFINE_PER_CPU(struct pcp_sched_info, pcp_info);
-
-struct hmbird_sched_rq_stats {
-	u64				window_start;
-	u64				latest_clock;
-	u32				prev_window_size;
-	u64				task_exec_scale;
-	u64				prev_runnable_sum;
-	u64				curr_runnable_sum;
-};
-DEFINE_PER_CPU(struct hmbird_sched_rq_stats, hmbird_sched_rq_stats);
 
 static int b_rescue_l, l_rescue_b;
 static struct hmbird_sched_info sinfo;
@@ -694,7 +676,7 @@ static int find_idx_from_task(struct task_struct *p)
 
 done:
 	if (idx < 0 || idx >= MAX_GLOBAL_DSQS) {
-		hmbird_err("<slim_sched><error> : idx error, idx = %d-----\n", idx);
+		hmbird_deferred_err("<slim_sched><error> : idx error, idx = %d-----\n", idx);
 		idx = DEFAULT_CGROUP_DL_IDX;
 	}
 	return idx;
@@ -752,12 +734,16 @@ static void free_isocpu(bool enable)
 
 inline u64 get_hmbird_cpu_util(int cpu)
 {
-		struct rq *rq = cpu_rq(cpu);
-		u64 prev_runnable_sum_fixed = *(u64 *)(get_hmbird_rq(rq)->prev_runnable_sum_fixed);
-		u32 prev_window_size = *(u32 *)(get_hmbird_rq(rq)->prev_window_size);
-		do_div(prev_runnable_sum_fixed, prev_window_size >> SCHED_CAPACITY_SHIFT);
+	struct rq *rq = cpu_rq(cpu);
 
-		return prev_runnable_sum_fixed;
+	if (!get_hmbird_rq(rq)->prev_runnable_sum_fixed)
+		return 0;
+
+	u64 prev_runnable_sum_fixed = *(u64 *)(get_hmbird_rq(rq)->prev_runnable_sum_fixed);
+	u32 prev_window_size = *(u32 *)(get_hmbird_rq(rq)->prev_window_size);
+	do_div(prev_runnable_sum_fixed, prev_window_size >> SCHED_CAPACITY_SHIFT);
+
+	return prev_runnable_sum_fixed;
 }
 
 static u64 get_cpus_max_util(struct cpumask *mask)
@@ -767,8 +753,11 @@ static u64 get_cpus_max_util(struct cpumask *mask)
 	u64 util, ratio;
 
 	for_each_cpu(cpu, mask) {
-				util = get_hmbird_cpu_util(cpu);
-				ratio = util * 100 / arch_scale_cpu_capacity(cpu);
+		if (slim_walt_ctrl)
+			slim_get_cpu_util(cpu, &util);
+		else
+			util = get_hmbird_cpu_util(cpu);
+		ratio = util * 100 / arch_scale_cpu_capacity(cpu);
 		hmbird_info_systrace("C|9999|Cpu%d_util|%llu\n", cpu, util);
 		hmbird_info_systrace("C|9999|Cpu%d_cap|%llu\n", cpu, (u64)arch_scale_cpu_capacity(cpu));
 				if (ratio > max)
@@ -1046,7 +1035,6 @@ static int gen_cluster_ctx(struct cluster_ctx *ctx, enum cpu_type type)
 		break;
 #endif
 	default:
-		WARN_ON(1);
 		return -1;
 	}
 	return 0;
@@ -1314,7 +1302,7 @@ static bool scan_dsq_timeout(struct rq *rq, struct hmbird_dispatch_q *dsq, u64 d
 
 	entity = list_first_entry(&dsq->fifo, struct hmbird_entity, dsq_node.fifo);
 	if (!entity) {
-		WARN_ON(1);
+		hmbird_deferred_err("<error> : entity is NULL, dsq->id = %llu\n", dsq->id);
 		raw_spin_unlock(&dsq->lock);
 		return false;
 	}
@@ -1570,7 +1558,6 @@ static struct task_struct *hmbird_task_iter_next(struct hmbird_task_iter *iter)
 	}
 
 	/* can't happen, should always terminate at hmbird_tasks above */
-	WARN_ON(1);
 	return NULL;
 }
 
@@ -1640,7 +1627,6 @@ static bool hmbird_ops_tryset_enable_state(enum hmbird_ops_enable_state to,
 static bool hmbird_ops_disabling(void)
 {
 	return false;
-/*	return unlikely(hmbird_ops_enable_state() == HMBIRD_OPS_DISABLING);*/
 }
 
 /**
@@ -1700,9 +1686,12 @@ static void dispatch_enqueue(struct hmbird_dispatch_q *dsq, struct task_struct *
 	bool is_local = dsq->id == HMBIRD_DSQ_LOCAL;
 	unsigned long flags;
 
-	WARN_ON_ONCE(get_hmbird_ts(p)->dsq || !list_empty(&get_hmbird_ts(p)->dsq_node.fifo));
-	WARN_ON_ONCE((get_hmbird_ts(p)->dsq_flags & HMBIRD_TASK_DSQ_ON_PRIQ) ||
-			!RB_EMPTY_NODE(&get_hmbird_ts(p)->dsq_node.priq));
+	hmbird_cond_deferred_err(get_hmbird_ts(p)->dsq ||
+				!list_empty(&(get_hmbird_ts(p)->dsq_node.fifo)),
+				"task = %s, dsq->id = %llu\n", p->comm, dsq->id);
+	hmbird_cond_deferred_err((get_hmbird_ts(p)->dsq_flags & HMBIRD_TASK_DSQ_ON_PRIQ) ||
+					!RB_EMPTY_NODE(&(get_hmbird_ts(p)->dsq_node.priq)),
+					"task = %s\n", p->comm);
 
 	if (!is_local) {
 		raw_spin_lock_irqsave(&dsq->lock, flags);
@@ -1779,7 +1768,7 @@ static void dispatch_dequeue(struct hmbird_rq *hmbird_rq, struct task_struct *p)
 	bool is_local = dsq == &hmbird_rq->local_dsq;
 
 	if (!dsq) {
-		WARN_ON_ONCE(task_linked_on_dsq(p));
+		hmbird_cond_deferred_err(task_linked_on_dsq(p), "task = %s\n", p->comm);
 		/*
 		 * When dispatching directly from the BPF scheduler to a local
 		 * DSQ, the task isn't associated with any DSQ but
@@ -1800,7 +1789,7 @@ static void dispatch_dequeue(struct hmbird_rq *hmbird_rq, struct task_struct *p)
 	 */
 	if (get_hmbird_ts(p)->holding_cpu < 0) {
 		/* @p must still be on @dsq, dequeue */
-		WARN_ON_ONCE(!task_linked_on_dsq(p));
+		hmbird_cond_deferred_err(!task_linked_on_dsq(p), "task = %s\n", p->comm);
 		task_unlink_from_dsq(p, dsq);
 		dsq->nr--;
 	} else {
@@ -1810,7 +1799,7 @@ static void dispatch_dequeue(struct hmbird_rq *hmbird_rq, struct task_struct *p)
 		 * holding_cpu which tells dispatch_to_local_dsq() that it lost
 		 * the race.
 		 */
-		WARN_ON_ONCE(task_linked_on_dsq(p));
+		hmbird_cond_deferred_err(task_linked_on_dsq(p), "task = %s\n", p->comm);
 		get_hmbird_ts(p)->holding_cpu = -1;
 	}
 	get_hmbird_ts(p)->dsq = NULL;
@@ -1844,8 +1833,9 @@ static void do_enqueue_task(struct rq *rq, struct task_struct *p, u64 enq_flags,
 {
 	struct hmbird_dispatch_q *d;
 
-	WARN_ON_ONCE(!test_bit(ffs(HMBIRD_TASK_QUEUED), (unsigned long *)&get_hmbird_ts(p)->flags));
-
+	hmbird_cond_deferred_err(!test_bit(ffs(HMBIRD_TASK_QUEUED),
+				(unsigned long *)&get_hmbird_ts(p)->flags),
+				"task = %s\n", p->comm);
 	if (is_pcp_rt(p)) {
 		/* Enqueue percpu rt task to local directly. */
 		/* Or cause a bug when disable dispatch. */
@@ -1940,7 +1930,7 @@ static void enqueue_task_hmbird(struct rq *rq, struct task_struct *p, int enq_fl
 		sticky_cpu = cpu_of(rq);
 
 	if (test_bit(ffs(HMBIRD_TASK_QUEUED), (unsigned long *)&get_hmbird_ts(p)->flags)) {
-		WARN_ON_ONCE(!watchdog_task_watched(p));
+		hmbird_cond_deferred_err(!watchdog_task_watched(p), "task = %s\n", p->comm);
 		return;
 	}
 
@@ -1969,7 +1959,6 @@ static void ops_dequeue(struct task_struct *p, u64 deq_flags)
 		 * QUEUEING is started and finished while holding @p's rq lock.
 		 * As we're holding the rq lock now, we shouldn't see QUEUEING.
 		 */
-		WARN_ON(1);
 		break;
 	case HMBIRD_OPSS_QUEUED:
 		if (atomic64_try_cmpxchg(&get_hmbird_ts(p)->ops_state, &opss,
@@ -1991,7 +1980,8 @@ static void ops_dequeue(struct task_struct *p, u64 deq_flags)
 		 * Explicitly wait on %HMBIRD_OPSS_DISPATCHING instead of @opss.
 		 */
 		wait_ops_state(p, HMBIRD_OPSS_DISPATCHING);
-		WARN_ON(atomic64_read(&get_hmbird_ts(p)->ops_state) != HMBIRD_OPSS_NONE);
+		hmbird_cond_deferred_err(atomic64_read(&get_hmbird_ts(p)->ops_state)
+					!= HMBIRD_OPSS_NONE, "task = %s\n", p->comm);
 		break;
 	}
 }
@@ -2001,11 +1991,17 @@ static void dequeue_task_hmbird(struct rq *rq, struct task_struct *p, int deq_fl
 	struct hmbird_rq *hmbird_rq = get_hmbird_rq(rq);
 
 	if (!test_bit(ffs(HMBIRD_TASK_QUEUED), (unsigned long *)&get_hmbird_ts(p)->flags)) {
-		WARN_ON_ONCE(watchdog_task_watched(p));
+		hmbird_cond_deferred_err(watchdog_task_watched(p), "task = %s\n", p->comm);
 		return;
 	}
 
 	ops_dequeue(p, deq_flags);
+
+	if (slim_walt_ctrl) {
+		if (task_current(rq, p))
+			hmbird_update_task_ravg(p, rq, PUT_PREV_TASK, rq->clock);
+		cpufreq_update_util(rq, 0);
+	}
 
 	if (deq_flags & HMBIRD_DEQ_SLEEP)
 		set_bit(ffs(HMBIRD_TASK_DEQD_FOR_SLEEP), (unsigned long *)&get_hmbird_ts(p)->flags);
@@ -2014,7 +2010,7 @@ static void dequeue_task_hmbird(struct rq *rq, struct task_struct *p, int deq_fl
 			(unsigned long *)&get_hmbird_ts(p)->flags);
 
 	clear_bit(ffs(HMBIRD_TASK_QUEUED), (unsigned long *)&get_hmbird_ts(p)->flags);
-	WARN_ON(!hmbird_rq->nr_running);
+	hmbird_cond_deferred_err(!hmbird_rq->nr_running, "task = %s\n", p->comm);
 	hmbird_rq->nr_running--;
 	sub_nr_running(rq, 1);
 	dispatch_dequeue(hmbird_rq, p);
@@ -2091,6 +2087,7 @@ static bool move_task_to_local_dsq(struct rq *rq, struct task_struct *p,
 	 * @get_hmbird_rq(rq)->extra_enq_flags instead.
 	 */
 	WARN_ON_ONCE(get_hmbird_rq(rq)->extra_enq_flags);
+	hmbird_cond_deferred_err(get_hmbird_rq(rq)->extra_enq_flags, "task = %s\n", p->comm);
 	get_hmbird_rq(rq)->extra_enq_flags = enq_flags;
 	activate_task(rq, p, 0);
 	get_hmbird_rq(rq)->extra_enq_flags = 0;
@@ -2195,8 +2192,7 @@ retry:
 		goto remote_rq;
 	}
 
-	for (rb_node = rb_first_cached(&dsq->priq); rb_node;
-								rb_node = rb_next(rb_node)) {
+	for (rb_node = rb_first_cached(&dsq->priq); rb_node; rb_node = rb_next(rb_node)) {
 		entity = container_of(rb_node, struct hmbird_entity, dsq_node.priq);
 		p = entity->task;
 		task_rq = task_rq(p);
@@ -2213,6 +2209,8 @@ retry:
 this_rq:
 	/* @dsq is locked and @p is on this rq */
 	WARN_ON_ONCE(get_hmbird_ts(p)->holding_cpu >= 0);
+	hmbird_cond_deferred_err(get_hmbird_ts(p)->holding_cpu >= 0,
+				"task = %s\n", p->comm);
 	task_unlink_from_dsq(p, dsq);
 	list_add_tail(&get_hmbird_ts(p)->dsq_node.fifo, &hmbird_rq->local_dsq.fifo);
 	dsq->nr--;
@@ -2235,7 +2233,8 @@ remote_rq:
 	 * rq lock or fail, do a little dancing from our side. See
 	 * move_task_to_local_dsq().
 	 */
-	WARN_ON_ONCE(get_hmbird_ts(p)->holding_cpu >= 0);
+	hmbird_cond_deferred_err(get_hmbird_ts(p)->holding_cpu >= 0,
+				"task = %s\n", p->comm);
 	task_unlink_from_dsq(p, dsq);
 	dsq->nr--;
 	get_hmbird_ts(p)->holding_cpu = raw_smp_processor_id();
@@ -2316,6 +2315,12 @@ static void set_next_task_hmbird(struct rq *rq, struct task_struct *p, bool firs
 
 	p->se.exec_start = rq_clock_task(rq);
 
+	if (slim_walt_ctrl) {
+		if (test_bit(ffs(HMBIRD_TASK_QUEUED), (unsigned long *)&get_hmbird_ts(p)->flags))
+			hmbird_update_task_ravg(p, rq, PICK_NEXT_TASK, rq->clock);
+		cpufreq_update_util(rq, 0);
+	}
+
 	watchdog_unwatch_task(p, true);
 	slim_trace_show_cpu_consume_dsq_idx(smp_processor_id(), get_hmbird_ts(p)->gdsq_idx);
 	/*
@@ -2338,6 +2343,12 @@ static void put_prev_task_hmbird(struct rq *rq, struct task_struct *p)
 	update_curr_hmbird(rq);
 
 	update_dispatch_dsq_info(rq, p);
+
+	if (slim_walt_ctrl) {
+		if (test_bit(ffs(HMBIRD_TASK_QUEUED), (unsigned long *)&get_hmbird_ts(p)->flags))
+			hmbird_update_task_ravg(p, rq, PUT_PREV_TASK, rq->clock);
+		cpufreq_update_util(rq, 0);
+	}
 
 	slim_trace_show_cpu_consume_dsq_idx(smp_processor_id(), 0);
 
@@ -2471,11 +2482,17 @@ static int heavy_rt_placement(struct task_struct *p, int prev)
 {
 	struct cpumask tmp = {.bits = {0}};
 	int cpu;
+	u64 util = 0;
 
 	if (!rt_prio(p->prio))
 		return -EFAULT;
 
-	if (get_hmbird_ts(p)->demand_scaled < misfit_ds)
+	if (slim_walt_ctrl)
+		slim_get_task_util(p, &util);
+	else
+		util = get_hmbird_ts(p)->demand_scaled;
+
+	if (util < misfit_ds)
 		return -EFAULT;
 
 	if (is_partial_enabled())
@@ -2772,6 +2789,11 @@ static void task_tick_hmbird(struct rq *rq, struct task_struct *curr, int queued
 	update_curr_hmbird(rq);
 
 	set_pcp_round(rq);
+
+	if (slim_walt_ctrl) {
+		hmbird_update_task_ravg(curr, rq, TASK_UPDATE, rq->clock);
+		cpufreq_update_util(rq, 0);
+	}
 	/*
 	 * While disabling, always resched and refresh core-sched timestamp as
 	 * we can't trust the slice management or ops.core_sched_before().
@@ -2787,10 +2809,13 @@ static void task_tick_hmbird(struct rq *rq, struct task_struct *curr, int queued
 
 static int hmbird_ops_prepare_task(struct task_struct *p, struct task_group *tg)
 {
-	WARN_ON_ONCE(test_bit(ffs(HMBIRD_TASK_OPS_PREPPED),
-			(unsigned long *)&get_hmbird_ts(p)->flags));
+	hmbird_cond_deferred_err(test_bit(ffs(HMBIRD_TASK_OPS_PREPPED),
+				(unsigned long *)&get_hmbird_ts(p)->flags),
+				"task = %s\n", p->comm);
 
 	get_hmbird_ts(p)->disallow = false;
+
+	hmbird_sched_init_task(p);
 
 	set_bit(ffs(HMBIRD_TASK_OPS_PREPPED), (unsigned long *)&get_hmbird_ts(p)->flags);
 	set_bit(ffs(HMBIRD_TASK_WATCHDOG_RESET), (unsigned long *)&get_hmbird_ts(p)->flags);
@@ -2800,8 +2825,9 @@ static int hmbird_ops_prepare_task(struct task_struct *p, struct task_group *tg)
 static void hmbird_ops_enable_task(struct task_struct *p)
 {
 	lockdep_assert_rq_held(task_rq(p));
-	WARN_ON_ONCE(!test_bit(ffs(HMBIRD_TASK_OPS_PREPPED),
-			(unsigned long *)&get_hmbird_ts(p)->flags));
+	hmbird_cond_deferred_err(!test_bit(ffs(HMBIRD_TASK_OPS_PREPPED),
+				(unsigned long *)&get_hmbird_ts(p)->flags),
+				"task = %s\n", p->comm);
 
 	clear_bit(ffs(HMBIRD_TASK_OPS_PREPPED), (unsigned long *)&get_hmbird_ts(p)->flags);
 	set_bit(ffs(HMBIRD_TASK_OPS_ENABLED), (unsigned long *)&get_hmbird_ts(p)->flags);
@@ -3189,6 +3215,37 @@ static void hb_timer_exit(void)
 	del_timer(&hb_timer);
 }
 
+static bool check_and_disable_cpuhp(void)
+{
+	struct rq *rq;
+	struct rq_flags rf;
+	int cpu;
+
+	cpu_hotplug_disable();
+	cpus_read_lock();
+	for_each_possible_cpu(cpu) {
+		rq = cpu_rq(cpu);
+		rq_lock_irqsave(rq, &rf);
+		if (!rq->online) {
+			rq_unlock_irqrestore(rq, &rf);
+			goto err_offline;
+		}
+		rq_unlock_irqrestore(rq, &rf);
+	}
+	cpus_read_unlock();
+	return true;
+
+err_offline:
+	cpus_read_unlock();
+	cpu_hotplug_enable();
+	return false;
+}
+
+static void reenable_cpuhp(void)
+{
+	cpu_hotplug_enable();
+}
+
 static void scheduler_switch_done(bool final_state)
 {
 	/* set scx_enable again, switch may fail. */
@@ -3202,15 +3259,16 @@ static void scheduler_switch_done(bool final_state)
 		hb_timer_exit();
 }
 
-static void hmbird_switch_log(enum switch_stat ss, bool finish, bool enable)
+static void hmbird_switch_log(enum switch_stat ss, bool finish,
+				bool enable, char *fail_reason)
 {
 	char *s1 = finish ? "finished" : "failed";
 	char *s2 = enable ? "enabled" : "disabled";
 
 	hmbird_internal_systrace("C|9999|hmbird_status|%d\n", ss);
 	if (ss == HMBIRD_DISABLED || ss == HMBIRD_ENABLED)
-		hmbird_debug("hmbird %s %s at jiffies = %lu, clock = %lu\n",
-				s2, s1, jiffies, (unsigned long)sched_clock());
+		hmbird_debug("hmbird %s %s at jiffies = %lu, clock = %lu, reason = %s\n",
+				s2, s1, jiffies, (unsigned long)sched_clock(), fail_reason);
 	curr_ss = ss;
 }
 
@@ -3230,7 +3288,7 @@ static void hmbird_ops_disable_workfn(struct kthread_work *work)
 	struct task_struct *p;
 	int cpu;
 
-	hmbird_switch_log(HMBIRD_SWITCH_PREP, 0, 0);
+	hmbird_switch_log(HMBIRD_SWITCH_PREP, 0, 0, "");
 	cancel_delayed_work_sync(&hmbird_watchdog_work);
 
 	mutex_lock(&hmbird_ops_enable_mutex);
@@ -3238,8 +3296,9 @@ static void hmbird_ops_disable_workfn(struct kthread_work *work)
 	case HMBIRD_OPS_DISABLED:
 		WARN_ON_ONCE(hmbird_ops_set_enable_state(HMBIRD_OPS_DISABLED) !=
 					HMBIRD_OPS_DISABLING);
-		hmbird_switch_log(HMBIRD_DISABLED, 0, 0);
+		hmbird_switch_log(HMBIRD_DISABLED, 0, 0, "already disabled");
 		scheduler_switch_done(false);
+		mutex_unlock(&hmbird_ops_enable_mutex);
 		return;
 	case HMBIRD_OPS_PREPPING:
 		fallthrough;
@@ -3260,7 +3319,7 @@ static void hmbird_ops_disable_workfn(struct kthread_work *work)
 	cpus_read_lock();
 	percpu_down_write(&hmbird_fork_rwsem);
 
-	hmbird_switch_log(HMBIRD_RQ_SWITCH_BEGIN, 0, 0);
+	hmbird_switch_log(HMBIRD_RQ_SWITCH_BEGIN, 0, 0, "");
 	spin_lock_irq(&hmbird_tasks_lock);
 	atomic_set(&__hmbird_ops_enabled, false);
 	hmbird_task_iter_init(&sti);
@@ -3286,7 +3345,7 @@ static void hmbird_ops_disable_workfn(struct kthread_work *work)
 	}
 	hmbird_task_iter_exit(&sti);
 	spin_unlock_irq(&hmbird_tasks_lock);
-	hmbird_switch_log(HMBIRD_RQ_SWITCH_DONE, 0, 0);
+	hmbird_switch_log(HMBIRD_RQ_SWITCH_DONE, 0, 0, "");
 
 	atomic_set(&non_hmbird_task, true);
 	/* no task is on hmbird, turn off all the switches and flush in-progress calls */
@@ -3302,8 +3361,9 @@ static void hmbird_ops_disable_workfn(struct kthread_work *work)
 
 	WARN_ON_ONCE(hmbird_ops_set_enable_state(HMBIRD_OPS_DISABLED) !=
 			HMBIRD_OPS_DISABLING);
-	hmbird_switch_log(HMBIRD_DISABLED, 1, 0);
+	hmbird_switch_log(HMBIRD_DISABLED, 1, 0, "");
 	scheduler_switch_done(false);
+	reenable_cpuhp();
 }
 
 static DEFINE_KTHREAD_WORK(hmbird_ops_disable_work, hmbird_ops_disable_workfn);
@@ -3320,10 +3380,10 @@ static void schedule_hmbird_ops_disable_work(void)
 		kthread_queue_work(helper, &hmbird_ops_disable_work);
 }
 
+static enum hmbird_exit_type saved_exit_type;
 static void hmbird_ops_disable(enum hmbird_exit_type type)
 {
-	if (WARN_ON_ONCE(type == HMBIRD_EXIT_NONE || type == HMBIRD_EXIT_DONE))
-		type = HMBIRD_EXIT_ERROR;
+	saved_exit_type = type;
 
 	schedule_hmbird_ops_disable_work();
 }
@@ -3391,7 +3451,11 @@ static int hmbird_ops_enable(void *unused)
 	int tcnt = 0;
 	unsigned long long start = 0;
 
-	hmbird_switch_log(HMBIRD_SWITCH_PREP, 0, 0);
+	if (!check_and_disable_cpuhp()) {
+		hmbird_switch_log(HMBIRD_DISABLED, 0, 1, "cpu offline");
+		return -EBUSY;
+	}
+	hmbird_switch_log(HMBIRD_SWITCH_PREP, 0, 0, "");
 	mutex_lock(&hmbird_ops_enable_mutex);
 
 	if (!hmbird_ops_helper) {
@@ -3447,6 +3511,7 @@ static int hmbird_ops_enable(void *unused)
 
 
 	wait_for_completion_interruptible(&tick_sched_clock_completion);
+	atomic64_set(&hmbird_irq_work_lastq_ws, tick_sched_clock);
 
 	/*
 	 * Enable ops for every task. Fork is excluded by hmbird_fork_rwsem
@@ -3479,6 +3544,8 @@ static int hmbird_ops_enable(void *unused)
 	 * enabled and need to be recovered.
 	 */
 	if (!hmbird_ops_tryset_enable_state(HMBIRD_OPS_ENABLING, HMBIRD_OPS_PREPPING)) {
+		atomic_set(&non_hmbird_task, true);
+		atomic_set(&__hmbird_ops_enabled, false);
 		preempt_enable();
 		spin_unlock_irq(&hmbird_tasks_lock);
 		ret = -EBUSY;
@@ -3491,7 +3558,7 @@ static int hmbird_ops_enable(void *unused)
 	 * hmbird_tasks_lock.
 	 */
 	start = sched_clock();
-	hmbird_switch_log(HMBIRD_RQ_SWITCH_BEGIN, 0, 0);
+	hmbird_switch_log(HMBIRD_RQ_SWITCH_BEGIN, 0, 0, "");
 	hmbird_task_iter_init(&sti);
 	while ((p = hmbird_task_iter_next_filtered_locked(&sti))) {
 		tcnt++;
@@ -3516,7 +3583,7 @@ static int hmbird_ops_enable(void *unused)
 	hmbird_task_iter_exit(&sti);
 
 	spin_unlock_irq(&hmbird_tasks_lock);
-	hmbird_switch_log(HMBIRD_RQ_SWITCH_DONE, 0, 0);
+	hmbird_switch_log(HMBIRD_RQ_SWITCH_DONE, 0, 0, "");
 	preempt_enable();
 	percpu_up_write(&hmbird_fork_rwsem);
 
@@ -3527,7 +3594,7 @@ static int hmbird_ops_enable(void *unused)
 
 	cpus_read_unlock();
 	mutex_unlock(&hmbird_ops_enable_mutex);
-	hmbird_switch_log(HMBIRD_ENABLED, 1, 1);
+	hmbird_switch_log(HMBIRD_ENABLED, 1, 1, "");
 	scheduler_switch_done(true);
 
 	return 0;
@@ -3535,7 +3602,7 @@ static int hmbird_ops_enable(void *unused)
 err_unlock:
 	update_load_enable_hmbird(false);
 	mutex_unlock(&hmbird_ops_enable_mutex);
-	hmbird_switch_log(HMBIRD_DISABLED, 0, 1);
+	hmbird_switch_log(HMBIRD_DISABLED, 0, 1, "err_unlock");
 	scheduler_switch_done(false);
 	return ret;
 
@@ -3548,7 +3615,7 @@ err_disable:
 	/* must be fully disabled before returning */
 	hmbird_ops_disable(HMBIRD_EXIT_ERROR);
 	kthread_flush_work(&hmbird_ops_disable_work);
-	hmbird_switch_log(HMBIRD_DISABLED, 0, 1);
+	hmbird_switch_log(HMBIRD_DISABLED, 0, 1, "err_disable");
 	scheduler_switch_done(false);
 	return ret;
 }
@@ -3593,10 +3660,11 @@ static int bpf_hmbird_reg(void *kdata)
 	return hmbird_ops_enable(kdata);
 }
 
-static void bpf_hmbird_unreg(void *kdata)
+static int bpf_hmbird_unreg(void *kdata)
 {
 	hmbird_ops_disable(HMBIRD_EXIT_UNREG);
 	kthread_flush_work(&hmbird_ops_disable_work);
+	return 0;
 }
 
 void set_hmbird_module_loaded(int is_loaded)
@@ -3608,27 +3676,69 @@ void set_hmbird_module_loaded(int is_loaded)
  * MUST load hmbird module before enable hmbird scheduler
  * load track & hmbird gover implemented in hmbird module
  */
-void hmbird_ctrl(bool enable)
+int hmbird_ctrl(bool enable)
 {
 	if (!atomic_read(&hmbird_module_loaded)) {
 		pr_err("hmbird_sched : hmbird module not loaded, failed to enable hmbird!\n");
-		return;
+		return -EINVAL;
 	}
 
 	if (enable && (hmbird_ops_enable_state() == HMBIRD_OPS_ENABLED
 			|| hmbird_ops_enable_state() == HMBIRD_OPS_ENABLING
 			|| hmbird_ops_enable_state() == HMBIRD_OPS_PREPPING))
 		/* Executing or completed, no need to repeat. */
-		return;
+		return -EBUSY;
 	if (!enable && (hmbird_ops_enable_state() == HMBIRD_OPS_DISABLING ||
 			hmbird_ops_enable_state() == HMBIRD_OPS_DISABLED))
 		/* Executing or completed, no need to repeat. */
-		return;
+		return -EBUSY;
 
 	if (enable)
-		bpf_hmbird_reg(NULL);
+		return bpf_hmbird_reg(NULL);
 	else
-		bpf_hmbird_unreg(NULL);
+		return bpf_hmbird_unreg(NULL);
+}
+
+void set_cpu_isomask(int cpu, cpumask_var_t *mask)
+{
+	cpumask_clear_cpu(cpu, iso_masks.ex_free);
+	cpumask_clear_cpu(cpu, iso_masks.exclusive);
+	cpumask_clear_cpu(cpu, iso_masks.partial);
+	cpumask_clear_cpu(cpu, iso_masks.big);
+	cpumask_clear_cpu(cpu, iso_masks.little);
+	cpumask_set_cpu(cpu, *mask);
+}
+
+void set_cpu_cluster(u64 cpu_cluster)
+{
+	int cpu;
+
+	for_each_present_cpu(cpu) {
+		int pos = 1 << cpu;
+
+		if ((pos & cpu_cluster) != 0) {
+			set_cpu_isomask(cpu, &(iso_masks.ex_free));
+			continue;
+		} else
+			pos = pos << 8;
+		if ((pos & cpu_cluster) != 0) {
+			set_cpu_isomask(cpu, &(iso_masks.exclusive));
+			continue;
+		} else
+			pos = pos << 8;
+		if ((pos & cpu_cluster) != 0) {
+			set_cpu_isomask(cpu, &(iso_masks.partial));
+			continue;
+		} else
+			pos = pos << 8;
+		if ((pos & cpu_cluster) != 0) {
+			set_cpu_isomask(cpu, &(iso_masks.big));
+			continue;
+		} else
+			pos = pos << 8;
+		if ((pos & cpu_cluster) != 0)
+			set_cpu_isomask(cpu, &(iso_masks.little));
+	}
 }
 
 static void sysrq_handle_hmbird_reset(u8 key)
@@ -3698,9 +3808,12 @@ void __init init_sched_hmbird_class(void)
 		 */
 		rq->android_oem_data1[HMBIRD_RQ_IDX] =
 			(u64)kmalloc(sizeof(struct hmbird_rq), GFP_KERNEL);
-		if (get_hmbird_rq(rq))
+		if (get_hmbird_rq(rq)) {
 			get_hmbird_rq(rq)->rq = rq;
-		else
+			get_hmbird_rq(rq)->srq = &per_cpu(hmbird_sched_rq_stats, cpu);
+			get_hmbird_rq(rq)->srq->sched_ravg_window_ptr =
+						&hmbird_sched_ravg_window;
+		} else
 			pr_err("fatal error : alloc get_hmbird_rq(rq) failed!!!\n");
 
 		rq->android_oem_data1[HMBIRD_OPS_IDX] =

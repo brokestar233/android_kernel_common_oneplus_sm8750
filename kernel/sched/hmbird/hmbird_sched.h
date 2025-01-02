@@ -72,7 +72,6 @@ struct sched_yield_state {
 DECLARE_PER_CPU(struct sched_yield_state, ystate);
 
 void hmbird_window_rollover_run_once(struct rq *rq);
-void slim_walt_enable(bool enable);
 void hmbird_misc_init(void);
 
 void hmbird_ops_init(struct hmbird_ops *hmbird_ops);
