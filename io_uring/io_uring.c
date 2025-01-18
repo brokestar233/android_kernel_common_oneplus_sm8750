@@ -71,6 +71,7 @@
 #include <linux/io_uring.h>
 #include <linux/audit.h>
 #include <linux/security.h>
+#include <linux/page_size_compat.h>
 #include <asm/shmparam.h>
 
 #define CREATE_TRACE_POINTS
@@ -3385,8 +3386,11 @@ __cold void io_uring_cancel_generic(bool cancel_all, struct io_sq_data *sqd)
 		bool loop = false;
 
 		io_uring_drop_tctx_refs(current);
+		if (!tctx_inflight(tctx, !cancel_all))
+			break;
+
 		/* read completions before cancelations */
-		inflight = tctx_inflight(tctx, !cancel_all);
+		inflight = tctx_inflight(tctx, false);
 		if (!inflight)
 			break;
 
@@ -3487,7 +3491,7 @@ static void *io_uring_validate_mmap_request(struct file *file,
 	}
 
 	page = virt_to_head_page(ptr);
-	if (sz > page_size(page))
+	if (sz > __PAGE_ALIGN(page_size(page)))
 		return ERR_PTR(-EINVAL);
 
 	return ptr;

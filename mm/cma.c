@@ -39,6 +39,11 @@
 #include "internal.h"
 #include "cma.h"
 
+#undef CREATE_TRACE_POINTS
+#ifndef __GENKSYMS__
+#include <trace/hooks/mm.h>
+#endif
+
 struct cma cma_areas[MAX_CMA_AREAS];
 unsigned cma_area_count;
 static DEFINE_MUTEX(cma_mutex);
@@ -189,10 +194,6 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	}
 
 	if (!size || !memblock_is_region_reserved(base, size))
-		return -EINVAL;
-
-	/* alignment should be aligned with order_per_bit */
-	if (!IS_ALIGNED(CMA_MIN_ALIGNMENT_PAGES, 1 << order_per_bit))
 		return -EINVAL;
 
 	/* ensure minimal alignment required by mm core */
@@ -392,12 +393,22 @@ err:
 }
 
 #ifdef CONFIG_CMA_DEBUG
+#define CMA_DEBUG_SHOW_AREAS_DEFAULT true
+#else
+#define CMA_DEBUG_SHOW_AREAS_DEFAULT false
+#endif
+
 static void cma_debug_show_areas(struct cma *cma)
 {
 	unsigned long next_zero_bit, next_set_bit, nr_zero;
 	unsigned long start = 0;
 	unsigned long nr_part, nr_total = 0;
 	unsigned long nbits = cma_bitmap_maxno(cma);
+	bool show = CMA_DEBUG_SHOW_AREAS_DEFAULT;
+
+	trace_android_vh_cma_debug_show_areas(&show);
+	if (!show)
+		return;
 
 	spin_lock_irq(&cma->lock);
 	pr_info("number of available pages: ");
@@ -416,9 +427,6 @@ static void cma_debug_show_areas(struct cma *cma)
 	pr_cont("=> %lu free of %lu total pages\n", nr_total, cma->count);
 	spin_unlock_irq(&cma->lock);
 }
-#else
-static inline void cma_debug_show_areas(struct cma *cma) { }
-#endif
 
 /**
  * __cma_alloc() - allocate pages from contiguous area
@@ -457,6 +465,7 @@ struct page *__cma_alloc(struct cma *cma, unsigned long count,
 	if (!count)
 		goto out;
 
+	trace_android_vh_cma_alloc_set_max_retries(&max_retries);
 	trace_cma_alloc_start(cma->name, count, align);
 
 	mask = cma_bitmap_aligned_mask(cma, align);
@@ -467,6 +476,7 @@ struct page *__cma_alloc(struct cma *cma, unsigned long count,
 	if (bitmap_count > bitmap_maxno)
 		goto out;
 
+	trace_android_vh_cma_alloc_retry(cma->name, &max_retries);
 	for (;;) {
 		spin_lock_irq(&cma->lock);
 		bitmap_no = bitmap_find_next_zero_area_off(cma->bitmap,

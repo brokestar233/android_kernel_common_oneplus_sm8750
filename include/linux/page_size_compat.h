@@ -22,6 +22,12 @@
 
 #include <asm/page.h>
 
+#define __MAX_PAGE_SHIFT		14
+#define __MAX_PAGE_SIZE		(_AC(1,UL) << __MAX_PAGE_SHIFT)
+#define __MAX_PAGE_MASK		(~(__MAX_PAGE_SIZE-1))
+
+#ifndef __ASSEMBLY__
+
 #include <linux/align.h>
 #include <linux/jump_label.h>
 #include <linux/mman.h>
@@ -33,6 +39,14 @@
 
 DECLARE_STATIC_KEY_FALSE(page_shift_compat_enabled);
 extern int page_shift_compat;
+
+#ifdef CONFIG_SHMEM
+extern vm_fault_t shmem_fault(struct vm_fault *vmf);
+#endif	/* CONFIG_SHMEM */
+
+#ifdef CONFIG_F2FS_FS
+extern vm_fault_t f2fs_filemap_fault(struct vm_fault *vmf);
+#endif	/* CONFIG_F2FS_FS */
 
 #ifdef CONFIG_X86_64
 static __always_inline unsigned __page_shift(void)
@@ -97,8 +111,8 @@ static __always_inline unsigned __page_shift(void)
  * NOTE: __MAP_NO_COMPAT is not new UABI it is only ever set by the kernel
  *       in ___filemap_fixup()
  */
-#define __VM_NO_COMPAT      (_AC(1,ULL) << 59)
-#define __MAP_NO_COMPAT     (_AC(1,UL) << 31)
+#define __VM_NO_COMPAT      _BITULL(58)
+#define __MAP_NO_COMPAT     _BITUL(31)
 
 /*
  * Conditional page-alignment based on mmap flags
@@ -127,8 +141,8 @@ static __always_inline unsigned long calc_vm_flag_bits(unsigned long flags)
 extern unsigned long ___filemap_len(struct inode *inode, unsigned long pgoff,
 				    unsigned long len, unsigned long flags);
 
-extern void ___filemap_fixup(unsigned long addr, unsigned long prot, unsigned long old_len,
-			     unsigned long new_len);
+extern void ___filemap_fixup(unsigned long addr, unsigned long prot, unsigned long file_backed_len,
+			     unsigned long len);
 
 static __always_inline unsigned long __filemap_len(struct inode *inode, unsigned long pgoff,
 						   unsigned long len, unsigned long flags)
@@ -140,11 +154,17 @@ static __always_inline unsigned long __filemap_len(struct inode *inode, unsigned
 }
 
 static __always_inline void __filemap_fixup(unsigned long addr, unsigned long prot,
-					    unsigned long old_len, unsigned long new_len)
+					    unsigned long file_backed_len, unsigned long len)
 {
 
 	if (static_branch_unlikely(&page_shift_compat_enabled))
-		___filemap_fixup(addr, prot, old_len, new_len);
+		___filemap_fixup(addr, prot, file_backed_len, len);
 }
+
+extern void __fold_filemap_fixup_entry(struct vma_iterator *iter, unsigned long *end);
+
+extern int __fixup_swap_header(struct file *swap_file, struct address_space *mapping);
+
+#endif /* !__ASSEMBLY__ */
 
 #endif /* __LINUX_PAGE_SIZE_COMPAT_H */

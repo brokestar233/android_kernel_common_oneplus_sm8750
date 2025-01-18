@@ -16,7 +16,7 @@
 
 static bool support_inline_data(struct inode *inode)
 {
-	if (f2fs_is_atomic_file(inode))
+	if (f2fs_used_in_atomic_write(inode))
 		return false;
 	if (!S_ISREG(inode->i_mode) && !S_ISLNK(inode->i_mode))
 		return false;
@@ -33,9 +33,27 @@ bool f2fs_may_inline_data(struct inode *inode)
 	return !f2fs_post_read_required(inode);
 }
 
-bool f2fs_sanity_check_inline_data(struct inode *inode)
+static bool inode_has_blocks(struct inode *inode, struct page *ipage)
+{
+	struct f2fs_inode *ri = F2FS_INODE(ipage);
+	int i;
+
+	if (F2FS_HAS_BLOCKS(inode))
+		return true;
+
+	for (i = 0; i < DEF_NIDS_PER_INODE; i++) {
+		if (ri->i_nid[i])
+			return true;
+	}
+	return false;
+}
+
+bool f2fs_sanity_check_inline_data(struct inode *inode, struct page *ipage)
 {
 	if (!f2fs_has_inline_data(inode))
+		return false;
+
+	if (inode_has_blocks(inode, ipage))
 		return false;
 
 	if (!support_inline_data(inode))
@@ -203,8 +221,10 @@ int f2fs_convert_inline_inode(struct inode *inode)
 	struct page *ipage, *page;
 	int err = 0;
 
-	if (!f2fs_has_inline_data(inode) ||
-			f2fs_hw_is_readonly(sbi) || f2fs_readonly(sbi->sb))
+	if (f2fs_hw_is_readonly(sbi) || f2fs_readonly(sbi->sb))
+		return -EROFS;
+
+	if (!f2fs_has_inline_data(inode))
 		return 0;
 
 	err = f2fs_dquot_initialize(inode);
@@ -240,35 +260,34 @@ out:
 	return err;
 }
 
-int f2fs_write_inline_data(struct inode *inode, struct page *page)
+int f2fs_write_inline_data(struct inode *inode, struct folio *folio)
 {
-	struct dnode_of_data dn;
-	int err;
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct page *ipage;
 
-	set_new_dnode(&dn, inode, NULL, NULL, 0);
-	err = f2fs_get_dnode_of_data(&dn, 0, LOOKUP_NODE);
-	if (err)
-		return err;
+	ipage = f2fs_get_node_page(sbi, inode->i_ino);
+	if (IS_ERR(ipage))
+		return PTR_ERR(ipage);
 
 	if (!f2fs_has_inline_data(inode)) {
-		f2fs_put_dnode(&dn);
+		f2fs_put_page(ipage, 1);
 		return -EAGAIN;
 	}
 
-	f2fs_bug_on(F2FS_I_SB(inode), page->index);
+	f2fs_bug_on(F2FS_I_SB(inode), folio->index);
 
-	f2fs_wait_on_page_writeback(dn.inode_page, NODE, true, true);
-	memcpy_from_page(inline_data_addr(inode, dn.inode_page),
-			 page, 0, MAX_INLINE_DATA(inode));
-	set_page_dirty(dn.inode_page);
+	f2fs_wait_on_page_writeback(ipage, NODE, true, true);
+	memcpy_from_folio(inline_data_addr(inode, ipage),
+			 folio, 0, MAX_INLINE_DATA(inode));
+	set_page_dirty(ipage);
 
-	f2fs_clear_page_cache_dirty_tag(page);
+	f2fs_clear_page_cache_dirty_tag(folio);
 
 	set_inode_flag(inode, FI_APPEND_WRITE);
 	set_inode_flag(inode, FI_DATA_EXIST);
 
-	clear_page_private_inline(dn.inode_page);
-	f2fs_put_dnode(&dn);
+	clear_page_private_inline(ipage);
+	f2fs_put_page(ipage, 1);
 	return 0;
 }
 

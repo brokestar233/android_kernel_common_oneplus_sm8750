@@ -12,6 +12,7 @@ typedef void (*dyn_hcall_t)(struct user_pt_regs *);
 struct kvm_hyp_iommu;
 struct iommu_iotlb_gather;
 struct kvm_hyp_iommu_domain;
+struct kvm_iommu_paddr_cache;
 
 #ifdef CONFIG_MODULES
 enum pkvm_psci_notification {
@@ -213,7 +214,7 @@ struct pkvm_module_ops {
 	void (*iommu_reclaim_pages_atomic)(void *p, u8 order);
 	int (*iommu_snapshot_host_stage2)(struct kvm_hyp_iommu_domain *domain);
 	int (*hyp_smp_processor_id)(void);
-	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_USE(1, void (*iommu_flush_unmap_cache)(struct kvm_iommu_paddr_cache *cache));
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
@@ -278,11 +279,11 @@ int pkvm_load_early_modules(void);
  */
 #define pkvm_el2_mod_va(kern_va, token)					\
 ({									\
-	unsigned long hyp_text_kern_va =				\
-		(unsigned long)THIS_MODULE->arch.hyp.text.start;	\
+	unsigned long hyp_mod_kern_va =				\
+		(unsigned long)THIS_MODULE->arch.hyp.sections.start;	\
 	unsigned long offset;						\
 									\
-	offset = (unsigned long)kern_va - hyp_text_kern_va;		\
+	offset = (unsigned long)kern_va - hyp_mod_kern_va;		\
 	token + offset;							\
 })
 

@@ -34,6 +34,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/memory-tiers.h>
+#include <uapi/linux/mman.h>
 #include <asm/cacheflush.h>
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
@@ -660,7 +661,7 @@ success:
 	 * held in write mode.
 	 */
 	vma_start_write(vma);
-	vm_flags_reset(vma, vma_pad_fixup_flags(vma, newflags));
+	vm_flags_reset(vma, newflags);
 	if (vma_wants_manual_pte_write_upgrade(vma))
 		mm_cp_flags |= MM_CP_TRY_CHANGE_WRITABLE;
 	vma_set_page_prot(vma);
@@ -753,6 +754,15 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 			if (!(vma->vm_flags & VM_GROWSUP))
 				goto out;
 		}
+	}
+
+	/*
+	 * checking if memory is sealed.
+	 * can_modify_mm assumes we have acquired the lock on MM.
+	 */
+	if (unlikely(!can_modify_mm(current->mm, start, end))) {
+		error = -EPERM;
+		goto out;
 	}
 
 	prev = vma_prev(&vmi);

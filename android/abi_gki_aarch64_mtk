@@ -2029,6 +2029,7 @@
   phy_basic_t1_features
   phy_connect
   phy_connect_direct
+  phy_create_lookup
   phy_disconnect
   phy_do_ioctl_running
   phy_drivers_register
@@ -2231,6 +2232,8 @@
   __pskb_pull_tail
   pskb_put
   ___pskb_trim
+  ptp_find_pin
+  ptp_schedule_worker
   put_cmsg
   __put_cred
   put_device
@@ -2556,6 +2559,8 @@
   set_capacity
   set_capacity_and_notify
   set_cpus_allowed_ptr
+  set_direct_map_default_noflush
+  set_direct_map_invalid_noflush
   set_disk_ro
   set_freezable
   set_next_entity
@@ -2951,6 +2956,7 @@
   __traceiter_android_rvh_try_to_wake_up_success
   __traceiter_android_rvh_update_cpu_capacity
   __traceiter_android_rvh_update_misfit_status
+  __traceiter_android_rvh_util_est_update
   __traceiter_android_rvh_wake_up_new_task
   __traceiter_android_vh_alter_futex_plist_add
   __traceiter_android_vh_alter_rwsem_list_add
@@ -2973,6 +2979,9 @@
   __traceiter_android_vh_freq_qos_add_request
   __traceiter_android_vh_freq_qos_remove_request
   __traceiter_android_vh_freq_qos_update_request
+  __traceiter_android_vh_gzvm_destroy_vm_post_process
+  __traceiter_android_vh_gzvm_handle_demand_page_post
+  __traceiter_android_vh_gzvm_handle_demand_page_pre
   __traceiter_android_vh_gzvm_vcpu_exit_reason
   __traceiter_android_vh_iommu_iovad_alloc_iova
   __traceiter_android_vh_iommu_iovad_free_iova
@@ -3068,6 +3077,7 @@
   __tracepoint_android_rvh_try_to_wake_up_success
   __tracepoint_android_rvh_update_cpu_capacity
   __tracepoint_android_rvh_update_misfit_status
+  __tracepoint_android_rvh_util_est_update
   __tracepoint_android_rvh_wake_up_new_task
   __tracepoint_android_vh_alter_futex_plist_add
   __tracepoint_android_vh_alter_rwsem_list_add
@@ -3090,6 +3100,9 @@
   __tracepoint_android_vh_freq_qos_add_request
   __tracepoint_android_vh_freq_qos_remove_request
   __tracepoint_android_vh_freq_qos_update_request
+  __tracepoint_android_vh_gzvm_destroy_vm_post_process
+  __tracepoint_android_vh_gzvm_handle_demand_page_post
+  __tracepoint_android_vh_gzvm_handle_demand_page_pre
   __tracepoint_android_vh_gzvm_vcpu_exit_reason
   __tracepoint_android_vh_iommu_iovad_alloc_iova
   __tracepoint_android_vh_iommu_iovad_free_iova
@@ -3642,6 +3655,7 @@
   vm_iomap_memory
   vm_map_ram
   vm_node_stat
+  vm_unmapped_area
   vm_unmap_ram
   vm_zone_stat
   vprintk

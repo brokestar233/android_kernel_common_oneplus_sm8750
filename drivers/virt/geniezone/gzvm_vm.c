@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 #include <linux/soc/mediatek/gzvm_drv.h>
 #include <linux/debugfs.h>
+#include <trace/hooks/gzvm.h>
 #include "gzvm_common.h"
 
 static DEFINE_MUTEX(gzvm_list_lock);
@@ -172,6 +173,7 @@ gzvm_vm_ioctl_set_memory_region(struct gzvm *gzvm,
 int gzvm_irqchip_inject_irq(struct gzvm *gzvm, unsigned int vcpu_idx,
 			    u32 irq, bool level)
 {
+	gzvm_vcpu_wakeup_all(gzvm);
 	return gzvm_arch_inject_irq(gzvm, vcpu_idx, irq, level);
 }
 
@@ -207,7 +209,7 @@ static int gzvm_vm_ioctl_create_device(struct gzvm *gzvm, void __user *argp)
 
 	if (gzvm_dev->attr_addr != 0 && gzvm_dev->attr_size != 0) {
 		size_t attr_size = gzvm_dev->attr_size;
-		void __user *attr_addr = (void __user *)gzvm_dev->attr_addr;
+		void __user *attr_addr = u64_to_user_ptr(gzvm_dev->attr_addr);
 
 		/* Size of device specific data should not be over a page. */
 		if (attr_size > PAGE_SIZE)
@@ -373,6 +375,8 @@ static void gzvm_destroy_vm(struct gzvm *gzvm)
 	}
 
 	mutex_unlock(&gzvm->lock);
+
+	trace_android_vh_gzvm_destroy_vm_post_process(gzvm);
 
 	/* No need to lock here becauese it's single-threaded execution */
 	gzvm_destroy_all_ppage(gzvm);
@@ -556,6 +560,18 @@ static int setup_mem_alloc_mode(struct gzvm *vm)
 	return 0;
 }
 
+static int enable_idle_support(struct gzvm *vm)
+{
+	int ret;
+	struct gzvm_enable_cap cap = {0};
+
+	cap.cap = GZVM_CAP_ENABLE_IDLE;
+	ret = gzvm_vm_ioctl_enable_cap(vm, &cap, NULL);
+	if (ret)
+		pr_info("Hypervisor doesn't support idle\n");
+	return ret;
+}
+
 static struct gzvm *gzvm_create_vm(unsigned long vm_type)
 {
 	int ret;
@@ -602,6 +618,8 @@ static struct gzvm *gzvm_create_vm(unsigned long vm_type)
 		pr_debug("Failed to create debugfs for VM-%u\n", gzvm->vm_id);
 
 	pr_debug("VM-%u is created\n", gzvm->vm_id);
+
+	enable_idle_support(gzvm);
 
 	return gzvm;
 }
