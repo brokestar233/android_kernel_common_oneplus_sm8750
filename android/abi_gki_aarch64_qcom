@@ -674,6 +674,7 @@
   _find_next_zero_bit
   find_task_by_vpid
   find_vpid
+  finish_rcuwait
   finish_wait
   firmware_request_nowarn
   flow_keys_dissector
@@ -1765,6 +1766,7 @@
   sdhci_cqe_disable
   sdhci_cqe_enable
   sdhci_cqe_irq
+  sdhci_dumpregs
   sdhci_enable_clk
   sdhci_get_property
   sdhci_pltfm_free
