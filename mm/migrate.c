@@ -630,13 +630,7 @@ void folio_migrate_flags(struct folio *newfolio, struct folio *folio)
 	if (folio_test_idle(folio))
 		folio_set_idle(newfolio);
 
-<<<<<<< HEAD 翁乐:80379123:平台与内核开发部 
-	trace_android_vh_look_around_migrate_folio(folio, newfolio);
-
-||||||| merged common ancestors
-=======
 	folio_migrate_refs(newfolio, folio);
->>>>>>> AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.093
 	/*
 	 * Copy NUMA information to the new page, to prevent over-eager
 	 * future migrations of this same page.
