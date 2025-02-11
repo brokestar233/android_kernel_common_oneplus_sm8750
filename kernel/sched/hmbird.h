@@ -57,11 +57,15 @@ do {							\
 		hmbird_deferred_err(#cond","fmt, ##__VA_ARGS__);	\
 } while (0)
 
+#ifdef CONFIG_HMBIRD_DEBUG_MODE
 #define hmbird_info_trace(fmt, ...)			\
 do {						\
 	if (unlikely(hmbirdcore_debug & DEBUG_INFO_TRACE))		\
 		trace_printk("<hmbird_sched>:"fmt, ##__VA_ARGS__); \
 } while (0)
+#else
+#define hmbird_info_trace(fmt, ...)
+#endif
 
 
 #define hmbird_info_systrace(fmt, ...)	\
@@ -73,12 +77,15 @@ do {					\
 	}				\
 } while (0)
 
-
+#ifdef CONFIG_HMBIRD_DEBUG_MODE
 #define hmbird_internal_trace(fmt, ...)			\
 do {						\
 	if (unlikely(hmbirdcore_debug & DEBUG_INTERNAL))		\
 		trace_printk("<hmbird_sched>:"fmt, ##__VA_ARGS__); \
 } while (0)
+#else
+#define hmbird_internal_trace(fmt, ...)
+#endif
 
 #define hmbird_internal_systrace(fmt, ...)	\
 do {					\
@@ -146,6 +153,25 @@ enum hmbird_kick_flags {
 	HMBIRD_KICK_WAIT		= 1LLU << 1,	/* wait for the CPU to be rescheduled */
 };
 
+enum hmbird_task_prop_type {
+	HMBIRD_TASK_PROP_COMMON,
+	HMBIRD_TASK_PROP_PIPELINE,
+	HMBIRD_TASK_PROP_DEBUG_OR_LOG,
+	HMBIRD_TASK_PROP_HIGH_LOAD,
+	HMBIRD_TASK_PROP_IO,
+	HMBIRD_TASK_PROP_NETWORK,
+	HMBIRD_TASK_PROP_PERIODIC,
+	HMBIRD_TASK_PROP_PERIODIC_AND_CRITICAL,
+	HMBIRD_TASK_PROP_TRANSIENT_AND_CRITICAL,
+	HMBIRD_TASK_PROP_ISOLATE,
+	HMBIRD_TASK_PROP_MAX,
+};
+
+enum hmbird_preempt_policy_id {
+	HMBIRD_PREEMPT_POLICY_NONE,
+	HMBIRD_PREEMPT_POLICY_PRIO_BASED,
+};
+
 extern const struct sched_class hmbird_sched_class;
 extern const struct bpf_verifier_ops bpf_sched_hmbird_verifier_ops;
 extern const struct file_operations sched_hmbird_fops;
@@ -168,23 +194,23 @@ struct hmbird_rq {
 	cpumask_var_t		cpus_to_preempt;
 	cpumask_var_t		cpus_to_wait;
 	u64			pnt_seq;
-	u64*		prev_runnable_sum_fixed;
-	u32*		prev_window_size;
+	u64			*prev_runnable_sum_fixed;
+	u32			*prev_window_size;
 	struct irq_work		kick_cpus_irq_work;
 	bool			pipeline;
-	bool 			exclusive;
-	bool 			period_disallow;
-	bool 			nonperiod_disallow;
+	bool			exclusive;
+	bool			period_disallow;
+	bool			nonperiod_disallow;
 	struct rq		*rq;
 	struct hmbird_sched_rq_stats	*srq;
 };
 
 struct hmbird_sched_change_guard {
-        struct task_struct      *p;
-        struct rq               *rq;
-        bool                    queued;
-        bool                    running;
-        bool                    done;
+	struct task_struct		*p;
+	struct rq				*rq;
+	bool					queued;
+	bool					running;
+	bool					done;
 };
 
 extern struct hmbird_sched_change_guard
@@ -192,10 +218,10 @@ hmbird_sched_change_guard_init(struct rq *rq, struct task_struct *p, int flags);
 
 extern void hmbird_sched_change_guard_fini(struct hmbird_sched_change_guard *cg, int flags);
 
-#define SCHED_CHANGE_BLOCK(__rq, __p, __flags)                                  \
-        for (struct hmbird_sched_change_guard __cg =                                   \
-                        hmbird_sched_change_guard_init(__rq, __p, __flags);            \
-             !__cg.done; hmbird_sched_change_guard_fini(&__cg, __flags))
+#define SCHED_CHANGE_BLOCK(__rq, __p, __flags)				\
+	for (struct hmbird_sched_change_guard __cg =			\
+			hmbird_sched_change_guard_init(__rq, __p, __flags);			\
+		!__cg.done; hmbird_sched_change_guard_fini(&__cg, __flags))
 
 DECLARE_STATIC_KEY_FALSE(hmbird_ops_cpu_preempt);
 
@@ -209,7 +235,7 @@ bool hmbird_can_stop_tick(struct rq *rq);
 void init_sched_hmbird_class(void);
 
 __printf(2, 3) void hmbird_ops_error_type(enum hmbird_exit_type type,
-				       const char *fmt, ...);
+						const char *fmt, ...);
 #define hmbird_ops_error(fmt, args...)						\
 	hmbird_ops_error_type(HMBIRD_EXIT_ERROR, fmt, ##args)
 
@@ -219,9 +245,9 @@ void __hmbird_notify_pick_next_task(struct rq *rq,
 
 static inline unsigned long hmbird_sched_weight_to_cgroup(unsigned long weight)
 {
-        return clamp_t(unsigned long,
-                       DIV_ROUND_CLOSEST_ULL(weight * CGROUP_WEIGHT_DFL, 1024),
-                       CGROUP_WEIGHT_MIN, CGROUP_WEIGHT_MAX);
+	return clamp_t(unsigned long,
+			DIV_ROUND_CLOSEST_ULL(weight * CGROUP_WEIGHT_DFL, 1024),
+			CGROUP_WEIGHT_MIN, CGROUP_WEIGHT_MAX);
 }
 
 static inline void hmbird_notify_pick_next_task(struct rq *rq,
@@ -319,5 +345,5 @@ u16 hmbird_cpu_util(int cpu);
 
 bool get_hmbird_ops_enabled(void);
 bool get_non_hmbird_task(void);
-void set_cpu_cluster(u64 cpu_cluster);
+void set_cpu_cluster(unsigned long cpu_cluster);
 #endif /*_EXT_H_*/

@@ -50,10 +50,11 @@ static inline void highres_timer_ctrl(bool enable, int cpu)
 	if (enable && hmbird_enabled()) {
 		if (!hrtimer_active(shadow_tick_timer(cpu)))
 			hrtimer_start(shadow_tick_timer(cpu),
-				ns_to_ktime(TICK_INTVAL), HRTIMER_MODE_REL);
-	} else if (!enable) {
-		hrtimer_cancel(shadow_tick_timer(cpu));
-	} else {}
+				ns_to_ktime(TICK_INTVAL), HRTIMER_MODE_REL_PINNED);
+	} else {
+		if (!enable)
+			hrtimer_cancel(shadow_tick_timer(cpu));
+	}
 }
 
 static inline void high_res_clear_phase(int cpu)
@@ -148,7 +149,7 @@ static int __init hmbird_shadow_tick_init(void)
 {
 	int ret = 0;
 
-	if(HMBIRD_OGKI_VERSION != get_hmbird_version_type())
+	if (get_hmbird_version_type() != HMBIRD_OGKI_VERSION)
 		return 0;
 	shadow_tick_timer_init();
 	shadow_tick_timer_init_flag = true;

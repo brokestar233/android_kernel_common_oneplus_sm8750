@@ -48,7 +48,9 @@ int heartbeat;
 int heartbeat_enable;
 int watchdog_enable;
 int save_gov;
-unsigned int cpu_cluster_masks;
+unsigned long cpu_cluster_masks;
+int yield_opt;
+int hmbird_preempt_policy;
 
 char saved_gov[NR_CPUS][MAX_GOV_LEN];
 
@@ -69,6 +71,29 @@ static int set_proc_buf_val(struct file *file, const char __user *buf, size_t co
 	if (err < 0) {
 		pr_err("hmbird_sched: Failed to exec kstrtoint\n");
 		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int set_proc_buf_val_ul(struct file *file, const char __user *buf,
+				size_t count, unsigned long *val)
+{
+	char kbuf[32] = {0};
+	int err;
+
+	if (count >= 32)
+		return -EFAULT;
+
+	if (copy_from_user(kbuf, buf, count)) {
+		pr_err("hmbird_sched : Failed to copy_from_user\n");
+		return -EFAULT;
+	}
+
+	err = kstrtoul(strstrip(kbuf), 0, val);
+	if (err < 0) {
+		pr_err("hmbird_sched: Failed to exec kstrtoul\n");
+	return -EFAULT;
 	}
 
 	return 0;
@@ -96,6 +121,17 @@ static int hmbird_common_show(struct seq_file *m, void *v)
 static int hmbird_common_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, hmbird_common_show, pde_data(inode));
+}
+
+static int hmbird_common_ul_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%lu\n", *(unsigned long *) m->private);
+	return 0;
+}
+
+static int hmbird_common_ul_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, hmbird_common_ul_show, pde_data(inode));
 }
 HMBIRD_PROC_OPS(hmbird_common, hmbird_common_open, hmbird_common_write);
 /* common ops end */
@@ -173,9 +209,9 @@ HMBIRD_PROC_OPS(save_gov, hmbird_common_open, save_gov_str);
 static ssize_t cpu_cluster_proc_write(struct file *file, const char __user *buf,
 							size_t count, loff_t *ppos)
 {
-	int *pval = (int *)pde_data(file_inode(file));
+	unsigned long *pval = (unsigned long *)pde_data(file_inode(file));
 
-	if (set_proc_buf_val(file, buf, count, pval))
+	if (set_proc_buf_val_ul(file, buf, count, pval))
 		return -EFAULT;
 
 	if (scx_enable == 0)
@@ -183,17 +219,19 @@ static ssize_t cpu_cluster_proc_write(struct file *file, const char __user *buf,
 
 	return count;
 }
-HMBIRD_PROC_OPS(cpu_cluster_masks, hmbird_common_open, cpu_cluster_proc_write);
+HMBIRD_PROC_OPS(cpu_cluster_masks, hmbird_common_ul_open, cpu_cluster_proc_write);
 
 static ssize_t slim_walt_ctrl_write(struct file *file, const char __user *buf,
 					size_t count, loff_t *ppos)
 {
 	int *pval = (int *)pde_data(file_inode(file));
+	int tmp_val;
 
-	if (set_proc_buf_val(file, buf, count, pval))
+	if (set_proc_buf_val(file, buf, count, &tmp_val))
 		return -EFAULT;
 
-	slim_walt_enable(*pval);
+	slim_walt_enable(tmp_val);
+	*pval = tmp_val;
 
 	return count;
 }
@@ -205,7 +243,7 @@ static int __init hmbird_proc_init(void)
 	struct proc_dir_entry *load_track_dir;
 	struct proc_dir_entry *freq_gov_dir;
 
-	if(HMBIRD_OGKI_VERSION != get_hmbird_version_type())
+	if (get_hmbird_version_type() != HMBIRD_OGKI_VERSION)
 		return 0;
 
 	/* mkdir /proc/hmbird_sched */
@@ -339,6 +377,16 @@ static int __init hmbird_proc_init(void)
 	HMBIRD_CREATE_PROC_ENTRY("hmbird_stats", HMBIRD_PROC_PERMISSION,
 					hmbird_dir,
 					&hmbird_stats_proc_ops);
+
+	HMBIRD_CREATE_PROC_ENTRY_DATA("yield_opt", HMBIRD_PROC_PERMISSION,
+					hmbird_dir,
+					&hmbird_common_proc_ops,
+					&yield_opt);
+
+	HMBIRD_CREATE_PROC_ENTRY_DATA("hmbird_preempt_policy", HMBIRD_PROC_PERMISSION,
+					hmbird_dir,
+					&hmbird_common_proc_ops,
+					&hmbird_preempt_policy);
 	/* /proc/hmbird_sched--end */
 
 	/* mkdir /proc/hmbird_sched/slim_walt */

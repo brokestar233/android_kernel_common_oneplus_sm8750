@@ -15,10 +15,12 @@ extern int parctrl_low_ratio;
 extern int isoctrl_high_ratio;
 extern int isoctrl_low_ratio;
 extern int iso_free_rescue;
+extern int yield_opt;
 
 extern noinline int tracing_mark_write(const char *buf);
 int task_top_id(struct task_struct *p);
 void stats_print(char *buf, int len);
+void hmbird_skip_yield(long *skip);
 extern spinlock_t hmbird_tasks_lock;
 
 

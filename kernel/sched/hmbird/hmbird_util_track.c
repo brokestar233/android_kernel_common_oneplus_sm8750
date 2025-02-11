@@ -12,40 +12,11 @@
 #define HMBIRD_DEBUG_PANIC		(1 << 3)
 static bool init_irq_work_inited;
 
-#define hmbird_trace_printk(fmt, args...)	\
-do {								\
-		trace_printk("hmbird_sched_ext :"fmt, args);	\
-} while (0)
-
 extern noinline int tracing_mark_write(const char *buf);
-
-#define HMBIRD_BUG(fmt, ...)		\
-do {										\
-	printk_deferred("hmbird[%s]:"fmt, __func__, ##__VA_ARGS__);	\
-} while (0)
 
 void hmbird_window_rollover_run_once(struct rq *rq)
 {
-	int cpu;
-	unsigned long flags;
-	struct sched_yield_state *ys;
-	struct rq *tmp_rq;
-
-	for_each_online_cpu(cpu) {
-		tmp_rq = cpu_rq(cpu);
-		if (get_hmbird_rq(tmp_rq)->exclusive) {
-			ys = &per_cpu(ystate, cpu);
-			raw_spin_lock_irqsave(&ys->lock, flags);
-			if (ys->cnt >= DEFAULT_YIELD_SLEEP_TH || ys->usleep_times > 1) {
-				ys->usleep = min(ys->usleep + MIN_YIELD_SLEEP, MAX_YIELD_SLEEP);
-			} else if (!ys->cnt && (ys->usleep_times == 1)) {
-				ys->usleep = max(ys->usleep - MIN_YIELD_SLEEP, MIN_YIELD_SLEEP);
-			}
-			ys->cnt = 0;
-			ys->usleep_times = 0;
-			raw_spin_unlock_irqrestore(&ys->lock, flags);
-		}
-	}
+	hmbird_yield_state_update_per_frame();
 }
 
 int hmbird_sched_ravg_window = 8000000;
@@ -68,6 +39,7 @@ static struct irq_work hmbird_slim_walt_irq_work;
 #define SCHED_ACCOUNT_WAIT_TIME 0
 
 atomic64_t hmbird_irq_work_lastq_ws;
+static u64 tick_sched_clock;
 
 static inline u64 scale_exec_time(u64 delta, struct rq *rq)
 {
@@ -467,6 +439,7 @@ void slim_walt_window_rollover_run_once(u64 old_window_start, struct rq *rq)
 					old_window_start, new_window_start);
 	if (result != old_window_start)
 		return;
+	hmbird_yield_state_update_per_frame();
 
 	if (likely(cpu_online(raw_smp_processor_id())))
 		irq_work_queue(&hmbird_slim_walt_irq_work);
@@ -474,6 +447,23 @@ void slim_walt_window_rollover_run_once(u64 old_window_start, struct rq *rq)
 		irq_work_queue_on(&hmbird_slim_walt_irq_work, cpumask_any(cpu_online_mask));
 }
 
+/*
+ * In the core scheduler, most of the load update points update the rq_clock after
+ * holding the rq lock. We can directly use rq_clock to reduce the overhead of
+ * obtaining the time, but to prevent the subsequent migration of the load update
+ * point to before the update of rq_clock, we wrap the judgment of the rq_clock
+ * update here.
+ */
+void hmbird_update_task_ravg_rqclock_wrapper(struct task_struct *p,
+				struct rq *rq, int event)
+{
+	if (!(rq->clock_update_flags & RQCF_UPDATED))
+		update_rq_clock(rq);
+
+	struct hmbird_sched_rq_stats *srq = &per_cpu(hmbird_sched_rq_stats, cpu_of(rq));
+
+	hmbird_update_task_ravg(p, rq, event, max(rq_clock(rq), srq->latest_clock));
+}
 
 void hmbird_update_task_ravg(struct task_struct *p,
 				struct rq *rq, int event, u64 wallclock)
@@ -504,9 +494,7 @@ void hmbird_update_task_ravg(struct task_struct *p,
 
 done:
 	sts->mark_start = wallclock;
-
-	if (scx_gov_ctrl)
-		slim_walt_window_rollover_run_once(old_window_start, rq);
+	slim_walt_window_rollover_run_once(old_window_start, rq);
 }
 
 static void slim_walt_irq_work(struct irq_work *irq_work)
@@ -536,6 +524,7 @@ static void slim_walt_irq_work(struct irq_work *irq_work)
 		hmbird_update_task_ravg(rq->curr, rq, TASK_UPDATE, wc);
 	}
 
+	cpufreq_update_util(cpu_rq(0), HMBIRD_CPUFREQ_WINDOW_ROLLOVER);
 	spin_lock_irqsave(&new_sched_ravg_window_lock, flags);
 	if (unlikely(new_hmbird_sched_ravg_window != hmbird_sched_ravg_window)) {
 		srq = &per_cpu(hmbird_sched_rq_stats, smp_processor_id());
@@ -576,7 +565,6 @@ static void hmbird_sched_stats_init(void)
 		hmbird_sched_init_rq(rq);
 		raw_spin_unlock_irqrestore(&rq->__lock, flags);
 	}
-	slim_walt_ctrl = 1;
 	slim_walt_policy = WINDOW_STATS_MAX_RECENT_AVG;
 
 	if (false == init_irq_work_inited) {
@@ -585,11 +573,36 @@ static void hmbird_sched_stats_init(void)
 	}
 }
 
+void hmbird_scheduler_tick(void)
+{
+	int cpu = smp_processor_id();
+	struct rq *rq = cpu_rq(cpu);
+
+	if (unlikely(!tick_sched_clock)) {
+		/*
+		 * Let the window begin 20us prior to the tick,
+		 * that way we are guaranteed a rollover when the tick occurs.
+		 * Use rq->clock directly instead of rq_clock() since
+		 * we do not have the rq lock and
+		 * rq->clock was updated in the tick callpath.
+		 */
+		if (cmpxchg64(&tick_sched_clock, 0, rq->clock - 20000))
+			return;
+		for_each_possible_cpu(cpu) {
+			struct hmbird_sched_rq_stats *srq = &per_cpu(hmbird_sched_rq_stats, cpu);
+
+			srq->window_start = tick_sched_clock;
+		}
+		atomic64_set(&hmbird_irq_work_lastq_ws, tick_sched_clock);
+	}
+}
+
 void slim_walt_enable(int enable)
 {
-	if (1 == !!enable)
+	if (1 == !!enable) {
 		hmbird_sched_stats_init();
-	else
+		WRITE_ONCE(tick_sched_clock, 0);
+	} else
 		slim_walt_ctrl = 0;
 }
 

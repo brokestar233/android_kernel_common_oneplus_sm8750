@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __HMBIRD_SCHED_PROC_H__
 #define __HMBIRD_SCHED_PROC_H__
 

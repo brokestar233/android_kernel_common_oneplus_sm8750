@@ -8882,6 +8882,9 @@ static void do_sched_yield(void)
 	long skip = 0;
 
 	trace_android_rvh_before_do_sched_yield(&skip);
+#ifdef CONFIG_HMBIRD_SCHED
+	hmbird_skip_yield(&skip);
+#endif
 	if (skip)
 		return;
 

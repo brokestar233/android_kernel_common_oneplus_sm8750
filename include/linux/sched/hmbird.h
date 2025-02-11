@@ -196,6 +196,7 @@ struct hmbird_entity {
 	int                     gdsq_idx;
 
 	s32			critical_affinity_cpu;
+	int			dsq_sync_ux;
 };
 
 struct hmbird_ops {
@@ -206,5 +207,11 @@ struct hmbird_ops {
 };
 
 void hmbird_free(struct task_struct *p);
+
+enum DSQ_SYNC_UX_FLAG {
+	DSQ_SYNC_UX_NONE = 0,
+	DSQ_SYNC_STATIC_UX = 1,
+	DSQ_SYNC_INHERIT_UX = 1 << 1,
+};
 
 #endif	/* _LINUX_SCHED_HMBIRD_H */

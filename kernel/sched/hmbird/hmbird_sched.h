@@ -43,9 +43,7 @@ do {								\
 } while (0)
 
 #define UNREGISTER_TRACE(vendor_hook, handler, data)	\
-do {								\
-	unregister_trace_##vendor_hook(handler, data);				\
-} while (0)
+	unregister_trace_##vendor_hook(handler, data)				\
 
 extern unsigned int highres_tick_ctrl;
 extern unsigned int highres_tick_ctrl_dbg;
@@ -59,6 +57,7 @@ extern int cpu7_tl;
 extern int scx_gov_ctrl;
 extern spinlock_t new_sched_ravg_window_lock;
 
+#define HMBIRD_CPUFREQ_WINDOW_ROLLOVER	BIT(31)
 #define MAX_YIELD_SLEEP		(2000ULL)
 #define MIN_YIELD_SLEEP		(200ULL)
 #define DEFAULT_YIELD_SLEEP_TH	(10)
@@ -72,6 +71,7 @@ struct sched_yield_state {
 DECLARE_PER_CPU(struct sched_yield_state, ystate);
 
 void hmbird_window_rollover_run_once(struct rq *rq);
+void hmbird_yield_state_update_per_frame(void);
 void hmbird_misc_init(void);
 
 void hmbird_ops_init(struct hmbird_ops *hmbird_ops);

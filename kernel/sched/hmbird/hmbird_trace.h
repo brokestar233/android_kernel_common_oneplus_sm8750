@@ -14,8 +14,8 @@
 
 TRACE_EVENT(hmbird_update_history,
 
-	TP_PROTO(struct hmbird_entity *hmbird, struct rq *rq, struct task_struct *p, u32 runtime, int samples,
-			int event),
+	TP_PROTO(struct hmbird_entity *hmbird, struct rq *rq,
+		struct task_struct *p, u32 runtime, int samples, int event),
 
 	TP_ARGS(hmbird, rq, p, runtime, samples, event),
 
@@ -39,7 +39,7 @@ TRACE_EVENT(hmbird_update_history,
 		__entry->demand		= hmbird->sts.demand;
 		memcpy(__entry->hist, hmbird->sts.sum_history,
 					RAVG_HIST_SIZE * sizeof(u32));
-		__entry->task_util		= hmbird->sts.demand_scaled,
+		__entry->task_util	= hmbird->sts.demand_scaled;
 		__entry->cpu		= rq->cpu;),
 
 	TP_printk("comm=%s[%d]: runtime %u samples %d event %d demand %u (hist: %u %u %u %u %u) task_util %u cpu %d",

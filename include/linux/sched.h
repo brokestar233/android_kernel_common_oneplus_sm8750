@@ -1952,21 +1952,61 @@ static inline void reset_top_task_prop(struct task_struct *p)
 
 static inline int hmbird_set_sched_prop(struct task_struct *p, unsigned long sp)
 {
-	if (get_hmbird_ts(p) == NULL)
-		return 0;
+	struct hmbird_entity *entity = get_hmbird_ts(p);
 
-	get_hmbird_ts(p)->sched_prop = sp;
+	if (entity) {
+		entity->sched_prop = sp;
+	}
 	return 0;
 }
 
 static inline unsigned long hmbird_get_sched_prop(struct task_struct *p)
 {
-	return get_hmbird_ts(p)->sched_prop;
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		return entity->sched_prop;
+	else
+		return 0;
+}
+
+static inline void hmbird_set_dsq_id(struct task_struct *p, unsigned long dsq)
+{
+	unsigned long new_dsq;
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity) {
+		new_dsq = (entity->sched_prop & ~SCHED_PROP_DEADLINE_MASK) | dsq;
+		entity->sched_prop = new_dsq;
+	}
 }
 
 static inline unsigned long hmbird_get_dsq_id(struct task_struct *p)
 {
-	return (get_hmbird_ts(p)->sched_prop & SCHED_PROP_DEADLINE_MASK);
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		return (entity->sched_prop & SCHED_PROP_DEADLINE_MASK);
+	else
+		return 0;
+}
+
+static inline void hmbird_set_dsq_sync_ux(struct task_struct *p, int val)
+{
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		entity->dsq_sync_ux = val;
+}
+
+static inline int hmbird_get_dsq_sync_ux(struct task_struct *p)
+{
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		return entity->dsq_sync_ux;
+	else
+		return 0;
 }
 #endif
 
