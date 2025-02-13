@@ -950,6 +950,7 @@ static int snd_usb_mbox2_boot_quirk(struct usb_device *dev)
 			new_device_descriptor.bNumConfigurations);
 	else
 		memcpy(&dev->descriptor, &new_device_descriptor, sizeof(dev->descriptor));
+
 	err = usb_reset_configuration(dev);
 	if (err < 0)
 		dev_dbg(&dev->dev, "error usb_reset_configuration: %d\n", err);
@@ -1284,6 +1285,7 @@ static int snd_usb_mbox3_boot_quirk(struct usb_device *dev)
 			new_device_descriptor.bNumConfigurations);
 	else
 		memcpy(&dev->descriptor, &new_device_descriptor, sizeof(dev->descriptor));
+
 	err = usb_reset_configuration(dev);
 	if (err < 0)
 		dev_dbg(&dev->dev, "error usb_reset_configuration: %d\n", err);
