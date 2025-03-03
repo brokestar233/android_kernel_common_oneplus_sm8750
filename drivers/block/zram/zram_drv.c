@@ -2024,7 +2024,7 @@ static ssize_t recompress_store(struct device *dev,
 	struct zram_pp_ctl *ctl = NULL;
 	struct zram_pp_slot *pps;
 	u32 mode = 0, threshold = 0;
-	struct page *page;
+	struct page *page = NULL;
 	ssize_t ret;
 
 	args = skip_spaces(buf);
@@ -2147,9 +2147,9 @@ next:
 		cond_resched();
 	}
 
-	__free_page(page);
-
 release_init_lock:
+	if (page)
+		__free_page(page);
 	release_pp_ctl(zram, ctl);
 	atomic_set(&zram->pp_in_progress, 0);
 	up_read(&zram->init_lock);
