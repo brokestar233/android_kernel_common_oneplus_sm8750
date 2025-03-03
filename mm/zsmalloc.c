@@ -1286,6 +1286,130 @@ void zs_unmap_object(struct zs_pool *pool, unsigned long handle)
 }
 EXPORT_SYMBOL_GPL(zs_unmap_object);
 
+void *zs_obj_read_begin(struct zs_pool *pool, unsigned long handle,
+			void *local_copy)
+{
+	struct zspage *zspage;
+	struct page *page;
+	unsigned long obj, off;
+	unsigned int obj_idx;
+	struct size_class *class;
+	void *addr;
+
+	/* Guarantee we can get zspage from handle safely */
+	spin_lock(&pool->lock);
+	obj = handle_to_obj(handle);
+	obj_to_location(obj, &page, &obj_idx);
+	zspage = get_zspage(page);
+
+	/* Make sure migration doesn't move any pages in this zspage */
+	migrate_read_lock(zspage);
+	spin_unlock(&pool->lock);
+
+	class = zspage_class(pool, zspage);
+	off = offset_in_page(class->size * obj_idx);
+
+	if (off + class->size <= PAGE_SIZE) {
+		/* this object is contained entirely within a page */
+		addr = kmap_atomic(page);
+		addr += off;
+	} else {
+		size_t sizes[2];
+		struct page *next_page;
+
+		/* this object spans two pages */
+		sizes[0] = PAGE_SIZE - off;
+		sizes[1] = class->size - sizes[0];
+		addr = local_copy;
+
+		memcpy_from_page(addr, page, off, sizes[0]);
+		next_page = get_next_page(page);
+		BUG_ON(!next_page);
+		memcpy_from_page(addr + sizes[0], next_page, 0, sizes[1]);
+	}
+
+	if (!ZsHugePage(zspage))
+		addr += ZS_HANDLE_SIZE;
+
+	return addr;
+}
+EXPORT_SYMBOL_GPL(zs_obj_read_begin);
+
+void zs_obj_read_end(struct zs_pool *pool, unsigned long handle,
+		     void *handle_mem)
+{
+	struct zspage *zspage;
+	struct page *page;
+	unsigned long obj, off;
+	unsigned int obj_idx;
+	struct size_class *class;
+
+	obj = handle_to_obj(handle);
+	obj_to_location(obj, &page, &obj_idx);
+	zspage = get_zspage(page);
+	class = zspage_class(pool, zspage);
+	off = offset_in_page(class->size * obj_idx);
+
+	if (off + class->size <= PAGE_SIZE) {
+		if (!ZsHugePage(zspage))
+			off += ZS_HANDLE_SIZE;
+		handle_mem -= off;
+		kunmap_atomic(handle_mem);
+	}
+
+	migrate_read_unlock(zspage);
+}
+EXPORT_SYMBOL_GPL(zs_obj_read_end);
+
+void zs_obj_write(struct zs_pool *pool, unsigned long handle,
+		  void *handle_mem, size_t mem_len)
+{
+	struct zspage *zspage;
+	struct page *page;
+	unsigned long obj, off;
+	unsigned int obj_idx;
+	struct size_class *class;
+
+	/* Guarantee we can get zspage from handle safely */
+	spin_lock(&pool->lock);
+	obj = handle_to_obj(handle);
+	obj_to_location(obj, &page, &obj_idx);
+	zspage = get_zspage(page);
+
+	/* Make sure migration doesn't move any pages in this zspage */
+	migrate_read_lock(zspage);
+	spin_unlock(&pool->lock);
+
+	class = zspage_class(pool, zspage);
+	off = offset_in_page(class->size * obj_idx);
+
+	if (off + class->size <= PAGE_SIZE) {
+		/* this object is contained entirely within a page */
+		void *dst = kmap_atomic(page);
+
+		if (!ZsHugePage(zspage))
+			off += ZS_HANDLE_SIZE;
+		memcpy(dst + off, handle_mem, mem_len);
+		kunmap_atomic(dst);
+	} else {
+		/* this object spans two pages */
+		size_t sizes[2];
+		struct page *next_page;
+
+		off += ZS_HANDLE_SIZE;
+		sizes[0] = PAGE_SIZE - off;
+		sizes[1] = mem_len - sizes[0];
+
+		memcpy_to_page(page, off, handle_mem, sizes[0]);
+		next_page = get_next_page(page);
+		BUG_ON(!next_page);
+		memcpy_to_page(next_page, 0, handle_mem + sizes[0], sizes[1]);
+	}
+
+	migrate_read_unlock(zspage);
+}
+EXPORT_SYMBOL_GPL(zs_obj_write);
+
 /**
  * zs_huge_class_size() - Returns the size (in bytes) of the first huge
  *                        zsmalloc &size_class.
