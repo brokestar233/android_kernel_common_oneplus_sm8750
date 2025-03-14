@@ -14,11 +14,6 @@ static bool init_irq_work_inited;
 
 extern noinline int tracing_mark_write(const char *buf);
 
-void hmbird_window_rollover_run_once(struct rq *rq)
-{
-	hmbird_yield_state_update_per_frame();
-}
-
 int hmbird_sched_ravg_window = 8000000;
 int new_hmbird_sched_ravg_window = 8000000;
 DEFINE_SPINLOCK(new_sched_ravg_window_lock);
@@ -439,7 +434,6 @@ void slim_walt_window_rollover_run_once(u64 old_window_start, struct rq *rq)
 					old_window_start, new_window_start);
 	if (result != old_window_start)
 		return;
-	hmbird_yield_state_update_per_frame();
 
 	if (likely(cpu_online(raw_smp_processor_id())))
 		irq_work_queue(&hmbird_slim_walt_irq_work);

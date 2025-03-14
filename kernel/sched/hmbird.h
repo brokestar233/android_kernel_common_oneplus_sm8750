@@ -26,7 +26,6 @@
 #define SLIM_FOR_SGAME		(1 << 0)
 #define SLIM_FOR_GENSHIN	(1 << 1)
 
-#define MAX_NR_CPUS					(1 << 3)
 #ifdef MAX_TASK_NR
 #define MAX_KEY_THREAD_RECORD		((MAX_TASK_NR + 1) >> 1)
 #else
@@ -39,22 +38,32 @@
 #define	TOP_TASK_BITS_MASK			(TOP_TASK_MAX - 1)
 #endif /* TOP_TASK_BITS_MASK */
 
+extern struct md_info_t *md_info;
+
 #define debug_enabled()	\
-	(unlikely(hmbirdcore_debug & DEBUG_INFO_TRACE | DEBUG_INFO_SYSTRACE))
+	(unlikely(hmbirdcore_debug))
 
 #define hmbird_debug(fmt, ...)	\
 	pr_info("<hmbird_sched>:"fmt, ##__VA_ARGS__)
 
-#define hmbird_err(fmt, ...)	\
-	pr_err("<hmbird_sched>:"fmt, ##__VA_ARGS__)
-
-#define hmbird_deferred_err(fmt, ...) \
-	printk_deferred(KERN_ERR "<hmbird_sched>"fmt, ##__VA_ARGS__)
-
-#define hmbird_cond_deferred_err(cond, fmt, ...) \
+#define hmbird_err(id, fmt, ...) \
 do {							\
-	if (unlikely(cond))				\
-		hmbird_deferred_err(#cond","fmt, ##__VA_ARGS__);	\
+	pr_err("<hmbird_sched>"fmt, ##__VA_ARGS__);	\
+	exceps_update(md_info, id, jiffies);	\
+} while (0)
+
+#define hmbird_deferred_err(id, fmt, ...) \
+do {					\
+	printk_deferred("<hmbird_sched>"fmt, ##__VA_ARGS__);	\
+	exceps_update(md_info, id, jiffies);	\
+} while (0)
+
+#define hmbird_cond_deferred_err(id, cond, fmt, ...) \
+do {							\
+	if (unlikely(cond)) {				\
+		hmbird_deferred_err(id, #cond","fmt, ##__VA_ARGS__);	\
+		exceps_update(md_info, id, jiffies);	\
+	}							\
 } while (0)
 
 #ifdef CONFIG_HMBIRD_DEBUG_MODE
@@ -67,7 +76,6 @@ do {						\
 #define hmbird_info_trace(fmt, ...)
 #endif
 
-
 #define hmbird_info_systrace(fmt, ...)	\
 do {					\
 	if (unlikely(hmbirdcore_debug & DEBUG_INFO_SYSTRACE)) {	\
@@ -75,6 +83,13 @@ do {					\
 		snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__);	\
 		tracing_mark_write(buf);			\
 	}				\
+} while (0)
+
+#define hmbird_output_systrace(fmt, ...)	\
+do {					\
+	char buf[256];		\
+	snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__);	\
+	tracing_mark_write(buf);			\
 } while (0)
 
 #ifdef CONFIG_HMBIRD_DEBUG_MODE
@@ -87,13 +102,11 @@ do {						\
 #define hmbird_internal_trace(fmt, ...)
 #endif
 
-#define hmbird_internal_systrace(fmt, ...)	\
-do {					\
+#define hmbird_internal_systrace(fmt, ...)			\
+do {								\
 	if (unlikely(hmbirdcore_debug & DEBUG_INTERNAL)) {	\
-		char buf[256];		\
-		snprintf(buf, sizeof(buf), fmt, ##__VA_ARGS__);	\
-		tracing_mark_write(buf);			\
-	}				\
+		hmbird_output_systrace(fmt, ##__VA_ARGS__);	\
+	}							\
 } while (0)
 
 enum hmbird_wake_flags {
@@ -234,10 +247,12 @@ int hmbird_check_setscheduler(struct task_struct *p, int policy);
 bool hmbird_can_stop_tick(struct rq *rq);
 void init_sched_hmbird_class(void);
 
-__printf(2, 3) void hmbird_ops_error_type(enum hmbird_exit_type type,
-						const char *fmt, ...);
-#define hmbird_ops_error(fmt, args...)						\
-	hmbird_ops_error_type(HMBIRD_EXIT_ERROR, fmt, ##args)
+void hmbird_ops_exit(void);
+#define hmbird_ops_error(fmt, ...)						\
+do {										\
+	hmbird_deferred_err(HMBIRD_OPS_ERR, fmt, ##__VA_ARGS__);                      \
+	hmbird_ops_exit();				\
+} while (0)
 
 void __hmbird_notify_pick_next_task(struct rq *rq,
 				 struct task_struct *p,
@@ -271,27 +286,7 @@ static inline void hmbird_notify_pick_next_task(struct rq *rq,
 
 extern void hmbird_scheduler_tick(void);
 void scan_timeout(struct rq *rq);
-static inline void hmbird_notify_sched_tick(void)
-{
-	unsigned long last_check;
-	int cpu = smp_processor_id();
-	struct rq *rq = cpu_rq(cpu);
-
-	hmbird_scheduler_tick();
-
-	if (!hmbird_enabled())
-		return;
-
-	last_check = hmbird_watchdog_timestamp;
-	if (unlikely(time_after(jiffies, last_check + hmbird_watchdog_timeout))) {
-		u32 dur_ms = jiffies_to_msecs(jiffies - last_check);
-
-		hmbird_ops_error_type(HMBIRD_EXIT_ERROR_STALL,
-				   "watchdog failed to check in for %u.%03us",
-				   dur_ms / 1000, dur_ms % 1000);
-	}
-	scan_timeout(rq);
-}
+void hmbird_notify_sched_tick(void);
 
 static inline const struct sched_class *next_active_class(const struct sched_class *class)
 {
@@ -318,7 +313,6 @@ static inline const struct sched_class *next_active_class(const struct sched_cla
 	for_active_class_range(class, (prev_class) > &hmbird_sched_class ?		\
 				&hmbird_sched_class : (prev_class), (end_class))
 
-#define MAX_GLOBAL_DSQS (10)
 #define MIN_CGROUP_DL_IDX (5)      /* 8ms */
 #define DEFAULT_CGROUP_DL_IDX (8)  /* 64ms */
 extern u32 HMBIRD_BPF_DSQS_DEADLINE[MAX_GLOBAL_DSQS];
