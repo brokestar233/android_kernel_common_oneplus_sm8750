@@ -480,7 +480,8 @@ static void bbr_init_pacing_rate_from_rtt(struct sock *sk)
 	bw = (u64)tcp_snd_cwnd(tp) * BW_UNIT;
 	do_div(bw, rtt_us);
 	WRITE_ONCE(sk->sk_pacing_rate,
-		   bbr_bw_to_pacing_rate(sk, bw, bbr_param(sk, startup_pacing_gain)));
+		   bbr_bw_to_pacing_rate(sk, bw,
+					 bbr_param(sk, startup_pacing_gain)));
 }
 
 /* Pace using current bw estimate and a gain factor. */
