@@ -254,7 +254,7 @@ enum bbr_pacing_gain_phase {
 	BBR_BW_PROBE_UP		= 0,  /* push up inflight to probe for bw/vol */
 	BBR_BW_PROBE_DOWN	= 1,  /* drain excess inflight from the queue */
 	BBR_BW_PROBE_CRUISE	= 2,  /* use pipe, w/ headroom in queue/pipe */
-	BBR_BW_PROBE_REFILL	= 3,  /* v2: refill the pipe again to 100% */
+	BBR_BW_PROBE_REFILL	= 3,  /* refill the pipe again to 100% */
 };
 #endif
 
@@ -1205,8 +1205,7 @@ static void bbr_probe_inflight_hi_upward(struct sock *sk,
 
 /* Does loss/ECN rate for this sample say inflight is "too high"?
  * This is used by both the bbr_check_loss_too_high_in_startup() function,
- * which can be used in either v1 or v2, and the PROBE_UP phase of v2, which
- * uses it to notice when loss/ECN rates suggest inflight is too high.
+ * and in PROBE_UP.
  */
 static bool bbr_is_inflight_too_high(const struct sock *sk,
 				      const struct rate_sample *rs)
