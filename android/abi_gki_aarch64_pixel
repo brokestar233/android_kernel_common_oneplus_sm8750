@@ -812,6 +812,7 @@
   drop_reasons_unregister_subsys
   dump_backtrace
   dump_stack
+  dump_tasks
   dw_handle_msi_irq
   dw_pcie_find_capability
   dw_pcie_host_init
@@ -2251,6 +2252,7 @@
   thermal_zone_get_trip
   thermal_zone_get_zone_by_name
   thread_group_cputime_adjusted
+  tick_nohz_get_idle_calls_cpu
   time64_to_tm
   timer_delete
   timer_delete_sync

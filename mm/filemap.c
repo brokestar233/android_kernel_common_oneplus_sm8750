@@ -997,8 +997,15 @@ int filemap_add_folio(struct address_space *mapping, struct folio *folio,
 		 * get overwritten with something else, is a waste of memory.
 		 */
 		WARN_ON_ONCE(folio_test_active(folio));
-		if (!(gfp & __GFP_WRITE) && shadow)
+		if (!(gfp & __GFP_WRITE) && shadow) {
 			workingset_refault(folio, shadow);
+			trace_android_vh_refault_filemap_add_folio(folio, shadow, gfp, &ret);
+			if (unlikely(ret)) {
+				__filemap_remove_folio(folio, shadow);
+				__folio_clear_locked(folio);
+				return ret;
+			}
+		}
 		folio_add_lru(folio);
 	}
 	return ret;
@@ -3287,6 +3294,11 @@ static struct file *do_async_mmap_readahead(struct vm_fault *vmf,
 	DEFINE_READAHEAD(ractl, file, ra, file->f_mapping, vmf->pgoff);
 	struct file *fpin = NULL;
 	unsigned int mmap_miss;
+	bool skip = false;
+
+	trace_android_vh_do_async_mmap_readahead(vmf, folio, &skip);
+	if (skip)
+		return fpin;
 
 	/* If we don't want any read-ahead, don't bother */
 	if (vmf->vma->vm_flags & VM_RAND_READ || !ra->ra_pages)
@@ -4066,6 +4078,7 @@ again:
 			if (unlikely(status < 0))
 				break;
 		}
+		trace_android_vh_io_statistics(mapping, page->index, 1, false, false);
 		cond_resched();
 
 		if (unlikely(status == 0)) {
