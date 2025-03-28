@@ -48,7 +48,7 @@ int heartbeat;
 int heartbeat_enable = 1;
 int watchdog_enable;
 int save_gov;
-unsigned long cpu_cluster_masks;
+u64 cpu_cluster_masks;
 int hmbird_preempt_policy;
 
 char saved_gov[NR_CPUS][MAX_GOV_LEN];
@@ -75,13 +75,13 @@ static int set_proc_buf_val(struct file *file, const char __user *buf, size_t co
 	return 0;
 }
 
-static int set_proc_buf_val_ul(struct file *file, const char __user *buf,
-				size_t count, unsigned long *val)
+static int set_proc_buf_val_u64(struct file *file, const char __user *buf,
+				size_t count, u64 *val)
 {
 	char kbuf[32] = {0};
 	int err;
 
-	if (count >= 32)
+	if (count >= sizeof(kbuf))
 		return -EFAULT;
 
 	if (copy_from_user(kbuf, buf, count)) {
@@ -89,7 +89,7 @@ static int set_proc_buf_val_ul(struct file *file, const char __user *buf,
 		return -EFAULT;
 	}
 
-	err = kstrtoul(strstrip(kbuf), 0, val);
+	err = kstrtou64(strstrip(kbuf), 0, val);
 	if (err < 0) {
 		pr_err("hmbird_sched: Failed to exec kstrtoul\n");
 	return -EFAULT;
@@ -122,16 +122,6 @@ static int hmbird_common_open(struct inode *inode, struct file *file)
 	return single_open(file, hmbird_common_show, pde_data(inode));
 }
 
-static int hmbird_common_ul_show(struct seq_file *m, void *v)
-{
-	seq_printf(m, "%lu\n", *(unsigned long *) m->private);
-	return 0;
-}
-
-static int hmbird_common_ul_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, hmbird_common_ul_show, pde_data(inode));
-}
 HMBIRD_PROC_OPS(hmbird_common, hmbird_common_open, hmbird_common_write);
 /* common ops end */
 
@@ -215,9 +205,9 @@ HMBIRD_PROC_OPS(save_gov, hmbird_common_open, save_gov_str);
 static ssize_t cpu_cluster_proc_write(struct file *file, const char __user *buf,
 							size_t count, loff_t *ppos)
 {
-	unsigned long *pval = (unsigned long *)pde_data(file_inode(file));
+	u64 *pval = (u64 *)pde_data(file_inode(file));
 
-	if (set_proc_buf_val_ul(file, buf, count, pval))
+	if (set_proc_buf_val_u64(file, buf, count, pval))
 		return -EFAULT;
 
 	if (scx_enable == 0)
@@ -225,7 +215,30 @@ static ssize_t cpu_cluster_proc_write(struct file *file, const char __user *buf,
 
 	return count;
 }
-HMBIRD_PROC_OPS(cpu_cluster_masks, hmbird_common_ul_open, cpu_cluster_proc_write);
+
+static ssize_t cpu_cluster_proc_read(struct file *file, char __user *buf,
+							size_t count, loff_t *ppos)
+{
+	char kbuf[32];
+	size_t len;
+	u64 *pval = (u64 *)pde_data(file_inode(file));
+
+	if (*ppos != 0)
+		return 0;
+
+	len = snprintf(kbuf, sizeof(kbuf), "%llu\n", *pval);
+
+	if (copy_to_user(buf, kbuf, len))
+		return -EFAULT;
+
+	*ppos += len;
+	return len;
+}
+
+static const struct proc_ops cpu_cluster_masks_proc_ops = {
+	.proc_write             = cpu_cluster_proc_write,
+	.proc_read              = cpu_cluster_proc_read,
+};
 
 static ssize_t slim_walt_ctrl_write(struct file *file, const char __user *buf,
 					size_t count, loff_t *ppos)

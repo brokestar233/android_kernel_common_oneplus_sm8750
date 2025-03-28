@@ -2948,6 +2948,10 @@ static void inform_hmbird_onoff_from_systrace(void)
 
 	WRITE_ONCE(next_print, jiffies + OUTPUT_INTVAL);
 	hmbird_output_systrace("C|9999|hmbird_status|%d\n", curr_ss);
+	hmbird_output_systrace("C|9999|parctrl_high_ratio_l|%d\n", parctrl_high_ratio_l);
+	hmbird_output_systrace("C|9999|parctrl_low_ratio_l|%d\n", parctrl_low_ratio_l);
+	hmbird_output_systrace("C|9999|parctrl_high_ratio|%d\n", parctrl_high_ratio);
+	hmbird_output_systrace("C|9999|parctrl_low_ratio|%d\n", parctrl_low_ratio);
 }
 
 void hmbird_notify_sched_tick(void)
@@ -3928,12 +3932,12 @@ void set_cpu_isomask(int cpu, cpumask_var_t *mask)
 	cpumask_set_cpu(cpu, *mask);
 }
 
-void set_cpu_cluster(unsigned long cpu_cluster)
+void set_cpu_cluster(u64 cpu_cluster)
 {
 	int cpu;
 
 	for_each_present_cpu(cpu) {
-		int pos = 1 << cpu;
+		u64 pos = 1 << cpu;
 
 		if ((pos & cpu_cluster) != 0) {
 			set_cpu_isomask(cpu, &(iso_masks.ex_free));
