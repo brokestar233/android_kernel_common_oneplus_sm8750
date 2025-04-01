@@ -58,16 +58,22 @@ extern int scx_gov_ctrl;
 extern spinlock_t new_sched_ravg_window_lock;
 
 #define HMBIRD_CPUFREQ_WINDOW_ROLLOVER	BIT(31)
-#define MAX_YIELD_SLEEP		(2000ULL)
-#define MIN_YIELD_SLEEP		(200ULL)
+#define MAX_YIELD_SLEEP		(2000000ULL)
+#define MIN_YIELD_SLEEP		(200000ULL)
+#define YIELD_DURATION		(5000ULL)
 #define DEFAULT_YIELD_SLEEP_TH	(10)
 
 struct sched_yield_state {
 	raw_spinlock_t	lock;
-	unsigned long	cnt;
-	unsigned long	usleep;
-	int usleep_times;
+	u64				last_yield_time;
+	u64				last_update_time;
+	u64				sleep_end;
+	unsigned long	yield_cnt;
+	unsigned long	yield_cnt_after_sleep;
+	unsigned long	sleep;
+	int sleep_times;
 };
+
 DECLARE_PER_CPU(struct sched_yield_state, ystate);
 
 void hmbird_window_rollover_run_once(struct rq *rq);

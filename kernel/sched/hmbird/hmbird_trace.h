@@ -12,6 +12,33 @@
 #include <linux/types.h>
 #include <linux/tracepoint.h>
 
+#define MAX_FATAL_INFO (64)
+
+TRACE_EVENT(hmbird_fatal_info,
+
+	TP_PROTO(unsigned int type, int pe, int lnr, int bnr, char *info),
+
+	TP_ARGS(type, pe, lnr, bnr, info),
+
+	TP_STRUCT__entry(
+		__field(unsigned int, type)
+		__field(int, pe)
+		__field(int, lnr)
+		__field(int, bnr)
+		__array(char, info, MAX_FATAL_INFO)),
+
+	TP_fast_assign(
+		__entry->type = type;
+		__entry->pe = pe;
+		__entry->lnr = lnr;
+		__entry->bnr = bnr;
+		memcpy(__entry->info, info, MAX_FATAL_INFO);),
+
+	TP_printk("hmbird fatal error type=%u pe=%d lnr=%d bnr=%d info=%s",
+		__entry->type, __entry->pe, __entry->lnr, __entry->bnr,
+		__entry->info)
+);
+
 TRACE_EVENT(hmbird_update_history,
 
 	TP_PROTO(struct hmbird_entity *hmbird, struct rq *rq,
