@@ -579,7 +579,15 @@ static ssize_t proc_sys_call_handler(struct kiocb *iocb, struct iov_iter *iter,
 	error = -ENOMEM;
 	if (count >= KMALLOC_MAX_SIZE)
 		goto out;
-	kbuf = kvzalloc(count + 1, GFP_KERNEL);
+
+	/*
+	 * Use vmalloc if the count is too large to avoid costly high-order page
+	 * allocations.
+	 */
+	if (count < (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER))
+		kbuf = kvzalloc(count + 1, GFP_KERNEL);
+	else
+		kbuf = vmalloc(count + 1);
 	if (!kbuf)
 		goto out;
 
