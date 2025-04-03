@@ -339,5 +339,5 @@ u16 hmbird_cpu_util(int cpu);
 
 bool get_hmbird_ops_enabled(void);
 bool get_non_hmbird_task(void);
-void set_cpu_cluster(unsigned long cpu_cluster);
+void set_cpu_cluster(u64 cpu_cluster);
 #endif /*_EXT_H_*/
