@@ -55,6 +55,10 @@
   tty_unlock
   tty_set_ldisc
   tty_kclose
+  percpu_ref_init
+  percpu_ref_exit
+  android_debug_per_cpu_symbol
+  android_debug_symbol
   __kfifo_len_r
   __traceiter_android_vh_killed_process
   __tracepoint_android_vh_killed_process
@@ -112,6 +116,10 @@
   __tracepoint_android_vh_udp_unicast_rcv_skb
   __traceiter_android_vh_udp6_unicast_rcv_skb
   __tracepoint_android_vh_udp6_unicast_rcv_skb
+  __traceiter_android_vh_tcp_rcv_established_fast_path
+  __tracepoint_android_vh_tcp_rcv_established_fast_path
+  __traceiter_android_vh_tcp_rcv_established_slow_path
+  __tracepoint_android_vh_tcp_rcv_established_slow_path
   __tracepoint_android_vh_si_mem_available_adjust
   __traceiter_android_vh_si_mem_available_adjust
   __tracepoint_android_vh_si_meminfo_adjust
@@ -236,3 +244,7 @@
   __traceiter_android_vh_wq_wake_idle_worker
   __tracepoint_android_vh_wq_queue_work
   __tracepoint_android_vh_wq_wake_idle_worker
+  __traceiter_android_rvh_do_read_fault
+  __tracepoint_android_rvh_do_read_fault
+  __traceiter_android_vh_io_statistics
+  __tracepoint_android_vh_io_statistics

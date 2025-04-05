@@ -130,6 +130,7 @@
   __traceiter_android_vh_configfs_uevent_work
   __traceiter_android_vh_count_workingset_refault
   __traceiter_android_vh_do_anonymous_page
+  __traceiter_android_vh_do_async_mmap_readahead
   __traceiter_android_vh_do_group_exit
   __traceiter_android_vh_do_new_mount_fc
   __traceiter_android_vh_do_swap_page
@@ -150,6 +151,8 @@
   __traceiter_android_vh_lock_folio_drop_mmap_start
   __traceiter_android_vh_look_around
   __traceiter_android_vh_look_around_migrate_folio
+  __traceiter_android_vh_lruvec_add_folio
+  __traceiter_android_vh_lruvec_del_folio
   __traceiter_android_vh_mmap_region
   __traceiter_android_vh_mutex_init
   __traceiter_android_vh_mutex_unlock_slowpath
@@ -177,6 +180,7 @@
   __traceiter_android_vh_scheduler_tick
   __traceiter_android_vh_sd_init_unmap_multi_segment
   __traceiter_android_vh_sd_setup_unmap_multi_segment
+  __traceiter_android_vh_send_signal_locked
   __traceiter_android_vh_shmem_swapin_folio
   __traceiter_android_vh_should_alloc_pages_retry
   __traceiter_android_vh_shrink_folio_list
@@ -256,6 +260,7 @@
   __tracepoint_android_vh_configfs_uevent_work
   __tracepoint_android_vh_count_workingset_refault
   __tracepoint_android_vh_do_anonymous_page
+  __tracepoint_android_vh_do_async_mmap_readahead
   __tracepoint_android_vh_do_group_exit
   __tracepoint_android_vh_do_new_mount_fc
   __tracepoint_android_vh_do_swap_page
@@ -276,6 +281,8 @@
   __tracepoint_android_vh_lock_folio_drop_mmap_start
   __tracepoint_android_vh_look_around
   __tracepoint_android_vh_look_around_migrate_folio
+  __tracepoint_android_vh_lruvec_add_folio
+  __tracepoint_android_vh_lruvec_del_folio
   __tracepoint_android_vh_mmap_region
   __tracepoint_android_vh_mutex_init
   __tracepoint_android_vh_mutex_unlock_slowpath
@@ -303,6 +310,7 @@
   __tracepoint_android_vh_scheduler_tick
   __tracepoint_android_vh_sd_init_unmap_multi_segment
   __tracepoint_android_vh_sd_setup_unmap_multi_segment
+  __tracepoint_android_vh_send_signal_locked
   __tracepoint_android_vh_shmem_swapin_folio
   __tracepoint_android_vh_should_alloc_pages_retry
   __tracepoint_android_vh_shrink_folio_list
@@ -340,3 +348,4 @@
   unlock_buffer
   __wait_on_buffer
   zs_lookup_class_index
+  utf8_data_table_new
