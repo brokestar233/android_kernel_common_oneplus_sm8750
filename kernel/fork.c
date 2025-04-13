@@ -106,11 +106,17 @@
 #include <linux/cpufreq_times.h>
 #include <linux/dma-buf.h>
 
+#ifdef CONFIG_USER_NS
+#include <linux/user_namespace.h>
+#endif
+
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
+
+#include <linux/sched/bore.h>
 
 #include <trace/events/sched.h>
 
@@ -2698,6 +2704,17 @@ __latent_entropy struct task_struct *copy_process(
 
 	p->start_time = ktime_get_ns();
 	p->start_boottime = ktime_get_boottime_ns();
+
+#ifdef CONFIG_SCHED_BORE
+	p->se.bore_stats = kzalloc(sizeof(struct sched_bore_stats), GFP_KERNEL);
+	if (unlikely(!p->se.bore_stats)) {
+		pr_err("Failed to allocate memory for bore_stats in task %p\n", p);
+    	put_task_struct(p);
+    	return ERR_PTR(-ENOMEM);
+	}
+	if (likely(p->pid))
+		sched_clone_bore(p, current, clone_flags, p->start_time);
+#endif // CONFIG_SCHED_BORE
 
 	/*
 	 * Make it visible to the rest of the system, but dont wake it up yet.

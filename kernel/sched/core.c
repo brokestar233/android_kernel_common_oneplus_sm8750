@@ -96,6 +96,8 @@
 #include "../../io_uring/io-wq.h"
 #include "../smpboot.h"
 
+#include <linux/sched/bore.h>
+
 #ifdef CONFIG_HMBIRD_SCHED
 #include "hmbird/slim.h"
 #include "hmbird/hmbird_shadow_tick.h"
@@ -10364,6 +10366,11 @@ void __init sched_init(void)
 	BUG_ON(&dl_sched_class != &stop_sched_class + 1);
 #endif
 #endif
+
+#ifdef CONFIG_SCHED_BORE
+	sched_bore_init();
+#endif // CONFIG_SCHED_BORE
+
 	wait_bit_init();
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
