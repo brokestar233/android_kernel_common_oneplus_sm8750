@@ -5034,9 +5034,6 @@ void sched_cgroup_fork(struct task_struct *p, struct kernel_clone_args *kargs)
 	if (p->sched_class->task_fork)
 		p->sched_class->task_fork(p);
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
-#ifdef CONFIG_HMBIRD_SCHED
-	hmbird_fork(p);
-#endif
 }
 
 void sched_post_fork(struct task_struct *p)

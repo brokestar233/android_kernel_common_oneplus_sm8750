@@ -240,7 +240,6 @@ DECLARE_STATIC_KEY_FALSE(hmbird_ops_cpu_preempt);
 
 bool task_on_hmbird(struct task_struct *p);
 int hmbird_pre_fork(struct task_struct *p);
-int hmbird_fork(struct task_struct *p);
 void hmbird_post_fork(struct task_struct *p);
 void hmbird_cancel_fork(struct task_struct *p);
 int hmbird_check_setscheduler(struct task_struct *p, int policy);

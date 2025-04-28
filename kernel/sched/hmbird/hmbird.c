@@ -37,6 +37,12 @@ enum hmbird_ops_enable_state {
 	HMBIRD_OPS_DISABLED,
 };
 
+static inline void put_hmbird_ts(struct task_struct *p)
+{
+	kfree((void *)p->android_oem_data1[HMBIRD_TS_IDX]);
+	p->android_oem_data1[HMBIRD_TS_IDX] = 0;
+}
+
 static inline struct task_group *css_tg(struct cgroup_subsys_state *css)
 {
 	return css ? container_of(css, struct task_group, css) : NULL;
@@ -2847,8 +2853,10 @@ static s32 hmbird_select_cpu_dfl(struct task_struct *p, s32 prev_cpu, u64 wake_f
 	/* For non-period global dsq, not contain pcp task. */
 	if (task_only_blongs_to_cluster(p, LITTLE)) {
 		cpumask_copy(&mask, iso_masks.little);
-		if (unlikely(l_need_rescue))
+		if (unlikely(l_need_rescue)) {
 			cpumask_or(&mask, iso_masks.partial, &mask);
+			cpumask_or(&mask, iso_masks.ex_free, &mask);
+		}
 		if (!cpumask_empty(&mask)) {
 			cpu = select_cpu_from_cluster(p, prev_cpu,
 					&mask, &little_distribute_mask_prev);
@@ -2860,8 +2868,10 @@ static s32 hmbird_select_cpu_dfl(struct task_struct *p, s32 prev_cpu, u64 wake_f
 
 	if (task_only_blongs_to_cluster(p, BIG)) {
 		cpumask_copy(&mask, iso_masks.big);
-		if (unlikely(b_need_rescue))
+		if (unlikely(b_need_rescue)) {
 			cpumask_or(&mask, iso_masks.partial, &mask);
+			cpumask_or(&mask, iso_masks.ex_free, &mask);
+		}
 		if (!cpumask_empty(&mask)) {
 			cpu = select_cpu_from_cluster(p, prev_cpu,
 					&mask, &big_distribute_mask_prev);
@@ -3149,10 +3159,8 @@ int hmbird_pre_fork(struct task_struct *p)
 
 	p->android_oem_data1[HMBIRD_TS_IDX] =
 		(u64)(kmalloc(sizeof(struct hmbird_entity), GFP_KERNEL));
-	if (!get_hmbird_ts(p)) {
-		ret = -1;
-		goto lock;
-	}
+	if (!get_hmbird_ts(p))
+		return -1;
 
 	get_hmbird_ts(p)->dsq              = NULL;
 	INIT_LIST_HEAD(&get_hmbird_ts(p)->dsq_node.fifo);
@@ -3178,27 +3186,19 @@ int hmbird_pre_fork(struct task_struct *p)
 	 * enable/disable are very cold paths, let's use a percpu_rwsem to
 	 * exclude forks.
 	 */
-lock:
-	percpu_down_read(&hmbird_fork_rwsem);
 
 	return ret;
 }
 
-int hmbird_fork(struct task_struct *p)
-{
-	percpu_rwsem_assert_held(&hmbird_fork_rwsem);
-
-	if (hmbird_enabled())
-		return hmbird_ops_prepare_task(p, task_group(p));
-	else
-		return 0;
-}
-
 void hmbird_post_fork(struct task_struct *p)
 {
+	percpu_down_read(&hmbird_fork_rwsem);
+
 	if (hmbird_enabled()) {
 		struct rq_flags rf;
 		struct rq *rq;
+		p->sched_class = &hmbird_sched_class;
+		hmbird_ops_prepare_task(p, task_group(p));
 
 		rq = task_rq_lock(p, &rf);
 		/*
@@ -3212,6 +3212,12 @@ void hmbird_post_fork(struct task_struct *p)
 		hmbird_ops_enable_task(p);
 		refresh_hmbird_weight(p);
 		task_rq_unlock(rq, p, &rf);
+	} else {
+		if (rt_prio(p->prio)) {
+			p->sched_class = &rt_sched_class;
+		} else {
+			p->sched_class = &fair_sched_class;
+		}
 	}
 
 	spin_lock_irq(&hmbird_tasks_lock);
@@ -3223,21 +3229,15 @@ void hmbird_post_fork(struct task_struct *p)
 
 void hmbird_cancel_fork(struct task_struct *p)
 {
-	struct hmbird_entity *see = get_hmbird_ts(p);
-
 	if (hmbird_enabled())
 		hmbird_ops_disable_task(p);
 
-	kfree(get_hmbird_ts(p));
-	see = NULL;
-
-	percpu_up_read(&hmbird_fork_rwsem);
+	put_hmbird_ts(p);
 }
 
 void hmbird_free(struct task_struct *p)
 {
 	unsigned long flags;
-	struct hmbird_entity *see = get_hmbird_ts(p);
 
 	spin_lock_irqsave(&hmbird_tasks_lock, flags);
 	list_del_init(&get_hmbird_ts(p)->tasks_node);
@@ -3256,8 +3256,7 @@ void hmbird_free(struct task_struct *p)
 		hmbird_ops_disable_task(p);
 		task_rq_unlock(rq, p, &rf);
 	}
-	kfree(get_hmbird_ts(p));
-	see = NULL;
+	put_hmbird_ts(p);
 }
 
 static void prio_changed_hmbird(struct rq *rq, struct task_struct *p, int oldprio)
@@ -3491,7 +3490,7 @@ void hb_timer_handler(struct timer_list *timer)
 	if (!heartbeat_enable)
 		goto refill;
 
-	pr_err("<hmbird_sched>: enter timer.\n");
+	pr_info("<hmbird_sched>: enter timer.\n");
 	if (heartbeat) {
 		heartbeat = 0;
 		WRITE_ONCE(next_hb, jiffies + HEARTBEAT_TIMEOUT);
@@ -3733,7 +3732,7 @@ static struct kthread_worker *hmbird_create_rt_helper(const char *name)
 {
 	struct kthread_worker *helper;
 
-	helper = kthread_create_worker(0, name);
+	helper = kthread_create_worker(KTW_FREEZABLE, name);
 	if (helper)
 		sched_set_fifo(helper->task);
 	return helper;
