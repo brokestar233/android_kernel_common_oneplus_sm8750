@@ -54,6 +54,9 @@
 #include <asm/tlbflush.h>
 
 #include <trace/events/migrate.h>
+#undef CREATE_TRACE_POINTS
+#include <trace/hooks/mm.h>
+#include <trace/hooks/vmscan.h>
 
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/mm.h>

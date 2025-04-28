@@ -1676,6 +1676,11 @@ static void z_erofs_submit_queue(struct z_erofs_decompress_frontend *f,
 			if (bio && (cur != last_pa ||
 				    last_bdev != mdev.m_bdev)) {
 submit_bio_retry:
+                                //#ifdef OPLUS_STORAGE_FS debug for bugid 7760993
+				if (!bio->bi_iter.bi_size)
+					WARN(1, "erofs submit empty io, bio=0x%p, bi_opf=0x%x, bi_sector=%llu\n",
+					     bio, bio->bi_opf, bio->bi_iter.bi_sector);
+                                //#endif
 				submit_bio(bio);
 				if (memstall) {
 					psi_memstall_leave(&pflags);
@@ -1704,7 +1709,11 @@ submit_bio_retry:
 
 			if (cur + bvec.bv_len > end)
 				bvec.bv_len = end - cur;
-			DBG_BUGON(bvec.bv_len < sb->s_blocksize);
+			//#ifdef OPLUS_STORAGE_FS debug for bugid 7760993.origin code is DBG_BUGON
+			BUG_ON(bvec.bv_len < sb->s_blocksize);
+			//#else
+			//DBG_BUGON(bvec.bv_len < sb->s_blocksize);
+			//#endif
 			if (!bio_add_page(bio, bvec.bv_page, bvec.bv_len,
 					  bvec.bv_offset))
 				goto submit_bio_retry;

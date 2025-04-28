@@ -93,7 +93,7 @@ DECLARE_HOOK(android_vh_binder_spawn_new_thread,
 	TP_ARGS(thread, proc, force_spawn));
 DECLARE_HOOK(android_vh_binder_has_special_work_ilocked,
 	TP_PROTO(struct binder_thread *thread, bool do_proc_work, bool *has_work),
-	TP_ARGS(thread, do_proc_work, has_work));
+	TP_ARGS(thread, do_proc_work, has_work)); 
 DECLARE_HOOK(android_vh_binder_proc_transaction,
 	TP_PROTO(struct task_struct *caller_task, struct task_struct *binder_proc_task,
 		struct task_struct *binder_th_task, int node_debug_id,

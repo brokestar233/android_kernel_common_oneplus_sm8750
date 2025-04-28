@@ -887,6 +887,9 @@ static void bio_set_ioprio(struct bio *bio)
 void submit_bio(struct bio *bio)
 {
 	if (bio_op(bio) == REQ_OP_READ) {
+		//#ifdef OPLUS_STORAGE_FS debug for bugid 7760993
+		BUG_ON(!bio->bi_iter.bi_size);
+		//#endif
 		task_io_account_read(bio->bi_iter.bi_size);
 		count_vm_events(PGPGIN, bio_sectors(bio));
 	} else if (bio_op(bio) == REQ_OP_WRITE) {

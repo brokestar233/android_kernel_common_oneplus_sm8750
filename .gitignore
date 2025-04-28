@@ -169,3 +169,7 @@ sphinx_*/
 
 # Rust analyzer configuration
 /rust-project.json
+drivers/soc/oplus/
+kernel/locking/locking_main.h
+kernel/locking/oplus_locking.c
+kernel/locking/sa_common_struct.h
