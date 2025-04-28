@@ -56,6 +56,7 @@ extern int slim_gov_debug;
 extern int cpu7_tl;
 extern int scx_gov_ctrl;
 extern spinlock_t new_sched_ravg_window_lock;
+extern int cluster_separate;
 
 #define HMBIRD_CPUFREQ_WINDOW_ROLLOVER	BIT(31)
 #define MAX_YIELD_SLEEP		(2000000ULL)

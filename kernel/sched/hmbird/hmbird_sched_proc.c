@@ -50,6 +50,7 @@ int watchdog_enable;
 int save_gov;
 u64 cpu_cluster_masks;
 int hmbird_preempt_policy;
+int cluster_separate;
 
 char saved_gov[NR_CPUS][MAX_GOV_LEN];
 
@@ -120,6 +121,17 @@ static int hmbird_common_show(struct seq_file *m, void *v)
 static int hmbird_common_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, hmbird_common_show, pde_data(inode));
+}
+
+static int hmbird_common_ul_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%lu\n", *(unsigned long *) m->private);
+	return 0;
+}
+
+static int hmbird_common_ul_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, hmbird_common_ul_show, pde_data(inode));
 }
 
 HMBIRD_PROC_OPS(hmbird_common, hmbird_common_open, hmbird_common_write);
@@ -215,30 +227,7 @@ static ssize_t cpu_cluster_proc_write(struct file *file, const char __user *buf,
 
 	return count;
 }
-
-static ssize_t cpu_cluster_proc_read(struct file *file, char __user *buf,
-							size_t count, loff_t *ppos)
-{
-	char kbuf[32];
-	size_t len;
-	u64 *pval = (u64 *)pde_data(file_inode(file));
-
-	if (*ppos != 0)
-		return 0;
-
-	len = snprintf(kbuf, sizeof(kbuf), "%llu\n", *pval);
-
-	if (copy_to_user(buf, kbuf, len))
-		return -EFAULT;
-
-	*ppos += len;
-	return len;
-}
-
-static const struct proc_ops cpu_cluster_masks_proc_ops = {
-	.proc_write             = cpu_cluster_proc_write,
-	.proc_read              = cpu_cluster_proc_read,
-};
+HMBIRD_PROC_OPS(cpu_cluster_masks, hmbird_common_ul_open, cpu_cluster_proc_write);
 
 static ssize_t slim_walt_ctrl_write(struct file *file, const char __user *buf,
 					size_t count, loff_t *ppos)
@@ -526,6 +515,11 @@ static int __init hmbird_proc_init(void)
 					&hmbird_common_proc_ops,
 					&scx_gov_ctrl);
 	/* /proc/hmbird_sched/slim_freq_gov--end */
+
+	HMBIRD_CREATE_PROC_ENTRY_DATA("cluster_separate", HMBIRD_PROC_PERMISSION,
+					hmbird_dir,
+					&hmbird_common_proc_ops,
+					&cluster_separate);
 
 	return 0;
 }

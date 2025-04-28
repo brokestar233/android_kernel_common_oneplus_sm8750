@@ -17,6 +17,8 @@
 #include "hmbird_util_track.h"
 #include <linux/sched/hmbird_proc_val.h>
 
+#define CLUSTER_SEPARATE
+
 atomic_t __hmbird_ops_enabled = ATOMIC_INIT(0);
 atomic_t non_hmbird_task;
 atomic_t hmbird_module_loaded = ATOMIC_INIT(0);
@@ -172,6 +174,7 @@ static u64 max_hmbird_dsq_internal_id;
 /* a dsq idx, whether task push to little domain cpu or bit domain cpu*/
 #define CLUSTER_SEPARATE_IDX	(8)
 #define GDSQS_ID_BASE		(3)
+#define UX_COMPATIBLE_IDX	(4)
 #define NON_PERIOD_START	(5)
 #define NON_PERIOD_END		(MAX_GLOBAL_DSQS)
 #define CREATE_DSQ_LEVEL_WITHIN	(1)
@@ -731,9 +734,13 @@ static int find_idx_from_task(struct task_struct *p)
 		goto done;
 	}
 
-	if (tg && tg->css.cgroup && tg->css.cgroup->kn)
-		idx = cgroup_ids_table[tg->css.cgroup->kn->id];
-	else
+	if (tg && tg->css.cgroup && tg->css.cgroup->kn) {
+		if (likely(tg->css.cgroup->kn->id >= 0 &&
+			tg->css.cgroup->kn->id < NUMS_CGROUP_KINDS))
+			idx = cgroup_ids_table[tg->css.cgroup->kn->id];
+		else
+			idx = DEFAULT_CGROUP_DL_IDX;
+	} else
 		idx = DEFAULT_CGROUP_DL_IDX;
 
 done:
@@ -927,12 +934,22 @@ static int consume_period_dsq(struct rq *rq, struct rq_flags *rf)
 {
 	int i;
 
-	for (i = 0; i < NON_PERIOD_START; i++) {
+	for (i = 0; i < UX_COMPATIBLE_IDX; i++) {
 		if (consume_dispatch_q(rq, rf, &gdsqs[i])) {
 			slim_stats_record(GDSQ_CNT, 1, i, 0);
 			return 1;
 		}
 	}
+	return 0;
+}
+
+static int consume_ux_dsq(struct rq *rq, struct rq_flags *rf)
+{
+	if (consume_dispatch_q(rq, rf, &gdsqs[UX_COMPATIBLE_IDX])) {
+		slim_stats_record(GDSQ_CNT, 1, UX_COMPATIBLE_IDX, 0);
+		return 1;
+	}
+
 	return 0;
 }
 
@@ -1015,38 +1032,6 @@ static int consume_pcp_dsq(struct rq *rq, struct rq_flags *rf, bool any)
 	return 0;
 }
 
-static int consume_timeout_dsq(struct rq *rq, struct rq_flags *rf, struct cluster_ctx *ctx)
-{
-	int i;
-	bool is_timeout;
-	unsigned long flags;
-
-	/* Third param <false> means only consume timeout pcp dsq. */
-	if (consume_pcp_dsq(rq, rf, false))
-		return 1;
-
-	for (i = ctx->lower; i < ctx->upper; i++) {
-		raw_spin_lock_irqsave(&gdsqs[i].lock, flags);
-		is_timeout = gdsqs[i].is_timeout;
-		raw_spin_unlock_irqrestore(&gdsqs[i].lock, flags);
-		/* gdsqs[i].is_timeout may change here, let it be... */
-		if (is_timeout) {
-			/*
-			 * consume_dispatch_q will acquire dsq-lock,
-			 * So cannot keep lock here, annoy enough.
-			 * may rewrite a consume_dispatch_q_locked, TODO.
-			 */
-			if (consume_dispatch_q(rq, rf, &gdsqs[i])) {
-				hmbird_info_trace("dsq[%d] consume a timeout task\n", i);
-				slim_stats_record(TIMEOUT_CNT, ctx->tidx, 0, 0);
-				update_timeout_stats(rq, &gdsqs[i], HMBIRD_BPF_DSQS_DEADLINE[i]);
-				return 1;
-			}
-		}
-	}
-	return 0;
-}
-
 static int check_pcp_dsq_round(struct rq *rq, struct rq_flags *rf)
 {
 	if (per_cpu(pcp_info, cpu_of(rq)).pcp_round) {
@@ -1097,36 +1082,101 @@ static int get_cidx(struct cluster_ctx *ctx)
 	return cidx;
 }
 
-
-static int gen_cluster_ctx(struct cluster_ctx *ctx, enum cpu_type type)
+static int gen_cluster_ctx_separate(struct cluster_ctx *ctx, enum cpu_type type)
 {
 	switch (type) {
 	case PARTIAL:
 		if (!is_partial_enabled())
 			return -1;
 		fallthrough;
-#ifdef CLUSTER_SEPARATE
 	case BIG:
 		ctx->lower = NON_PERIOD_START;
 		ctx->upper = CLUSTER_SEPARATE_IDX;
+		if (!cpumask_available(iso_masks.little) || cpumask_empty(iso_masks.little)) {
+			pr_debug("<hmbird sched> %s iso_masks.little first is %d\n",
+					__func__, cpumask_first(iso_masks.little));
+			ctx->upper = NON_PERIOD_END;
+		}
 		ctx->tidx = 0;
 		break;
 	case LITTLE:
 		ctx->lower = CLUSTER_SEPARATE_IDX;
 		ctx->upper = NON_PERIOD_END;
+		if (!cpumask_available(iso_masks.big) || cpumask_empty(iso_masks.big)) {
+			pr_debug("<hmbird sched> %s iso_masks.big first is %d",
+					__func__, cpumask_first(iso_masks.big));
+			ctx->lower = NON_PERIOD_START;
+		}
 		ctx->tidx = 1;
 		break;
-#else
+	default:
+		hmbird_deferred_err(CPU_NO_MASK, "can't find cpu cluster\n");
+		return -1;
+	}
+	return 0;
+}
+
+static int gen_cluster_ctx_common(struct cluster_ctx *ctx, enum cpu_type type)
+{
+	switch (type) {
+	case PARTIAL:
+		if (!is_partial_enabled())
+			return -1;
+		fallthrough;
 	case BIG:
 	case LITTLE:
 		ctx->lower = NON_PERIOD_START;
 		ctx->upper = NON_PERIOD_END;
 		ctx->tidx = 0;
 		break;
-#endif
 	default:
 		hmbird_deferred_err(CPU_NO_MASK, "can't find cpu cluster\n");
 		return -1;
+	}
+	return 0;
+}
+
+static int gen_cluster_ctx(struct cluster_ctx *ctx, enum cpu_type type)
+{
+	if (cluster_separate) {
+		return gen_cluster_ctx_separate(ctx, type);
+	} else {
+		return gen_cluster_ctx_common(ctx, type);
+	}
+}
+
+static int consume_timeout_dsq(struct rq *rq, struct rq_flags *rf, enum cpu_type type)
+{
+	int i;
+	bool is_timeout;
+	unsigned long flags;
+	struct cluster_ctx ctx;
+
+	if (gen_cluster_ctx(&ctx, type))
+		return 0;
+
+	/* Third param <false> means only consume timeout pcp dsq. */
+	if (consume_pcp_dsq(rq, rf, false))
+		return 1;
+
+	for (i = ctx.lower; i < ctx.upper; i++) {
+		raw_spin_lock_irqsave(&gdsqs[i].lock, flags);
+		is_timeout = gdsqs[i].is_timeout;
+		raw_spin_unlock_irqrestore(&gdsqs[i].lock, flags);
+		/* gdsqs[i].is_timeout may change here, let it be... */
+		if (is_timeout) {
+			/*
+			 * consume_dispatch_q will acquire dsq-lock,
+			 * So cannot keep lock here, annoy enough.
+			 * may rewrite a consume_dispatch_q_locked, TODO.
+			 */
+			if (consume_dispatch_q(rq, rf, &gdsqs[i])) {
+				hmbird_info_trace("dsq[%d] consume a timeout task\n", i);
+				slim_stats_record(TIMEOUT_CNT, ctx.tidx, 0, 0);
+				update_timeout_stats(rq, &gdsqs[i], HMBIRD_BPF_DSQS_DEADLINE[i]);
+				return 1;
+			}
+		}
 	}
 	return 0;
 }
@@ -1139,9 +1189,6 @@ static int consume_non_period_dsq(struct rq *rq, struct rq_flags *rf, enum cpu_t
 
 	if (gen_cluster_ctx(&ctx, type))
 		return 0;
-
-	if (consume_timeout_dsq(rq, rf, &ctx))
-		return 1;
 
 	cidx = get_cidx(&ctx);
 	tmp = cidx;
@@ -1176,29 +1223,50 @@ static bool consume_hmbird_global_dsq(struct rq *rq, struct rq_flags *rf)
 	case EX_FREE:
 		if (consume_period_dsq(rq, rf))
 			return 1;
+		if (consume_timeout_dsq(rq, rf, BIG))
+			return 1;
+		if (consume_ux_dsq(rq, rf))
+			return 1;
 		if (consume_non_period_dsq(rq, rf, BIG))
 			return 1;
-		if (is_little_need_rescue())
+		if (is_little_need_rescue()) {
+			if (consume_timeout_dsq(rq, rf, LITTLE))
+				return 1;
+			if (consume_ux_dsq(rq, rf))
+				return 1;
 			if (consume_non_period_dsq(rq, rf, LITTLE))
 				return 1;
+		}
 		break;
 	case EXCLUSIVE:
 		if (!is_iso_par_free()) {
 			if (consume_pcp_dsq(rq, rf, true))
 				return 1;
-		break;
+			break;
 		}
 		/* Only non-period task can run on isolate cpus */
 		if (!READ_ONCE(iso_free_rescue)) {
-			if (is_big_need_rescue())
+			if (is_big_need_rescue()) {
+				if (consume_timeout_dsq(rq, rf, BIG))
+					return 1;
 				if (consume_non_period_dsq(rq, rf, BIG))
 					return 1;
-			if (is_little_need_rescue())
+			}
+			if (is_little_need_rescue()) {
+				if (consume_timeout_dsq(rq, rf, LITTLE))
+					return 1;
 				if (consume_non_period_dsq(rq, rf, LITTLE))
 					return 1;
+			}
 		} else {
-		/* Free run, can run on any task. */
+			/* Free run, can run on any task. */
 			if (consume_period_dsq(rq, rf))
+				return 1;
+			if (consume_timeout_dsq(rq, rf, BIG))
+				return 1;
+			if (consume_timeout_dsq(rq, rf, LITTLE))
+				return 1;
+			if (consume_ux_dsq(rq, rf))
 				return 1;
 			if (consume_non_period_dsq(rq, rf, BIG))
 				return 1;
@@ -1217,6 +1285,10 @@ static bool consume_hmbird_global_dsq(struct rq *rq, struct rq_flags *rf)
 		if (is_big_need_rescue()) {
 			if (period_allowed && consume_period_dsq(rq, rf))
 				return 1;
+			if (non_period_allowed && consume_timeout_dsq(rq, rf, BIG))
+				return 1;
+			if (period_allowed && consume_ux_dsq(rq, rf))
+				return 1;
 			if (non_period_allowed && consume_non_period_dsq(rq, rf, BIG))
 				return 1;
 		}
@@ -1227,7 +1299,9 @@ static bool consume_hmbird_global_dsq(struct rq *rq, struct rq_flags *rf)
 				return 1;
 			if (consume_target_dsq(rq, rf, SCHED_PROP_DEADLINE_LEVEL3))
 				return 1;
-			if (consume_target_dsq(rq, rf, SCHED_PROP_DEADLINE_LEVEL4))
+			if (non_period_allowed && consume_timeout_dsq(rq, rf, LITTLE))
+				return 1;
+			if (consume_ux_dsq(rq, rf))
 				return 1;
 			if (non_period_allowed && consume_non_period_dsq(rq, rf, LITTLE))
 				return 1;
@@ -1239,10 +1313,16 @@ static bool consume_hmbird_global_dsq(struct rq *rq, struct rq_flags *rf)
 	case BIG:
 		if (period_allowed && consume_period_dsq(rq, rf))
 			return 1;
+		if (non_period_allowed && consume_timeout_dsq(rq, rf, type))
+			return 1;
+		if (period_allowed && consume_ux_dsq(rq, rf))
+			return 1;
 		if (non_period_allowed && consume_non_period_dsq(rq, rf, type))
 			return 1;
 		if (is_iso_par_free() || (is_little_need_rescue() &&
-			!cluster_need_rescue(iso_masks.big, parctrl_high_ratio))) {
+				!cluster_need_rescue(iso_masks.big, parctrl_high_ratio))) {
+			if (consume_timeout_dsq(rq, rf, LITTLE))
+				return 1;
 			if (consume_non_period_dsq(rq, rf, LITTLE)) {
 				hmbird_internal_systrace("C|9999|b_rescue_l|%d\n", b_rescue_l++);
 				return 1;
@@ -1257,13 +1337,17 @@ static bool consume_hmbird_global_dsq(struct rq *rq, struct rq_flags *rf)
 			return 1;
 		if (consume_target_dsq(rq, rf, SCHED_PROP_DEADLINE_LEVEL3))
 			return 1;
-		if (consume_target_dsq(rq, rf, SCHED_PROP_DEADLINE_LEVEL4))
+		if (non_period_allowed && consume_timeout_dsq(rq, rf, type))
 			return 1;
-
+		if (consume_ux_dsq(rq, rf))
+			return 1;
 		if (non_period_allowed && consume_non_period_dsq(rq, rf, type))
 			return 1;
+
 		if (is_iso_par_free() || (is_big_need_rescue() &&
 			!cluster_need_rescue(iso_masks.little, parctrl_high_ratio_l))) {
+			if (consume_timeout_dsq(rq, rf, BIG))
+				return 1;
 			if (consume_non_period_dsq(rq, rf, BIG)) {
 				hmbird_internal_systrace("C|9999|l_rescue_b|%d\n", l_rescue_b++);
 				return 1;
@@ -1459,7 +1543,7 @@ static void init_dsq_at_boot(void)
 	spin_lock_init(&sinfo.lock);
 }
 
-static inline void update_cgroup_ids_table(int ids, int hmbird_cgroup_deadline_idx)
+static inline void update_cgroup_ids_table(u64 ids, int hmbird_cgroup_deadline_idx)
 {
 	if (ids < 0 || ids >= NUMS_CGROUP_KINDS) {
 		pr_err("update_cgroup_ids_tab idx err!\n");
@@ -1506,6 +1590,11 @@ static void init_level1_tg(struct cgroup *cgrp, struct task_group *tg)
 {
 	if (!cgrp || !tg || !(cgrp->kn))
 		return;
+
+	if (cgrp->kn->id < 0 || cgrp->kn->id >= NUMS_CGROUP_KINDS) {
+		pr_err("%s idx err!\n", __func__);
+		return;
+	}
 
 	if (cgroup_ids_table[cgrp->kn->id] == -1)
 		update_cgroup_ids_table(cgrp->kn->id, cgrp_name_to_idx(cgrp));
@@ -2198,7 +2287,7 @@ static int check_misfit_task_on_little(struct task_struct *p, struct rq *rq,
 
 	gen_cluster_ctx(&ctx, BIG);
 	dsq_misfit = (dsq_int >= SCHED_PROP_DEADLINE_LEVEL1 &&
-				dsq_int <= SCHED_PROP_DEADLINE_LEVEL3);
+				dsq_int <= SCHED_PROP_DEADLINE_LEVEL4);
 #ifdef CLUSTER_SEPARATE
 	/* In rescue mode, little will consume big cluster's dsq.*/
 	dsq_misfit |= (dsq_int >= ctx.lower && dsq_int < ctx.upper);
@@ -3620,13 +3709,16 @@ static void hmbird_err_exit_workfn(struct work_struct *work)
 
 	for_each_present_cpu(cpu) {
 		policy = cpufreq_cpu_get(cpu);
-		if (cpu != policy->cpu)
+		if (!policy)
 			continue;
+		if (cpu != policy->cpu)
+			goto put;
 		down_write(&policy->rwsem);
 		WARN_ON(store_scaling_governor(policy,
 				saved_gov[cpu], strlen(saved_gov[cpu])) <= 0);
 		up_write(&policy->rwsem);
 		hmbird_info_trace("<heartbeat>:restore origin gov : %s\n", saved_gov[cpu]);
+put:
 		cpufreq_cpu_put(policy);
 	}
 	memset((char *)saved_gov, 0, sizeof(saved_gov));

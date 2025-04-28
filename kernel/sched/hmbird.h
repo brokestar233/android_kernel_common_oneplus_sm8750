@@ -22,7 +22,7 @@
 #define	DEBUG_INFO_TRACE	(1 << 1)
 #define DEBUG_INFO_SYSTRACE	(1 << 2)
 
-#define NUMS_CGROUP_KINDS	(256)
+#define NUMS_CGROUP_KINDS	(512)
 #define SLIM_FOR_SGAME		(1 << 0)
 #define SLIM_FOR_GENSHIN	(1 << 1)
 
