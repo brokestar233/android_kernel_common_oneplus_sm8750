@@ -377,13 +377,13 @@ static inline void tcp_dec_quickack_mode(struct sock *sk)
 #define	TCP_ECN_DEMAND_CWR	BIT(2)
 #define	TCP_ECN_SEEN		BIT(3)
 #define	TCP_ECN_MODE_ACCECN	BIT(4)
+#define	TCP_ECN_LOW		BIT(5)
+#define	TCP_ECN_ECT_PERMANENT	BIT(6)
 
 #define	TCP_ECN_DISABLED	0
 #define	TCP_ECN_MODE_PENDING	(TCP_ECN_MODE_RFC3168 | TCP_ECN_MODE_ACCECN)
 #define	TCP_ECN_MODE_ANY	(TCP_ECN_MODE_RFC3168 | TCP_ECN_MODE_ACCECN)
 
-#define	TCP_ECN_LOW		BIT(4)
-#define	TCP_ECN_ECT_PERMANENT	BIT(5)
 
 static inline bool tcp_ecn_mode_any(const struct tcp_sock *tp)
 {
@@ -1127,7 +1127,7 @@ enum tcp_ca_ack_event_flags {
 /* Requires ECN/ECT set on all packets */
 #define TCP_CONG_NEEDS_ECN		BIT(1)
 /* Wants notification of CE events (CA_EVENT_ECN_IS_CE, CA_EVENT_ECN_NO_CE). */
-#define TCP_CONG_WANTS_CE_EVENTS	0x4
+#define TCP_CONG_WANTS_CE_EVENTS	BIT(2)
 #define TCP_CONG_MASK	(TCP_CONG_NON_RESTRICTED | \
 			 TCP_CONG_NEEDS_ECN | \
 			 TCP_CONG_WANTS_CE_EVENTS)
