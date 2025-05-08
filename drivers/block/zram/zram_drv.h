@@ -16,10 +16,13 @@
 #define _ZRAM_DRV_H_
 
 #include <linux/rwsem.h>
-#include <linux/zsmalloc.h>
 #include <linux/crypto.h>
+#include <linux/blkdev.h>
+#include <linux/gfp.h>
 
 #include "zcomp.h"
+#include <linux/zsmalloc.h>
+
 
 #define SECTORS_PER_PAGE_SHIFT	(PAGE_SHIFT - SECTOR_SHIFT)
 #define SECTORS_PER_PAGE	(1 << SECTORS_PER_PAGE_SHIFT)
@@ -27,7 +30,6 @@
 #define ZRAM_LOGICAL_BLOCK_SIZE	(1 << ZRAM_LOGICAL_BLOCK_SHIFT)
 #define ZRAM_SECTOR_PER_LOGICAL_BLOCK	\
 	(1 << (ZRAM_LOGICAL_BLOCK_SHIFT - SECTOR_SHIFT))
-
 
 /*
  * ZRAM is mainly used for memory efficiency so we want to keep memory
@@ -39,7 +41,6 @@
  * We use BUILD_BUG_ON() to make sure that zram pageflags don't overflow.
  */
 #define ZRAM_FLAG_SHIFT (PAGE_SHIFT + 1)
-
 /* Only 2 bits are allowed for comp priority index */
 #define ZRAM_COMP_PRIORITY_MASK	0x3
 
@@ -56,7 +57,12 @@ enum zram_pageflags {
 
 	ZRAM_COMP_PRIORITY_BIT1, /* First bit of comp priority index */
 	ZRAM_COMP_PRIORITY_BIT2, /* Second bit of comp priority index */
-
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	ZRAM_BATCHING_OUT,
+	ZRAM_FROM_HYBRIDSWAP,
+	ZRAM_MCGID_CLEAR,
+	ZRAM_IN_BD, /* zram stored in back device */
+#endif
 	__NR_ZRAM_PAGEFLAGS,
 };
 
@@ -127,8 +133,8 @@ struct zram {
 	 * zram is claimed so open request will be failed
 	 */
 	bool claim; /* Protected by disk->open_mutex */
-#ifdef CONFIG_ZRAM_WRITEBACK
 	struct file *backing_dev;
+#ifdef CONFIG_ZRAM_WRITEBACK
 	spinlock_t wb_limit_lock;
 	bool wb_limit_enable;
 	u64 bd_wb_limit;
@@ -138,6 +144,15 @@ struct zram {
 #endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
+#endif
+#if (defined CONFIG_ZRAM_WRITEBACK) || (defined CONFIG_HYBRIDSWAP_CORE)
+	struct block_device *bdev;
+	unsigned int old_block_size;
+	unsigned long nr_pages;
+	unsigned long increase_nr_pages;
+#endif
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	struct hybridswap *hs_swap;
 #endif
 };
 #endif

@@ -87,3 +87,38 @@ config ZRAM_MULTI_COMP
 	  re-compress pages using a potentially slower but more effective
 	  compression algorithm. Note, that IDLE page recompression
 	  requires ZRAM_MEMORY_TRACKING.
+
+config OPLUS_FEATURE_ZRAM_OPT
+	tristate "zram optimization"
+	default n
+	help
+	  define this config to add oplus zram optimization feature
+
+config HYBRIDSWAP
+	bool "Enable Hybridswap"
+	depends on MEMCG && ZRAM && !ZRAM_WRITEBACK
+	default n
+	help
+	  Hybridswap is a intelligent memory management solution.
+
+config HYBRIDSWAP_SWAPD
+	bool "Enable hybridswap swapd thread to reclaim anon pages in background"
+	default n
+	depends on HYBRIDSWAP
+	help
+	  swapd is a kernel thread that reclaim anonymous pages in the
+	  background. When the use of swap pages reaches the watermark
+	  and the refault of anonymous pages is high, the content of
+	  zram will exchanged to eswap by a certain percentage.
+
+# Selected when system need hybridswap container
+config HYBRIDSWAP_CORE
+	bool "Hybridswap container device support"
+	depends on ZRAM && HYBRIDSWAP && !ZRAM_WRITEBACK
+	default n
+	help
+	  Say Y here if you want to use the hybridswap
+	  as the backend device in ZRAM.
+	  If unsure, say N here.
+	  This module can't be compiled as a module,
+	  the module is as one part of the ZRAM driver.

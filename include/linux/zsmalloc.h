@@ -1,5 +1,5 @@
-/*
- * zsmalloc memory allocator
+/* 
+ * zsmallocc memory allocator
  *
  * Copyright (C) 2011  Nitin Gupta
  * Copyright (C) 2012, 2013 Minchan Kim
@@ -40,22 +40,22 @@ struct zs_pool_stats {
 
 struct zs_pool;
 
-struct zs_pool *zs_create_pool(const char *name);
-void zs_destroy_pool(struct zs_pool *pool);
+struct zs_pool *zs_create_pool_oplus(const char *name);
+void zs_destroy_pool_oplus(struct zs_pool *pool);
 
-unsigned long zs_malloc(struct zs_pool *pool, size_t size, gfp_t flags);
-void zs_free(struct zs_pool *pool, unsigned long obj);
+unsigned long zs_malloc_oplus(struct zs_pool *pool, size_t size, gfp_t flags);
+void zs_free_oplus(struct zs_pool *pool, unsigned long obj);
 
-size_t zs_huge_class_size(struct zs_pool *pool);
+size_t zs_huge_class_size_oplus(struct zs_pool *pool);
 
-void *zs_map_object(struct zs_pool *pool, unsigned long handle,
+void *zs_map_object_oplus(struct zs_pool *pool, unsigned long handle,
 			enum zs_mapmode mm);
-void zs_unmap_object(struct zs_pool *pool, unsigned long handle);
+void zs_unmap_object_oplus(struct zs_pool *pool, unsigned long handle);
 
-unsigned long zs_get_total_pages(struct zs_pool *pool);
-unsigned long zs_compact(struct zs_pool *pool);
+unsigned long zs_get_total_pages_oplus(struct zs_pool *pool);
+unsigned long zs_compact_oplus(struct zs_pool *pool);
 
 unsigned int zs_lookup_class_index(struct zs_pool *pool, unsigned int size);
 
-void zs_pool_stats(struct zs_pool *pool, struct zs_pool_stats *stats);
+void zs_pool_stats_oplus(struct zs_pool *pool, struct zs_pool_stats *stats);
 #endif
