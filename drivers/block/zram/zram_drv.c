@@ -49,7 +49,7 @@ static DEFINE_MUTEX(zram_index_mutex);
 static int zram_major;
 static const char *default_compressor = CONFIG_ZRAM_DEF_COMP;
 
-static unsigned int num_devices = 2;
+static unsigned int num_devices = ZRAM_TYPE_MAX;
 
 bool chp_supported;
 struct zram *zram_arr[ZRAM_TYPE_MAX];

@@ -7,7 +7,7 @@
 
 enum {
 	ZRAM_TYPE_BASEPAGE,
-	ZRAM_TYPE_MAX,
+	ZRAM_TYPE_MAX = 2,
 };
 
 enum {
