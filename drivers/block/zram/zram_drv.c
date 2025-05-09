@@ -33,8 +33,16 @@
 #include <linux/debugfs.h>
 #include <linux/cpuhotplug.h>
 #include <linux/part_stat.h>
+#include <linux/mm.h>
+#include <linux/kthread.h>
 
 #include "zram_drv.h"
+
+#define CHECK_INTERVAL (10 * HZ) // 每10秒检查一次
+#define ZRAM_THRESHOLD 60 // zram占用率阈值60%
+#define MEM_THRESHOLD 75 // 内存占用率阈值75%
+
+static struct task_struct *monitor_thread;
 
 static DEFINE_IDR(zram_index_idr);
 /* idr index must be protected */
@@ -2053,6 +2061,7 @@ static ssize_t disksize_store(struct device *dev,
 	u32 prio;
 
 	disksize = memparse(buf, NULL);
+
 	if (!disksize)
 		return -EINVAL;
 
@@ -2430,6 +2439,90 @@ static void destroy_devices(void)
 	cpuhp_remove_multi_state(CPUHP_ZCOMP_PREPARE);
 }
 
+// 触发zram_writeback
+static void zram_writeback(struct zram *zram)
+{
+	struct device_attribute attr = {};
+	// char *buf_idle = "all";
+	char *buf_write_back = "idle";
+	// size_t len_idle = strlen(buf_idle) + 1;
+	size_t len_write_back = strlen(buf_write_back) + 1;
+
+	/* Simulate sysfs write to trigger writeback */
+	down_read(&zram->init_lock);
+	if (!init_done(zram) || !zram->backing_dev) {
+		up_read(&zram->init_lock);
+		pr_debug("Writeback skipped: device not initialized or no backing device\n");
+		return;
+	}
+#ifdef CONFIG_ZRAM_WRITEBACK
+	// idle_store(disk_to_dev(zram->disk), &attr, buf_idle, len_idle);
+	writeback_store(disk_to_dev(zram->disk), &attr, buf_write_back, len_write_back);
+#endif
+	up_read(&zram->init_lock);
+}
+
+// 计算zram使用率
+static unsigned long get_zram_usage(struct zram *zram)
+{
+	u64 pages_stored, total_pages, bd_writes;
+
+	down_read(&zram->init_lock);
+	if (!init_done(zram)) {
+		up_read(&zram->init_lock);
+		return 0;
+	}
+	pages_stored = atomic64_read(&zram->stats.pages_stored);
+	bd_writes = atomic64_read(&zram->stats.bd_writes);
+	total_pages = zram->disksize >> PAGE_SHIFT;
+	up_read(&zram->init_lock);
+
+	if (total_pages == 0)
+		return 0;
+
+	return ((pages_stored - bd_writes) * 100) / total_pages;
+}
+
+// 计算内存占用率
+static int get_memory_usage(void)
+{
+    struct sysinfo si;
+    si_meminfo(&si);
+
+    unsigned long total = si.totalram;
+    unsigned long free = si_mem_available();
+
+    if (total == 0)
+        return 0;
+
+    return ((total - free) * 100) / total;
+}
+
+// 监控线程函数
+static int monitor_func(void *data)
+{
+	struct zram *zram;
+	int id;
+    while (!kthread_should_stop()) {
+		mutex_lock(&zram_index_mutex);
+		idr_for_each_entry(&zram_index_idr, zram, id) {
+			unsigned long zram_usage = get_zram_usage(zram);
+			int mem_usage = get_memory_usage();
+			pr_info("zram_usage=%lu%%, mem_usage=%d%%\n",
+               zram_usage, mem_usage);
+        	if (zram_usage > ZRAM_THRESHOLD && mem_usage > MEM_THRESHOLD) {
+            	pr_info("Thresholds exceeded, triggering writeback\n");
+            	zram_writeback(zram);
+        		}
+			}
+		mutex_unlock(&zram_index_mutex);
+
+        schedule_timeout_interruptible(CHECK_INTERVAL);
+    }
+    return 0;
+}
+
+
 static int __init zram_init(void)
 {
 	int ret;
@@ -2465,7 +2558,7 @@ static int __init zram_init(void)
 			goto out_error;
 		num_devices--;
 	}
-
+	monitor_thread = kthread_run(monitor_func, NULL, "zram_monitor");
 	return 0;
 
 out_error:
@@ -2475,6 +2568,10 @@ out_error:
 
 static void __exit zram_exit(void)
 {
+	if (monitor_thread) {
+        kthread_stop(monitor_thread);
+        monitor_thread = NULL;
+    }
 	destroy_devices();
 }
 
@@ -2486,4 +2583,5 @@ MODULE_PARM_DESC(num_devices, "Number of pre-created zram devices");
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("Nitin Gupta <ngupta@vflare.org>");
+MODULE_AUTHOR("Coolapk@BrokeStar");
 MODULE_DESCRIPTION("Compressed RAM Block Device");
