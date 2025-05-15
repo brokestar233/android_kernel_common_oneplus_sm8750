@@ -7,6 +7,7 @@
 #include <linux/sched/hmbird_version.h>
 
 #include "hmbird_shadow_tick.h"
+#include "slim.h"
 
 #define HIGHRES_WATCH_CPU       0
 
@@ -33,6 +34,7 @@ DEFINE_PER_CPU(struct hrtimer, stt);
 #define STOP_IDLE_TRIGGER     (1)
 #define PERIODIC_TICK_TRIGGER (2)
 #define TICK_INTVAL	(1000000ULL)
+#define HMBIRD_TICK_HIT_BOOST   BIT(29)
 /*
  * restart hrtimer while resume from idle. scheduler tick may resume after 4ms,
  * so we can't restart hrtimer in scheduler tick.
@@ -84,6 +86,42 @@ void sched_switch_handler(void *data, bool preempt, struct task_struct *prev,
 	}
 }
 
+struct tick_hit_params tick_hit_params = {
+	.enable = 0,
+	.jiffies_num = 2,
+	.hit_count_thres = 6,
+};
+
+static void tick_hit_critical_task(struct task_struct *curr, struct rq *rq)
+{
+	struct hmbird_entity *see = get_hmbird_ts(curr);
+	if (!tick_hit_params.enable || !see)
+		return;
+
+	if ((!task_is_top_task(curr) || curr->pid != curr->tgid) && (curr->pid != scx_systemui_pid))
+		return;
+
+	if (see->tick_hit_count == 0) {
+		if (see->start_jiffies == 0) {
+			see->start_jiffies = jiffies;
+			see->tick_hit_count = 1;
+		} else {
+			see->start_jiffies = 0;       /* status reset */
+			see->tick_hit_count = 0;
+		}
+	} else {
+		if (time_before_eq(jiffies, see->start_jiffies + tick_hit_params.jiffies_num)) {
+			see->tick_hit_count++;
+			if (see->tick_hit_count >= tick_hit_params.hit_count_thres) {
+				cpufreq_update_util(rq, HMBIRD_TICK_HIT_BOOST);
+			}
+		} else {
+			see->tick_hit_count = 1;
+			see->start_jiffies = jiffies;
+		}
+	}
+}
+
 static enum hrtimer_restart scheduler_tick_no_balance(struct hrtimer *timer)
 {
 	int cpu = smp_processor_id();
@@ -94,6 +132,7 @@ static enum hrtimer_restart scheduler_tick_no_balance(struct hrtimer *timer)
 	rq_lock(rq, &rf);
 	update_rq_clock(rq);
 	curr->sched_class->task_tick(rq, curr, 0);
+	tick_hit_critical_task(curr, rq);
 	rq_unlock(rq, &rf);
 
 	return highres_next_phase(cpu, timer);

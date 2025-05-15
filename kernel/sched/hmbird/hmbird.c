@@ -2291,6 +2291,9 @@ static int check_misfit_task_on_little(struct task_struct *p, struct rq *rq,
 	if (!cpumask_test_cpu(cpu, iso_masks.little))
 		return false;
 
+	if (p->pid == scx_systemui_pid)
+		return true;
+
 	gen_cluster_ctx(&ctx, BIG);
 	dsq_misfit = (dsq_int >= SCHED_PROP_DEADLINE_LEVEL1 &&
 				dsq_int <= SCHED_PROP_DEADLINE_LEVEL4);
@@ -3179,6 +3182,8 @@ int hmbird_pre_fork(struct task_struct *p)
 
 	get_hmbird_ts(p)->critical_affinity_cpu = -1;
 	get_hmbird_ts(p)->sched_class      = &hmbird_sched_class;
+	get_hmbird_ts(p)->tick_hit_count   = 0;
+	get_hmbird_ts(p)->start_jiffies    = 0;
 
 	/*
 	 * BPF scheduler enable/disable paths want to be able to iterate and
@@ -3671,10 +3676,11 @@ static void hmbird_ops_disable_workfn(struct kthread_work *work)
 	if (slim_walt_ctrl)
 		slim_walt_enable(false);
 
+	WARN_ON_ONCE(hmbird_ops_set_enable_state(HMBIRD_OPS_DISABLED) !=
+		HMBIRD_OPS_DISABLING);
+
 	mutex_unlock(&hmbird_ops_enable_mutex);
 
-	WARN_ON_ONCE(hmbird_ops_set_enable_state(HMBIRD_OPS_DISABLED) !=
-			HMBIRD_OPS_DISABLING);
 	hmbird_switch_log(HMBIRD_DISABLED, 1, 0, "");
 	scheduler_switch_done(false);
 	reenable_cpuhp();
@@ -3755,6 +3761,14 @@ static inline void set_audio_thread_sched_prop(struct task_struct *p)
 
 	if (!strcmp(css->cgroup->kn->name, "audio-app"))
 		hmbird_set_sched_prop(p, SCHED_PROP_DEADLINE_LEVEL1);
+}
+
+int scx_systemui_pid = -1;
+void set_systemui_thread_pid(struct task_struct *p)
+{
+	if ((strcmp(p->comm, "ndroid.systemui") == 0) && (p->pid == p->tgid))
+		scx_systemui_pid = p->pid;
+	return;
 }
 
 static int hmbird_ops_enable(void *unused)
@@ -3875,6 +3889,7 @@ static int hmbird_ops_enable(void *unused)
 			struct rq *rq = task_rq(p);
 
 			set_audio_thread_sched_prop(p);
+			set_systemui_thread_pid(p);
 			update_rq_clock(rq);
 
 			SCHED_CHANGE_BLOCK(rq, p, DEQUEUE_SAVE | DEQUEUE_MOVE |

@@ -102,11 +102,35 @@ void hmbird_skip_yield(long *skip)
 	}
 }
 
+struct boost_policy_params boost_policy_params = {
+	.enable = 0,
+	.bottom_freq = 1200000,
+	.boost_weight = 120,
+};
+
+int hmbird_get_boost_enable(void)
+{
+	return boost_policy_params.enable;
+}
+
+unsigned int hmbird_get_boost_bottom_freq(void)
+{
+	return boost_policy_params.bottom_freq;
+}
+
+int hmbird_get_boost_weight(void)
+{
+	return boost_policy_params.boost_weight;
+}
+
 void hmbird_ops_init(struct hmbird_ops *hmbird_ops)
 {
 	hmbird_ops->scx_enable = get_hmbird_ops_enabled;
 	hmbird_ops->check_non_task = get_non_hmbird_task;
 	hmbird_ops->hmbird_get_md_info = hmbird_get_md_info;
+	hmbird_ops->hmbird_get_boost_enable = hmbird_get_boost_enable;
+	hmbird_ops->hmbird_get_boost_bottom_freq = hmbird_get_boost_bottom_freq;
+	hmbird_ops->hmbird_get_boost_weight = hmbird_get_boost_weight;
 }
 
 void hmbird_misc_init(void)

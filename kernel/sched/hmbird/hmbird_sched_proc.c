@@ -316,6 +316,109 @@ static ssize_t yield_opt_write(struct file *file, const char __user *buf,
 
 HMBIRD_PROC_OPS(yield_opt, yield_opt_open, yield_opt_write);
 
+/* boost_policy ops begin */
+static int boost_policy_show(struct seq_file *m, void *v)
+{
+	struct boost_policy_params *data = m->private;
+
+	seq_printf(m, "boost_policy:{\"enable\":%d; \"bottom_freq\":%u; \"boost_weight\":%d}\n",
+				data->enable, data->bottom_freq, data->boost_weight);
+	return 0;
+}
+
+static int boost_policy_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, boost_policy_show, pde_data(inode));
+}
+
+static ssize_t boost_policy_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+{
+	char *data;
+	int enable_tmp, bottom_freq_tmp, boost_weight_tmp;
+
+	data = kmalloc(count + 1, GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	if(copy_from_user(data, buf, count)) {
+		kfree(data);
+		return -EFAULT;
+	}
+
+	data[count] = '\0';
+
+	if (sscanf(data, "%d %d %d", &enable_tmp, &bottom_freq_tmp, &boost_weight_tmp) != 3) {
+		kfree(data);
+		return -EINVAL;
+	}
+
+	if ((enable_tmp != 0 && enable_tmp != 1) ||
+		(boost_weight_tmp < 50 || boost_weight_tmp > 300) ||
+		(bottom_freq_tmp < 400000 || bottom_freq_tmp > 2200000)) {
+		kfree(data);
+		return -EINVAL;
+	}
+
+	boost_policy_params.bottom_freq = bottom_freq_tmp;
+	boost_policy_params.boost_weight = boost_weight_tmp;
+	boost_policy_params.enable = enable_tmp;
+
+	kfree(data);
+	return count;
+}
+
+HMBIRD_PROC_OPS(boost_policy, boost_policy_open, boost_policy_write);
+
+/* tick_hit ops begin */
+static int tick_hit_show(struct seq_file *m, void *v)
+{
+	struct tick_hit_params *data = m->private;
+
+	seq_printf(m, "tick_hit:{\"enable\":%d; \"hit_count_thres\":%d; \"jiffies_num\":%lu}\n",
+				data->enable, data->hit_count_thres, data->jiffies_num);
+	return 0;
+}
+
+static int tick_hit_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, tick_hit_show, pde_data(inode));
+}
+
+static ssize_t tick_hit_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+{
+	char *data;
+	int enable_tmp, hit_count_thres_tmp, jiffies_num_tmp;
+
+	data = kmalloc(count + 1, GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	if(copy_from_user(data, buf, count)) {
+		kfree(data);
+		return -EFAULT;
+	}
+
+	data[count] = '\0';
+
+	if (sscanf(data, "%d %d %d", &enable_tmp, &hit_count_thres_tmp, &jiffies_num_tmp) != 3) {
+		kfree(data);
+		return -EINVAL;
+	}
+
+	if ((enable_tmp != 0 && enable_tmp != 1)) {
+		kfree(data);
+		return -EINVAL;
+	}
+
+	tick_hit_params.hit_count_thres = hit_count_thres_tmp;
+	tick_hit_params.jiffies_num = jiffies_num_tmp;
+	tick_hit_params.enable = enable_tmp;
+
+	kfree(data);
+	return count;
+}
+
+HMBIRD_PROC_OPS(tick_hit, tick_hit_open, tick_hit_write);
 
 static int __init hmbird_proc_init(void)
 {
@@ -462,6 +565,16 @@ static int __init hmbird_proc_init(void)
 					hmbird_dir,
 					&yield_opt_proc_ops,
 					&yield_opt_params);
+
+	HMBIRD_CREATE_PROC_ENTRY_DATA("boost_policy", HMBIRD_PROC_PERMISSION,
+					hmbird_dir,
+					&boost_policy_proc_ops,
+					&boost_policy_params);
+
+	HMBIRD_CREATE_PROC_ENTRY_DATA("tick_hit", HMBIRD_PROC_PERMISSION,
+					hmbird_dir,
+					&tick_hit_proc_ops,
+					&tick_hit_params);
 
 	HMBIRD_CREATE_PROC_ENTRY_DATA("hmbird_preempt_policy", HMBIRD_PROC_PERMISSION,
 					hmbird_dir,

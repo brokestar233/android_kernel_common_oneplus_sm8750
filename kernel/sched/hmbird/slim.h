@@ -23,6 +23,7 @@ int task_top_id(struct task_struct *p);
 void stats_print(char *buf, int len);
 void hmbird_skip_yield(long *skip);
 extern spinlock_t hmbird_tasks_lock;
+extern int scx_systemui_pid;
 
 struct yield_opt_params {
 	int enable;
@@ -32,6 +33,22 @@ struct yield_opt_params {
 };
 
 extern struct yield_opt_params yield_opt_params;
+
+struct tick_hit_params {
+	int enable;
+	unsigned long jiffies_num;
+	int hit_count_thres;
+};
+
+extern struct tick_hit_params tick_hit_params;
+
+struct boost_policy_params {
+	int enable;
+	unsigned int bottom_freq;
+	int boost_weight;
+};
+
+extern struct boost_policy_params boost_policy_params;
 
 #define MAX_GOV_LEN     (16)
 extern char saved_gov[NR_CPUS][MAX_GOV_LEN];

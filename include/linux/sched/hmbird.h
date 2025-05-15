@@ -196,6 +196,9 @@ struct hmbird_entity {
 
 	s32			critical_affinity_cpu;
 	int			dsq_sync_ux;
+
+	int tick_hit_count;      /* tick hit boost */
+	unsigned long start_jiffies;
 };
 
 
@@ -368,6 +371,9 @@ struct hmbird_ops {
 	void (*do_sched_yield_before)(long *skip);
 	void (*window_rollover_run_once)(struct rq *rq);
 	void (*hmbird_get_md_info)(unsigned long *vaddr, unsigned long *size);
+	int (*hmbird_get_boost_enable)(void);
+	unsigned int (*hmbird_get_boost_bottom_freq)(void);
+	int (*hmbird_get_boost_weight)(void);
 };
 
 void hmbird_free(struct task_struct *p);
