@@ -126,3 +126,7 @@ type 'struct io_ring_ctx' changed
   28 members ('struct wait_queue_head poll_wq' .. 'struct page** sqe_pages') changed
     offset changed by -64
 
+type 'struct kvm_protected_vm' changed
+  member 'struct maple_tree pinned_pages' was removed
+  member 'union { struct rb_root_cached pinned_pages; struct { struct maple_tree __unused; }; union { }; }' was added
+
