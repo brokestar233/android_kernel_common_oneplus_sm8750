@@ -140,6 +140,7 @@ filegroup(
         "android/abi_gki_aarch64_virtual_device",
         "android/abi_gki_aarch64_vivo",
         "android/abi_gki_aarch64_xiaomi",
+        "android/abi_gki_aarch64_xiaomi2",
     ],
     visibility = ["//visibility:public"],
 )
@@ -169,6 +170,23 @@ define_common_kernels(target_configs = {
         "protected_modules_list": ":gki_aarch64_protected_modules",
         "module_implicit_outs": get_gki_modules_list("arm64") + get_kunit_modules_list("arm64"),
         "make_goals": _GKI_AARCH64_MAKE_GOALS,
+        "ddk_headers_archive": ":kernel_aarch64_ddk_headers_archive",
+        "extra_dist": [
+            ":test_mappings_zip",
+            ":tests_zip_arm64",
+        ],
+    },
+    "kernel_aarch64_autofdo": {
+        "kmi_symbol_list_strict_mode": True,
+        "kmi_symbol_list": "android/abi_gki_aarch64",
+        "additional_kmi_symbol_lists": [":aarch64_additional_kmi_symbol_lists"],
+        "trim_nonlisted_kmi": True,
+        "protected_exports_list": "android/abi_gki_protected_exports_aarch64",
+        "protected_modules_list": ":gki_aarch64_protected_modules",
+        "module_implicit_outs": get_gki_modules_list("arm64") + get_kunit_modules_list("arm64"),
+        "make_goals": _GKI_AARCH64_MAKE_GOALS,
+        "clang_autofdo_profile": ":android/gki/aarch64/afdo/kernel.afdo",
+        "defconfig_fragments": ["arch/arm64/configs/autofdo_gki.fragment"],
         "ddk_headers_archive": ":kernel_aarch64_ddk_headers_archive",
         "extra_dist": [
             ":test_mappings_zip",
@@ -223,6 +241,24 @@ kernel_build(
     page_size = "16k",
 )
 
+kernel_build(
+    name = "kernel_aarch64_microdroid_minimal",
+    srcs = ["//common:kernel_aarch64_sources"],
+    outs = [
+        "Image",
+        "System.map",
+        "modules.builtin",
+        "modules.builtin.modinfo",
+        "vmlinux",
+        "vmlinux.symvers",
+    ],
+    build_config = "build.config.microdroid.aarch64",
+    defconfig_fragments = ["arch/arm64/configs/microdroid_minimal.fragment"],
+    make_goals = [
+        "Image",
+    ],
+)
+
 copy_to_dist_dir(
     name = "kernel_aarch64_microdroid_16k_dist",
     data = [
@@ -239,6 +275,16 @@ copy_to_dist_dir(
         ":kernel_aarch64_microdroid",
     ],
     dist_dir = "out/kernel_aarch64_microdroid/dist",
+    flat = True,
+    log = "info",
+)
+
+copy_to_dist_dir(
+    name = "kernel_aarch64_microdroid_minimal_dist",
+    data = [
+        ":kernel_aarch64_microdroid_minimal",
+    ],
+    dist_dir = "out/kernel_aarch64_microdroid_minimal/dist",
     flat = True,
     log = "info",
 )
@@ -734,6 +780,7 @@ kernel_build(
     build_config = "build.config.gki.aarch64.fips140",
     kmi_symbol_list = "android/abi_gki_aarch64_fips140",
     module_outs = ["crypto/fips140.ko"],
+    strip_modules = True,
 )
 
 kernel_abi(
@@ -886,6 +933,16 @@ pkg_install(
     visibility = ["//visibility:private"],
 )
 
+py_library(
+    name = "kunit_parser",
+    srcs = [
+        "tools/testing/kunit/kunit_parser.py",
+        "tools/testing/kunit/kunit_printer.py",
+    ],
+    imports = ["tools/testing/kunit"],
+    visibility = ["//visibility:public"],
+)
+
 # DDK Headers
 # All headers. These are the public targets for DDK modules to use.
 alias(
@@ -967,6 +1024,7 @@ ddk_headers(
     hdrs = [
         "drivers/dma-buf/heaps/deferred-free-helper.h",
         "drivers/extcon/extcon.h",
+        "drivers/pci/controller/dwc/pcie-designware.h",
         "drivers/thermal/thermal_core.h",
         "drivers/thermal/thermal_netlink.h",
         "drivers/usb/dwc3/core.h",
@@ -984,6 +1042,7 @@ ddk_headers(
         "arch/arm64/include/uapi",
         "drivers/dma-buf",
         "drivers/extcon",
+        "drivers/pci/controller/dwc",
         "drivers/thermal",
         "drivers/usb",
         "sound/usb",
