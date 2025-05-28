@@ -441,7 +441,7 @@ int folio_migrate_mapping(struct address_space *mapping,
 		    folio_test_large_rmappable(folio)) {
 			if (!folio_ref_freeze(folio, expected_count))
 				return -EAGAIN;
-			folio_unqueue_deferred_split(folio);
+			folio_undo_large_rmappable(folio);
 			folio_ref_unfreeze(folio, expected_count);
 		}
 
@@ -464,7 +464,8 @@ int folio_migrate_mapping(struct address_space *mapping,
 	}
 
 	/* Take off deferred split queue while frozen and memcg set */
-	folio_unqueue_deferred_split(folio);
+	if (folio_test_large(folio) && folio_test_large_rmappable(folio))
+		folio_undo_large_rmappable(folio);
 
 	/*
 	 * Now we know that no one else is looking at the folio:
