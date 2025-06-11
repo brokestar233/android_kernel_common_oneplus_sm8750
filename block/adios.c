@@ -386,10 +386,12 @@ static void latency_model_input(struct latency_model *model,
 		if (bucket_index >= LM_LAT_BUCKET_COUNT)
 			bucket_index = LM_LAT_BUCKET_COUNT - 1;
 
-		scoped_guard(spinlock_bh, &model->buckets_lock) {
+		local_bh_disable();
+		scoped_guard(spinlock, &model->buckets_lock) {
 			model->small_bucket[bucket_index].count++;
 			model->small_bucket[bucket_index].sum_latency += latency;
 		}
+		local_bh_enable();
 
 		if (unlikely(!model->base))
 			latency_model_update(model);
@@ -400,7 +402,8 @@ static void latency_model_input(struct latency_model *model,
 		if (bucket_index >= LM_LAT_BUCKET_COUNT)
 			bucket_index = LM_LAT_BUCKET_COUNT - 1;
 
-		scoped_guard(spinlock_bh, &model->buckets_lock) {
+		local_bh_disable();
+		scoped_guard(spinlock, &model->buckets_lock) {
 			if (!model->base || !pred_lat)
 				return;
 
@@ -408,6 +411,7 @@ static void latency_model_input(struct latency_model *model,
 			model->large_bucket[bucket_index].sum_latency += latency;
 			model->large_bucket[bucket_index].sum_block_size += block_size;
 		}
+		local_bh_enable();
 	}
 }
 
