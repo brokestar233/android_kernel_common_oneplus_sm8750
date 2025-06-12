@@ -729,6 +729,11 @@ static int find_idx_from_task(struct task_struct *p)
 		goto done;
 	}
 
+	if (p->pid == scx_systemui_pid) {
+		idx = SCHED_PROP_DEADLINE_LEVEL4;
+		goto done;
+	}
+
 	sp_dl = hmbird_get_dsq_id(p);
 	if (sp_dl) {
 		idx = sp_dl;
@@ -841,6 +846,7 @@ static u64 get_cpus_max_util(struct cpumask *mask)
 	u64 max = 0;
 	u64 util, ratio;
 	unsigned long effective_cap = 0;
+
 	for_each_cpu(cpu, mask) {
 		if (slim_walt_ctrl)
 			slim_get_cpu_util(cpu, &util);
@@ -908,7 +914,11 @@ void partial_dynamic_ctrl(void)
 	last_b_over = b_over;
 
 	if (is_partial_enabled()) {
-		bmax = get_cpus_max_util(iso_masks.partial);
+		if (cpumask_empty(iso_masks.partial)) {
+			bmax = bmax > lmax ? bmax : lmax;
+		} else {
+			bmax = get_cpus_max_util(iso_masks.partial);
+		}
 		if (!is_iso_par_free() && bmax > isoctrl_high_ratio) {
 			hmbird_info_trace("<par>partial max = %llu\n", bmax);
 			free_isocpu(true);
@@ -2291,9 +2301,6 @@ static int check_misfit_task_on_little(struct task_struct *p, struct rq *rq,
 	if (!cpumask_test_cpu(cpu, iso_masks.little))
 		return false;
 
-	if (p->pid == scx_systemui_pid)
-		return true;
-
 	gen_cluster_ctx(&ctx, BIG);
 	dsq_misfit = (dsq_int >= SCHED_PROP_DEADLINE_LEVEL1 &&
 				dsq_int <= SCHED_PROP_DEADLINE_LEVEL4);
@@ -2319,12 +2326,33 @@ static int check_misfit_task_on_little(struct task_struct *p, struct rq *rq,
 	return true;
 }
 
+static int check_misfit_task_on_fake_big(struct task_struct *p, struct rq *rq)
+{
+	int cpu = cpu_of(rq);
+
+	if (likely(p->pid != scx_systemui_pid))
+		return false;
+
+	if (topology_cluster_id(num_possible_cpus() - 1) > 1 &&
+	    arch_scale_cpu_capacity(cpu) == arch_scale_cpu_capacity(0) &&
+	    (parctrl_high_ratio <= 0 || parctrl_high_ratio_l <= 0))
+		return true;
+
+	return false;
+}
+
 static bool task_can_run_on_rq(struct task_struct *p, struct rq *rq, struct hmbird_dispatch_q *dsq)
 {
+	if (!cpumask_test_cpu(cpu_of(rq), task_cpu_possible_mask(p)))
+		return false;
+
 	if (!task_fits_cpu_hmbird(p, cpu_of(rq)))
 		return false;
 
 	if (check_misfit_task_on_little(p, rq, dsq))
+		return false;
+
+	if (check_misfit_task_on_fake_big(p, rq))
 		return false;
 
 	return likely(test_rq_online(rq));
@@ -3161,7 +3189,7 @@ int hmbird_pre_fork(struct task_struct *p)
 	int ret = 0;
 
 	p->android_oem_data1[HMBIRD_TS_IDX] =
-		(u64)(kmalloc(sizeof(struct hmbird_entity), GFP_KERNEL));
+		(u64)(kzalloc(sizeof(struct hmbird_entity), GFP_KERNEL));
 	if (!get_hmbird_ts(p))
 		return -1;
 
@@ -3218,11 +3246,10 @@ void hmbird_post_fork(struct task_struct *p)
 		refresh_hmbird_weight(p);
 		task_rq_unlock(rq, p, &rf);
 	} else {
-		if (rt_prio(p->prio)) {
+		if (rt_prio(p->prio))
 			p->sched_class = &rt_sched_class;
-		} else {
+		else
 			p->sched_class = &fair_sched_class;
-		}
 	}
 
 	spin_lock_irq(&hmbird_tasks_lock);
@@ -3236,7 +3263,6 @@ void hmbird_cancel_fork(struct task_struct *p)
 {
 	if (hmbird_enabled())
 		hmbird_ops_disable_task(p);
-
 	put_hmbird_ts(p);
 }
 
@@ -3768,7 +3794,6 @@ void set_systemui_thread_pid(struct task_struct *p)
 {
 	if ((strcmp(p->comm, "ndroid.systemui") == 0) && (p->pid == p->tgid))
 		scx_systemui_pid = p->pid;
-	return;
 }
 
 static int hmbird_ops_enable(void *unused)
@@ -4271,7 +4296,7 @@ void __init init_sched_hmbird_class(void)
 	 * we can't static init init_task's hmbird struct, init here.
 	 * init_task->hmbird would not use during boot.
 	 */
-	init_hmbird = kmalloc(sizeof(struct hmbird_entity), GFP_KERNEL);
+	init_hmbird = kzalloc(sizeof(struct hmbird_entity), GFP_KERNEL);
 	init_task.android_oem_data1[HMBIRD_TS_IDX] = (u64)init_hmbird;
 	if (init_hmbird) {
 		INIT_LIST_HEAD(&init_hmbird->dsq_node.fifo);
@@ -4295,7 +4320,7 @@ void __init init_sched_hmbird_class(void)
 		 * lifecycle same to rq, no need to free.
 		 */
 		rq->android_oem_data1[HMBIRD_RQ_IDX] =
-			(u64)kmalloc(sizeof(struct hmbird_rq), GFP_KERNEL);
+			(u64)kzalloc(sizeof(struct hmbird_rq), GFP_KERNEL);
 		if (get_hmbird_rq(rq)) {
 			get_hmbird_rq(rq)->rq = rq;
 			get_hmbird_rq(rq)->srq = &per_cpu(hmbird_sched_rq_stats, cpu);
