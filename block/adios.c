@@ -21,7 +21,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "1.5.9"
+#define ADIOS_VERSION "1.5.12"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -377,7 +377,10 @@ static u8 lm_input_bucket_index(u64 measured, u64 predicted) {
 // Input latency data into the latency model
 static void latency_model_input(struct latency_model *model,
 		u32 block_size, u64 latency, u64 pred_lat) {
+	unsigned long flags;
 	u8 bucket_index;
+
+	spin_lock_irqsave(&model->buckets_lock, flags);
 
 	if (block_size <= LM_BLOCK_SIZE_THRESHOLD) {
 		// Handle small requests
@@ -386,33 +389,32 @@ static void latency_model_input(struct latency_model *model,
 		if (bucket_index >= LM_LAT_BUCKET_COUNT)
 			bucket_index = LM_LAT_BUCKET_COUNT - 1;
 
-		local_bh_disable();
-		scoped_guard(spinlock, &model->buckets_lock) {
-			model->small_bucket[bucket_index].count++;
-			model->small_bucket[bucket_index].sum_latency += latency;
-		}
-		local_bh_enable();
+		model->small_bucket[bucket_index].count++;
+		model->small_bucket[bucket_index].sum_latency += latency;
 
-		if (unlikely(!model->base))
+		if (unlikely(!model->base)) {
+			spin_unlock_irqrestore(&model->buckets_lock, flags);
 			latency_model_update(model);
+			return;
+		}
 	} else {
 		// Handle large requests
+		if (!model->base || !pred_lat) {
+			spin_unlock_irqrestore(&model->buckets_lock, flags);
+			return;
+		}
+
 		bucket_index = lm_input_bucket_index(latency, pred_lat);
 
 		if (bucket_index >= LM_LAT_BUCKET_COUNT)
 			bucket_index = LM_LAT_BUCKET_COUNT - 1;
 
-		local_bh_disable();
-		scoped_guard(spinlock, &model->buckets_lock) {
-			if (!model->base || !pred_lat)
-				return;
-
-			model->large_bucket[bucket_index].count++;
-			model->large_bucket[bucket_index].sum_latency += latency;
-			model->large_bucket[bucket_index].sum_block_size += block_size;
-		}
-		local_bh_enable();
+		model->large_bucket[bucket_index].count++;
+		model->large_bucket[bucket_index].sum_latency += latency;
+		model->large_bucket[bucket_index].sum_block_size += block_size;
 	}
+
+	spin_unlock_irqrestore(&model->buckets_lock, flags);
 }
 
 // Predict the latency for a given block size using the latency model
@@ -737,7 +739,7 @@ static bool fill_batch_queues(struct adios_data *ad, u64 current_lat) {
 
 	reset_batch_counts(ad, page);
 
-	scoped_guard(spinlock_irqsave, &ad->lock) {
+	scoped_guard(spinlock_irqsave, &ad->lock)
 		while (true) {
 			struct request *rq = next_request(ad);
 			if (!rq)
@@ -764,11 +766,8 @@ static bool fill_batch_queues(struct adios_data *ad, u64 current_lat) {
 			count++;
 		}
 
-		if (count)
-			ad->more_bq_ready = true;
-	}
-
 	if (count) {
+		ad->more_bq_ready = true;
 		for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++) {
 			if (ad->batch_actual_max_size[optype] < optype_count[optype])
 				ad->batch_actual_max_size[optype] = optype_count[optype];
