@@ -15,13 +15,14 @@
 #include <linux/sbitmap.h>
 #include <linux/slab.h>
 #include <linux/timekeeping.h>
+#include <linux/percpu.h>
 
 #include "elevator.h"
 #include "blk.h"
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "1.5.12"
+#define ADIOS_VERSION "2.0.0-rc2"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -80,9 +81,15 @@ struct latency_bucket_large {
 	u32 count;
 };
 
+// New structure to hold per-cpu buckets, improving data locality and code clarity.
+struct per_cpu_lm_buckets {
+	struct latency_bucket_small small_bucket[LM_LAT_BUCKET_COUNT];
+	struct latency_bucket_large large_bucket[LM_LAT_BUCKET_COUNT];
+};
+
 // Structure to hold the latency model context data
 struct latency_model {
-	spinlock_t lock;
+	seqlock_t lock;
 	u64 base;
 	u64 slope;
 	u64 small_sum_delay;
@@ -91,9 +98,8 @@ struct latency_model {
 	u64 large_sum_bsize;
 	u64 last_update_jiffies;
 
-	spinlock_t buckets_lock;
-	struct latency_bucket_small small_bucket[LM_LAT_BUCKET_COUNT];
-	struct latency_bucket_large large_bucket[LM_LAT_BUCKET_COUNT];
+	// Per-CPU buckets to avoid lock contention on the completion path
+	struct per_cpu_lm_buckets __percpu *pcpu_buckets;
 
 	u32 lm_shrink_at_kreqs;
 	u32 lm_shrink_at_gbytes;
@@ -126,6 +132,8 @@ struct adios_data {
 	struct list_head batch_queue[ADIOS_BQ_PAGES][ADIOS_OPTYPES];
 	u32 batch_count[ADIOS_BQ_PAGES][ADIOS_OPTYPES];
 	spinlock_t bq_lock;
+
+	struct per_cpu_lm_buckets *aggr_buckets;
 
 	struct latency_model latency_model[ADIOS_OPTYPES];
 	struct timer_list update_timer;
@@ -167,16 +175,17 @@ static const int adios_prio_to_weight[40] = {
  /*  15 */        36,        29,        23,        18,        15,
 };
 
-// Count the number of entries in small buckets
-static u32 lm_count_small_entries(struct latency_model *model) {
+// Count the number of entries in aggregated small buckets
+static u32 lm_count_small_entries(struct latency_bucket_small *buckets) {
 	u32 total_count = 0;
 	for (u8 i = 0; i < LM_LAT_BUCKET_COUNT; i++)
-		total_count += model->small_bucket[i].count;
+		total_count += buckets[i].count;
 	return total_count;
 }
 
-// Update the small buckets in the latency model
+// Update the small buckets in the latency model from aggregated data
 static bool lm_update_small_buckets(struct latency_model *model,
+		struct latency_bucket_small *buckets,
 		u32 total_count, bool count_all) {
 	u64 sum_latency = 0;
 	u32 sum_count = 0;
@@ -193,7 +202,7 @@ static bool lm_update_small_buckets(struct latency_model *model,
 
 	// Identify the bucket that corresponds to the outlier threshold
 	for (u8 i = 0; i < LM_LAT_BUCKET_COUNT; i++) {
-		cumulative_count += model->small_bucket[i].count;
+		cumulative_count += buckets[i].count;
 		if (cumulative_count >= threshold_count) {
 			outlier_threshold_bucket = i;
 			break;
@@ -202,7 +211,7 @@ static bool lm_update_small_buckets(struct latency_model *model,
 
 	// Calculate the average latency, excluding outliers
 	for (u8 i = 0; i <= outlier_threshold_bucket; i++) {
-		struct latency_bucket_small *bucket = &model->small_bucket[i];
+		struct latency_bucket_small *bucket = &buckets[i];
 		if (i < outlier_threshold_bucket) {
 			sum_latency += bucket->sum_latency;
 			sum_count += bucket->count;
@@ -231,24 +240,20 @@ static bool lm_update_small_buckets(struct latency_model *model,
 	model->small_sum_delay += sum_latency;
 	model->small_count += sum_count;
 
-	// Reset small bucket information
-	memset(model->small_bucket, 0,
-		sizeof(model->small_bucket[0]) * LM_LAT_BUCKET_COUNT);
-
 	return true;
 }
 
-// Count the number of entries in large buckets
-static u32 lm_count_large_entries(struct latency_model *model) {
+// Count the number of entries in aggregated large buckets
+static u32 lm_count_large_entries(struct latency_bucket_large *buckets) {
 	u32 total_count = 0;
 	for (u8 i = 0; i < LM_LAT_BUCKET_COUNT; i++)
-		total_count += model->large_bucket[i].count;
+		total_count += buckets[i].count;
 	return total_count;
 }
 
-// Update the large buckets in the latency model
-static bool lm_update_large_buckets(
-		struct latency_model *model,
+// Update the large buckets in the latency model from aggregated data
+static bool lm_update_large_buckets(struct latency_model *model,
+		struct latency_bucket_large *buckets,
 		u32 total_count, bool count_all) {
 	s64 sum_latency = 0;
 	u64 sum_block_size = 0, intercept;
@@ -265,7 +270,7 @@ static bool lm_update_large_buckets(
 
 	// Identify the bucket that corresponds to the outlier threshold
 	for (u8 i = 0; i < LM_LAT_BUCKET_COUNT; i++) {
-		cumulative_count += model->large_bucket[i].count;
+		cumulative_count += buckets[i].count;
 		if (cumulative_count >= threshold_count) {
 			outlier_threshold_bucket = i;
 			break;
@@ -274,7 +279,7 @@ static bool lm_update_large_buckets(
 
 	// Calculate the average latency and block size, excluding outliers
 	for (u8 i = 0; i <= outlier_threshold_bucket; i++) {
-		struct latency_bucket_large *bucket = &model->large_bucket[i];
+		struct latency_bucket_large *bucket = &buckets[i];
 		if (i < outlier_threshold_bucket) {
 			sum_latency += bucket->sum_latency;
 			sum_block_size += bucket->sum_block_size;
@@ -308,43 +313,62 @@ static bool lm_update_large_buckets(
 	model->large_sum_delay += sum_latency;
 	model->large_sum_bsize += sum_block_size;
 
-	// Reset large bucket information
-	memset(model->large_bucket, 0,
-		sizeof(model->large_bucket[0]) * LM_LAT_BUCKET_COUNT);
-
 	return true;
 }
 
 // Update the latency model parameters and statistics
-static void latency_model_update(struct latency_model *model) {
+static void latency_model_update(
+		struct adios_data *ad, struct latency_model *model) {
 	u64 now;
 	u32 small_count, large_count;
 	bool time_elapsed;
 	bool small_processed = false, large_processed = false;
+	struct per_cpu_lm_buckets *aggr = ad->aggr_buckets;
+	unsigned long flags;
+	int cpu;
 
-	guard(spinlock_irqsave)(&model->lock);
+	memset(aggr, 0, sizeof(*aggr));
 
-	scoped_guard(spinlock_irqsave, &model->buckets_lock) {
-		// Whether enough time has elapsed since the last update
-		now = jiffies;
-		time_elapsed = unlikely(!model->base) || model->last_update_jiffies +
-			msecs_to_jiffies(LM_INTERVAL_THRESHOLD) <= now;
+	write_seqlock_irqsave(&model->lock, flags);
 
-		// Count the number of entries in buckets
-		small_count = lm_count_small_entries(model);
-		large_count = lm_count_large_entries(model);
+	// Aggregate data from all CPUs and reset per-cpu buckets.
+	for_each_possible_cpu(cpu) {
+		struct per_cpu_lm_buckets *pcpu_b = per_cpu_ptr(model->pcpu_buckets, cpu);
 
-		// Update small buckets
-		if (small_count && (time_elapsed ||
-				LM_SAMPLES_THRESHOLD <= small_count || !model->base))
-			small_processed = lm_update_small_buckets(
-				model, small_count, !model->base);
-		// Update large buckets
-		if (large_count && (time_elapsed ||
-				LM_SAMPLES_THRESHOLD <= large_count || !model->slope))
-			large_processed = lm_update_large_buckets(
-				model, large_count, !model->slope);
+		for (u8 i = 0; i < LM_LAT_BUCKET_COUNT; i++) {
+			if (pcpu_b->small_bucket[i].count) {
+				aggr->small_bucket[i].count += pcpu_b->small_bucket[i].count;
+				aggr->small_bucket[i].sum_latency += pcpu_b->small_bucket[i].sum_latency;
+			}
+			if (pcpu_b->large_bucket[i].count) {
+				aggr->large_bucket[i].count += pcpu_b->large_bucket[i].count;
+				aggr->large_bucket[i].sum_latency += pcpu_b->large_bucket[i].sum_latency;
+				aggr->large_bucket[i].sum_block_size += pcpu_b->large_bucket[i].sum_block_size;
+			}
+		}
+		// Reset per-cpu buckets after aggregating
+		memset(pcpu_b, 0, sizeof(*pcpu_b));
 	}
+
+	// Whether enough time has elapsed since the last update
+	now = jiffies;
+	time_elapsed = unlikely(!model->base) || model->last_update_jiffies +
+		msecs_to_jiffies(LM_INTERVAL_THRESHOLD) <= now;
+
+	// Count the number of entries in aggregated buckets
+	small_count = lm_count_small_entries(aggr->small_bucket);
+	large_count = lm_count_large_entries(aggr->large_bucket);
+
+	// Update small buckets
+	if (small_count && (time_elapsed ||
+			LM_SAMPLES_THRESHOLD <= small_count || !model->base))
+		small_processed = lm_update_small_buckets(
+			model, aggr->small_bucket, small_count, !model->base);
+	// Update large buckets
+	if (large_count && (time_elapsed ||
+			LM_SAMPLES_THRESHOLD <= large_count || !model->slope))
+		large_processed = lm_update_large_buckets(
+			model, aggr->large_bucket, large_count, !model->slope);
 
 	// Update the base parameter if small bucket was processed
 	if (small_processed && likely(model->small_count))
@@ -358,6 +382,8 @@ static void latency_model_update(struct latency_model *model) {
 	// Reset statistics and update last updated jiffies if time has elapsed
 	if (time_elapsed)
 		model->last_update_jiffies = now;
+
+	write_sequnlock_irqrestore(&model->lock, flags);
 }
 
 // Determine the bucket index for a given measured and predicted latency
@@ -375,12 +401,12 @@ static u8 lm_input_bucket_index(u64 measured, u64 predicted) {
 }
 
 // Input latency data into the latency model
-static void latency_model_input(struct latency_model *model,
-		u32 block_size, u64 latency, u64 pred_lat) {
-	unsigned long flags;
+static void latency_model_input(struct adios_data *ad,
+		struct latency_model *model, u32 block_size, u64 latency, u64 pred_lat) {
 	u8 bucket_index;
+	struct per_cpu_lm_buckets *buckets;
 
-	spin_lock_irqsave(&model->buckets_lock, flags);
+	buckets = this_cpu_ptr(model->pcpu_buckets);
 
 	if (block_size <= LM_BLOCK_SIZE_THRESHOLD) {
 		// Handle small requests
@@ -389,43 +415,43 @@ static void latency_model_input(struct latency_model *model,
 		if (bucket_index >= LM_LAT_BUCKET_COUNT)
 			bucket_index = LM_LAT_BUCKET_COUNT - 1;
 
-		model->small_bucket[bucket_index].count++;
-		model->small_bucket[bucket_index].sum_latency += latency;
+		buckets->small_bucket[bucket_index].count++;
+		buckets->small_bucket[bucket_index].sum_latency += latency;
 
 		if (unlikely(!model->base)) {
-			spin_unlock_irqrestore(&model->buckets_lock, flags);
-			latency_model_update(model);
+			latency_model_update(ad, model);
 			return;
 		}
 	} else {
 		// Handle large requests
-		if (!model->base || !pred_lat) {
-			spin_unlock_irqrestore(&model->buckets_lock, flags);
+		if (!model->base || !pred_lat)
 			return;
-		}
 
 		bucket_index = lm_input_bucket_index(latency, pred_lat);
 
 		if (bucket_index >= LM_LAT_BUCKET_COUNT)
 			bucket_index = LM_LAT_BUCKET_COUNT - 1;
 
-		model->large_bucket[bucket_index].count++;
-		model->large_bucket[bucket_index].sum_latency += latency;
-		model->large_bucket[bucket_index].sum_block_size += block_size;
+		buckets->large_bucket[bucket_index].count++;
+		buckets->large_bucket[bucket_index].sum_latency += latency;
+		buckets->large_bucket[bucket_index].sum_block_size += block_size;
 	}
-
-	spin_unlock_irqrestore(&model->buckets_lock, flags);
 }
 
 // Predict the latency for a given block size using the latency model
 static u64 latency_model_predict(struct latency_model *model, u32 block_size) {
-	u64 result;
+	u64 result, base, slope;
+	unsigned int seq;
 
-	guard(spinlock_irqsave)(&model->lock);
-	// Predict latency based on the model
-	result = model->base;
+	do {
+		seq = read_seqbegin(&model->lock);
+		base = model->base;
+		slope = model->slope;
+	} while (read_seqretry(&model->lock, seq));
+
+	result = base;
 	if (block_size > LM_BLOCK_SIZE_THRESHOLD)
-		result += model->slope *
+		result += slope *
 			DIV_ROUND_UP_ULL(block_size - LM_BLOCK_SIZE_THRESHOLD, 1024);
 
 	return result;
@@ -613,13 +639,13 @@ static void insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 	struct request_queue *q = hctx->queue;
 	struct adios_data *ad = q->elevator->elevator_data;
 
-	lockdep_assert_held(&ad->lock);
-
 	if (insert_flags & BLK_MQ_INSERT_AT_HEAD) {
 		scoped_guard(spinlock_irqsave, &ad->pq_lock)
 			list_add_tail(&rq->queuelist, &ad->prio_queue);
 		return;
 	}
+
+	guard(spinlock_irqsave)(&ad->lock);
 
 	if (blk_mq_sched_try_insert_merge(q, rq, free))
 		return;
@@ -637,18 +663,14 @@ static void insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 static void adios_insert_requests(struct blk_mq_hw_ctx *hctx,
 				   struct list_head *list,
 				   blk_insert_t insert_flags) {
-	struct request_queue *q = hctx->queue;
-	struct adios_data *ad = q->elevator->elevator_data;
+	struct request *rq;
 	LIST_HEAD(free);
 
-	scoped_guard(spinlock_irqsave, &ad->lock)
-		while (!list_empty(list)) {
-			struct request *rq;
-
-			rq = list_first_entry(list, struct request, queuelist);
-			list_del_init(&rq->queuelist);
-			insert_request(hctx, rq, insert_flags, &free);
-		}
+	while (!list_empty(list)) {
+		rq = list_first_entry(list, struct request, queuelist);
+		list_del_init(&rq->queuelist);
+		insert_request(hctx, rq, insert_flags, &free);
+	}
 
 	blk_mq_free_requests(&free);
 }
@@ -849,7 +871,7 @@ static void update_timer_callback(struct timer_list *t) {
 	struct adios_data *ad = from_timer(ad, t, update_timer);
 
 	for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++)
-		latency_model_update(&ad->latency_model[optype]);
+		latency_model_update(ad, &ad->latency_model[optype]);
 }
 
 // Handle the completion of a request
@@ -863,7 +885,7 @@ static void adios_completed_request(struct request *rq, u64 now) {
 		return;
 	u64 latency = now - rq->io_start_time_ns;
 	u8 optype = adios_optype(rq);
-	latency_model_input(&ad->latency_model[optype],
+	latency_model_input(ad, &ad->latency_model[optype],
 		rd->block_size, latency, rd->pred_lat);
 	timer_reduce(&ad->update_timer, jiffies + msecs_to_jiffies(100));
 }
@@ -917,6 +939,7 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 	struct adios_data *ad;
 	struct elevator_queue *eq;
 	int ret = -ENOMEM;
+	int cpu = 0;
 
 	eq = elevator_alloc(q, e);
 	if (!eq)
@@ -957,21 +980,27 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 	for (u8 i = 0; i < 2; i++)
 		ad->dl_prio[i] = default_dl_prio[i];
 
-	for (u8 i = 0; i < ADIOS_OPTYPES; i++) {
-		struct latency_model *model = &ad->latency_model[i];
-		spin_lock_init(&model->lock);
-		spin_lock_init(&model->buckets_lock);
-		memset(model->small_bucket, 0,
-			sizeof(model->small_bucket[0]) * LM_LAT_BUCKET_COUNT);
-		memset(model->large_bucket, 0,
-			sizeof(model->large_bucket[0]) * LM_LAT_BUCKET_COUNT);
+	ad->aggr_buckets = kzalloc(sizeof(*ad->aggr_buckets), GFP_KERNEL);
+	if (!ad->aggr_buckets) {
+		pr_err("adios: Failed to allocate aggregation buckets\n");
+		goto destroy_dl_group_pool;
+	}
+
+	for (cpu = 0; cpu < ADIOS_OPTYPES; cpu++) {
+		struct latency_model *model = &ad->latency_model[cpu];
+		seqlock_init(&model->lock);
+
+		model->pcpu_buckets = alloc_percpu(struct per_cpu_lm_buckets);
+		if (!model->pcpu_buckets)
+			goto free_buckets;
+
 		model->last_update_jiffies = jiffies;
 		model->lm_shrink_at_kreqs  = default_lm_shrink_at_kreqs;
 		model->lm_shrink_at_gbytes = default_lm_shrink_at_gbytes;
 		model->lm_shrink_resist    = default_lm_shrink_resist;
 
-		ad->latency_target[i] = default_latency_target[i];
-		ad->batch_limit[i] = default_batch_limit[i];
+		ad->latency_target[cpu] = default_latency_target[cpu];
+		ad->batch_limit[cpu] = default_batch_limit[cpu];
 	}
 	timer_setup(&ad->update_timer, update_timer_callback, 0);
 	init_batch_queues(ad);
@@ -989,6 +1018,15 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 	q->elevator = eq;
 	return 0;
 
+free_buckets:
+	pr_err("adios: Failed to allocate per-cpu buckets\n");
+	while (--cpu >= 0) {
+		struct latency_model *prev_model = &ad->latency_model[cpu];
+		free_percpu(prev_model->pcpu_buckets);
+	}
+	kfree(ad->aggr_buckets);
+destroy_dl_group_pool:
+	kmem_cache_destroy(ad->dl_group_pool);
 destroy_rq_data_pool:
 	kmem_cache_destroy(ad->rq_data_pool);
 free_ad:
@@ -1005,6 +1043,12 @@ static void adios_exit_sched(struct elevator_queue *e) {
 	timer_shutdown_sync(&ad->update_timer);
 
 	WARN_ON_ONCE(!list_empty(&ad->prio_queue));
+
+	for (u8 i = 0; i < ADIOS_OPTYPES; i++) {
+		struct latency_model *model = &ad->latency_model[i];
+		free_percpu(model->pcpu_buckets);
+	}
+	kfree(ad->aggr_buckets);
 
 	if (ad->rq_data_pool)
 		kmem_cache_destroy(ad->rq_data_pool);
@@ -1024,9 +1068,15 @@ static ssize_t adios_lat_model_##name##_show(				\
 	struct adios_data *ad = e->elevator_data;				\
 	struct latency_model *model = &ad->latency_model[optype];		\
 	ssize_t len = 0;						\
-	guard(spinlock_irqsave)(&model->lock);				\
-	len += sprintf(page,       "base : %llu ns\n", model->base);	\
-	len += sprintf(page + len, "slope: %llu ns/KiB\n", model->slope);\
+	u64 base, slope;						\
+	unsigned int seq;						\
+	do { \
+		seq = read_seqbegin(&model->lock); \
+		base = model->base; \
+		slope = model->slope; \
+	} while (read_seqretry(&model->lock, seq)); \
+	len += sprintf(page,       "base : %llu ns\n", base);	\
+	len += sprintf(page + len, "slope: %llu ns/KiB\n", slope);\
 	return len;							\
 }									\
 static ssize_t adios_lat_target_##name##_store(				\
@@ -1186,14 +1236,14 @@ static ssize_t adios_reset_lat_model_store(
 
 	for (u8 i = 0; i < ADIOS_OPTYPES; i++) {
 		struct latency_model *model = &ad->latency_model[i];
-		scoped_guard(spinlock_irqsave, &model->lock) {
-			model->base = 0ULL;
-			model->slope = 0ULL;
-			model->small_sum_delay = 0ULL;
-			model->small_count = 0ULL;
-			model->large_sum_delay = 0ULL;
-			model->large_sum_bsize = 0ULL;
-		}
+		write_seqlock_bh(&model->lock);
+		model->base = 0ULL;
+		model->slope = 0ULL;
+		model->small_sum_delay = 0ULL;
+		model->small_count = 0ULL;
+		model->large_sum_delay = 0ULL;
+		model->large_sum_bsize = 0ULL;
+		write_sequnlock_bh(&model->lock);
 	}
 
 	return count;
@@ -1216,8 +1266,9 @@ static ssize_t adios_shrink_##name##_store( \
 		return -EINVAL; \
 	for (u8 i = 0; i < ADIOS_OPTYPES; i++) { \
 		struct latency_model *model = &ad->latency_model[i]; \
-		scoped_guard(spinlock_irqsave, &model->lock) \
-			model->model_field = val; \
+		write_seqlock_bh(&model->lock); \
+		model->model_field = val; \
+		write_sequnlock_bh(&model->lock); \
 	} \
 	return count; \
 } \
@@ -1225,11 +1276,12 @@ static ssize_t adios_shrink_##name##_show( \
 		struct elevator_queue *e, char *page) { \
 	struct adios_data *ad = e->elevator_data; \
 	u32 val = 0; \
-	for (u8 i = 0; i < ADIOS_OPTYPES; i++) { \
-		struct latency_model *model = &ad->latency_model[i]; \
-		scoped_guard(spinlock_irqsave, &model->lock) \
-			val = model->model_field; \
-	} \
+	unsigned int seq;						\
+	struct latency_model *model = &ad->latency_model[0]; \
+	do { \
+		seq = read_seqbegin(&model->lock); \
+		val = model->model_field; \
+	} while (read_seqretry(&model->lock, seq)); \
 	return sprintf(page, "%u\n", val); \
 }
 
@@ -1243,9 +1295,9 @@ SHRINK_THRESHOLD_ATTR_RW(resist,    lm_shrink_resist,    1,      3)
 #define AD_ATTR_RW(name) \
 	__ATTR(name, 0644, adios_##name##_show, adios_##name##_store)
 #define AD_ATTR_RO(name) \
-	__ATTR(name, 0644, adios_##name##_show, NULL)
+	__ATTR(name, 0444, adios_##name##_show, NULL)
 #define AD_ATTR_WO(name) \
-	__ATTR(name, 0644, NULL, adios_##name##_store)
+	__ATTR(name, 0200, NULL, adios_##name##_store)
 
 // Define sysfs attributes for ADIOS scheduler
 static struct elv_fs_entry adios_sched_attrs[] = {
