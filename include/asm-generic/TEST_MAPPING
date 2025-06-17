@@ -233,6 +233,14 @@
     },
     {
       "name": "vts_kernel_net_tests"
+    },
+    {
+      "name": "CtsJobSchedulerTestCases",
+      "options": [
+        {
+          "include-filter": "android.jobscheduler.cts.ConnectivityConstraintTest#testConnectivityConstraintExecutes_withMobile"
+        }
+      ]
     }
   ],
   "presubmit-large": [
@@ -310,6 +318,26 @@
     },
     {
       "name": "memunreachable_binder_test"
+    },
+    {
+      "name": "VtsHalBluetoothAudioTargetTest"
+    },
+    {
+      "name": "CtsBionicTestCases"
+    },
+    {
+      "name": "CtsLibcoreTestCases"
+    },
+    {
+      "name": "CtsUsbTests"
+    },
+    {
+      "name": "CtsDrmTestCases",
+      "options": [
+        {
+          "exclude-filter": "android.drm.cts.DRMTest#testForwardLockAccess"
+        }
+      ]
     }
   ]
 }

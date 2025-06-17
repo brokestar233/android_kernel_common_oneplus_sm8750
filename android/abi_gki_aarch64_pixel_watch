@@ -82,6 +82,7 @@
   cache_line_size
   cancel_delayed_work
   cancel_delayed_work_sync
+  cancel_work
   cancel_work_sync
   capable
   cdev_add
@@ -97,10 +98,12 @@
   check_preempt_curr
   check_zeroed_user
   class_create
+  class_create_file_ns
   class_destroy
   class_find_device
   class_for_each_device
   class_register
+  class_remove_file_ns
   class_unregister
   cleanup_srcu_struct
   clear_page
@@ -170,6 +173,7 @@
   __const_udelay
   consume_skb
   contig_page_data
+  copy_from_kernel_nofault
   __copy_overflow
   __cpu_active_mask
   cpu_all_bits
@@ -295,8 +299,10 @@
   _dev_err
   dev_err_probe
   devfreq_add_device
+  devfreq_add_governor
   devfreq_get_devfreq_by_node
   devfreq_remove_device
+  devfreq_remove_governor
   devfreq_resume_device
   devfreq_suspend_device
   __dev_fwnode
@@ -396,6 +402,7 @@
   devm_pinctrl_register
   devm_platform_get_and_ioremap_resource
   devm_platform_ioremap_resource
+  devm_pm_runtime_enable
   devm_power_supply_register
   devm_pwm_get
   devm_qcom_smem_state_get
@@ -407,6 +414,7 @@
   __devm_regmap_init_mmio_clk
   __devm_regmap_init_spmi_ext
   devm_regulator_bulk_get
+  devm_regulator_bulk_get_enable
   devm_regulator_get
   devm_regulator_get_exclusive
   devm_regulator_get_optional
@@ -550,6 +558,7 @@
   down
   down_interruptible
   down_read
+  down_read_interruptible
   down_timeout
   down_write
   d_path
@@ -888,6 +897,7 @@
   housekeeping_test_cpu
   hrtimer_active
   hrtimer_cancel
+  hrtimer_forward
   __hrtimer_get_remaining
   hrtimer_init
   hrtimer_start_range_ns
@@ -908,12 +918,14 @@
   i2c_for_each_dev
   i2c_get_adapter
   i2c_get_dma_safe_msg_buf
+  i2c_new_dummy_device
   i2c_put_adapter
   i2c_put_dma_safe_msg_buf
   i2c_register_driver
   i2c_smbus_xfer
   i2c_transfer
   i2c_transfer_buffer_flags
+  i2c_unregister_device
   i2c_verify_client
   icc_link_create
   icc_node_add
@@ -1127,6 +1139,7 @@
   kobject_uevent_env
   kobj_sysfs_ops
   krealloc
+  kset_create_and_add
   ksize
   ksoftirqd
   kstat_irqs_usr
@@ -1440,6 +1453,7 @@
   pci_write_config_dword
   pci_write_config_word
   __per_cpu_offset
+  per_cpu_ptr_to_phys
   perf_aux_output_begin
   perf_aux_output_end
   perf_aux_output_flag
@@ -1494,9 +1508,11 @@
   pm_clk_suspend
   pm_generic_resume
   pm_generic_suspend
+  pm_genpd_add_device
   pm_genpd_add_subdomain
   pm_genpd_init
   pm_genpd_remove
+  pm_genpd_remove_device
   pm_genpd_remove_subdomain
   pm_power_off
   __pm_relax
@@ -1546,8 +1562,10 @@
   proc_dostring
   proc_douintvec_minmax
   proc_mkdir
+  proc_remove
   proto_register
   proto_unregister
+  __pskb_copy_fclone
   pskb_expand_head
   __pskb_pull_tail
   ___pskb_trim
@@ -1615,6 +1633,7 @@
   rebuild_sched_domains
   refcount_dec_not_one
   refcount_warn_saturate
+  regcache_cache_bypass
   regcache_cache_only
   regcache_mark_dirty
   regcache_sync
@@ -1626,6 +1645,7 @@
   register_inet6addr_notifier
   register_inetaddr_notifier
   register_kretprobe
+  register_module_notifier
   register_netdev
   register_netdevice
   register_netdevice_notifier
@@ -1641,9 +1661,11 @@
   regmap_bulk_read
   regmap_bulk_write
   regmap_check_range_table
+  regmap_exit
   regmap_field_read
   regmap_field_update_bits_base
   __regmap_init
+  __regmap_init_i2c
   regmap_irq_get_virq
   regmap_mmio_detach_clk
   regmap_multi_reg_write
@@ -1726,6 +1748,7 @@
   rproc_report_crash
   rproc_set_firmware
   rproc_shutdown
+  rtc_add_group
   rtc_class_close
   rtc_class_open
   rtc_read_time
@@ -1795,6 +1818,7 @@
   sdio_writew
   select_fallback_rq
   send_sig_info
+  seq_buf_printf
   seq_hex_dump
   seq_lseek
   seq_open
@@ -1809,6 +1833,7 @@
   set_next_entity
   set_normalized_timespec64
   set_page_dirty_lock
+  set_page_private
   set_task_cpu
   set_user_nice
   sg_alloc_table
@@ -1984,6 +2009,7 @@
   strnstr
   strpbrk
   strrchr
+  strreplace
   strscpy
   strscpy_pad
   strsep
@@ -2091,6 +2117,7 @@
   __traceiter_android_rvh_enqueue_task
   __traceiter_android_rvh_find_busiest_queue
   __traceiter_android_rvh_find_lowest_rq
+  __traceiter_android_rvh_find_new_ilb
   __traceiter_android_rvh_flush_task
   __traceiter_android_rvh_get_nohz_timer_target
   __traceiter_android_rvh_iommu_alloc_insert_iova
@@ -2162,6 +2189,7 @@
   __tracepoint_android_rvh_enqueue_task
   __tracepoint_android_rvh_find_busiest_queue
   __tracepoint_android_rvh_find_lowest_rq
+  __tracepoint_android_rvh_find_new_ilb
   __tracepoint_android_rvh_flush_task
   __tracepoint_android_rvh_get_nohz_timer_target
   __tracepoint_android_rvh_iommu_alloc_insert_iova
@@ -2231,6 +2259,7 @@
   __trace_trigger_soft_disabled
   tracing_off
   try_module_get
+  try_to_del_timer_sync
   try_wait_for_completion
   tty_flip_buffer_push
   __tty_insert_flip_string_flags
@@ -2256,6 +2285,7 @@
   uio_unregister_device
   __unregister_chrdev
   unregister_chrdev_region
+  unregister_die_notifier
   unregister_ftrace_export
   unregister_inet6addr_notifier
   unregister_inetaddr_notifier
@@ -2293,6 +2323,8 @@
   usb_free_all_descriptors
   usb_function_register
   usb_function_unregister
+  usb_gadget_connect
+  usb_gadget_disconnect
   usb_gadget_wakeup
   usb_hcd_is_primary_hcd
   usb_interface_id
@@ -2310,6 +2342,7 @@
   usb_unregister_notify
   __usecs_to_jiffies
   usleep_range_state
+  utf8_data_table
   v4l2_ctrl_find
   v4l2_ctrl_handler_free
   v4l2_ctrl_handler_init_class

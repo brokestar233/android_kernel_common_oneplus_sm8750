@@ -4323,6 +4323,27 @@ void __cold close_ctree(struct btrfs_fs_info *fs_info)
 	 * already the cleaner, but below we run all pending delayed iputs.
 	 */
 	btrfs_flush_workqueue(fs_info->fixup_workers);
+	/*
+	 * Similar case here, we have to wait for delalloc workers before we
+	 * proceed below and stop the cleaner kthread, otherwise we trigger a
+	 * use-after-tree on the cleaner kthread task_struct when a delalloc
+	 * worker running submit_compressed_extents() adds a delayed iput, which
+	 * does a wake up on the cleaner kthread, which was already freed below
+	 * when we call kthread_stop().
+	 */
+	btrfs_flush_workqueue(fs_info->delalloc_workers);
+
+	/*
+	 * When finishing a compressed write bio we schedule a work queue item
+	 * to finish an ordered extent - btrfs_finish_compressed_write_work()
+	 * calls btrfs_finish_ordered_extent() which in turns does a call to
+	 * btrfs_queue_ordered_fn(), and that queues the ordered extent
+	 * completion either in the endio_write_workers work queue or in the
+	 * fs_info->endio_freespace_worker work queue. We flush those queues
+	 * below, so before we flush them we must flush this queue for the
+	 * workers of compressed writes.
+	 */
+	flush_workqueue(fs_info->compressed_write_workers);
 
 	/*
 	 * After we parked the cleaner kthread, ordered extents may have

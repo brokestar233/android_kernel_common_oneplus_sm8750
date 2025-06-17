@@ -13,6 +13,7 @@
   blk_stat_enable_accounting
   __brelse
   class_find_device
+  clk_set_duty_cycle
   cpufreq_unregister_notifier
   crypto_register_alg
   crypto_unregister_alg
@@ -139,6 +140,7 @@
   __traceiter_android_vh_f2fs_file_open
   __traceiter_android_vh_f2fs_ra_op_flags
   __traceiter_android_vh_filemap_update_page
+  __traceiter_android_vh_free_unref_page_list_bypass
   __traceiter_android_vh_free_task
   __traceiter_android_vh_free_unref_page_bypass
   __traceiter_android_vh_fuse_request_end
@@ -156,7 +158,7 @@
   __traceiter_android_vh_mmap_region
   __traceiter_android_vh_mutex_init
   __traceiter_android_vh_mutex_unlock_slowpath
-  __traceiter_android_vh_mutex_unlock_slowpath_before_wakeq
+  __traceiter_android_vh_mutex_unlock_slowpath_bf_wakeq
   __traceiter_android_vh_mutex_wait_finish
   __traceiter_android_vh_mutex_wait_start
   __traceiter_android_vh_oom_swapmem_gather_finish
@@ -286,7 +288,7 @@
   __tracepoint_android_vh_mmap_region
   __tracepoint_android_vh_mutex_init
   __tracepoint_android_vh_mutex_unlock_slowpath
-  __tracepoint_android_vh_mutex_unlock_slowpath_before_wakeq
+  __tracepoint_android_vh_mutex_unlock_slowpath_bf_wakeq
   __tracepoint_android_vh_mutex_wait_finish
   __tracepoint_android_vh_mutex_wait_start
   __tracepoint_android_vh_oom_swapmem_gather_finish
@@ -313,6 +315,7 @@
   __tracepoint_android_vh_send_signal_locked
   __tracepoint_android_vh_shmem_swapin_folio
   __tracepoint_android_vh_should_alloc_pages_retry
+  __tracepoint_android_vh_free_unref_page_list_bypass
   __tracepoint_android_vh_shrink_folio_list
   __tracepoint_android_vh_shrink_node_memcgs
   __tracepoint_android_vh_sk_alloc

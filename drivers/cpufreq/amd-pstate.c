@@ -579,8 +579,13 @@ static void amd_pstate_adjust_perf(unsigned int cpu,
 	unsigned long max_perf, min_perf, des_perf,
 		      cap_perf, lowest_nonlinear_perf, max_freq;
 	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
-	struct amd_cpudata *cpudata = policy->driver_data;
 	unsigned int target_freq;
+	struct amd_cpudata *cpudata;
+
+	if (!policy)
+		return;
+
+	cpudata = policy->driver_data;
 
 	if (policy->min != cpudata->min_limit_freq || policy->max != cpudata->max_limit_freq)
 		amd_pstate_update_min_max_limit(policy);
@@ -1061,11 +1066,21 @@ static int amd_pstate_register_driver(int mode)
 		return -EINVAL;
 
 	cppc_state = mode;
+
+	ret = amd_pstate_enable(true);
+	if (ret) {
+		pr_err("failed to enable cppc during amd-pstate driver registration, return %d\n",
+		       ret);
+		amd_pstate_driver_cleanup();
+		return ret;
+	}
+
 	ret = cpufreq_register_driver(current_pstate_driver);
 	if (ret) {
 		amd_pstate_driver_cleanup();
 		return ret;
 	}
+
 	return 0;
 }
 
@@ -1373,7 +1388,7 @@ static void amd_pstate_epp_update_limit(struct cpufreq_policy *policy)
 	value = READ_ONCE(cpudata->cppc_req_cached);
 
 	if (cpudata->policy == CPUFREQ_POLICY_PERFORMANCE)
-		min_perf = max_perf;
+		min_perf = min(cpudata->nominal_perf, max_perf);
 
 	/* Initial min/max values for CPPC Performance Controls Register */
 	value &= ~AMD_CPPC_MIN_PERF(~0L);

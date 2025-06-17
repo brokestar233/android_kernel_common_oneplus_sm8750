@@ -45,6 +45,7 @@
 struct madvise_walk_private {
 	struct mmu_gather *tlb;
 	bool pageout;
+	void *private;
 };
 
 /*
@@ -186,6 +187,7 @@ success:
 		error = replace_anon_vma_name(vma, anon_name);
 		if (error)
 			return error;
+		trace_android_vh_replace_anon_vma_name(vma, anon_name);
 	}
 
 	return 0;
@@ -455,7 +457,7 @@ static int madvise_cold_or_pageout_pte_range(pmd_t *pmd,
 huge_unlock:
 		spin_unlock(ptl);
 		if (pageout)
-			reclaim_pages(&folio_list, true);
+			__reclaim_pages(&folio_list, true, private->private);
 		return 0;
 	}
 
@@ -585,7 +587,7 @@ regular_folio:
 		pte_unmap_unlock(start_pte, ptl);
 	}
 	if (pageout)
-		reclaim_pages(&folio_list, true);
+		__reclaim_pages(&folio_list, true, private->private);
 	cond_resched();
 
 	return 0;
@@ -643,10 +645,17 @@ static int madvise_pageout_page_range(struct mmu_gather *tlb,
 		.tlb = tlb,
 	};
 	int ret;
+	LIST_HEAD(folio_list);
+
+	trace_android_rvh_madvise_pageout_begin(&walk_private.private);
 
 	tlb_start_vma(tlb, vma);
 	ret = walk_page_range(vma->vm_mm, addr, end, &cold_walk_ops, &walk_private);
 	tlb_end_vma(tlb, vma);
+
+	trace_android_rvh_madvise_pageout_end(walk_private.private, &folio_list);
+	if (!list_empty(&folio_list))
+		reclaim_pages(&folio_list, true);
 
 	return ret;
 }
@@ -972,7 +981,16 @@ static long madvise_dontneed_free(struct vm_area_struct *vma,
 			 */
 			end = vma->vm_end;
 		}
-		VM_WARN_ON(start >= end);
+		/*
+		 * If the memory region between start and end was
+		 * originally backed by 4kB pages and then remapped to
+		 * be backed by hugepages while mmap_lock was dropped,
+		 * the adjustment for hugetlb vma above may have rounded
+		 * end down to the start address.
+		 */
+		if (start == end)
+			return 0;
+		VM_WARN_ON(start > end);
 	}
 
 	if (behavior == MADV_DONTNEED || behavior == MADV_DONTNEED_LOCKED)
@@ -1526,6 +1544,14 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 
 SYSCALL_DEFINE3(madvise, unsigned long, start, size_t, len_in, int, behavior)
 {
+	bool bypass = false;
+	int ret;
+
+	trace_android_rvh_do_madvise_bypass(current->mm, start,
+			len_in, behavior, &ret, &bypass);
+	if (bypass)
+		return ret;
+
 	return do_madvise(current->mm, start, len_in, behavior);
 }
 

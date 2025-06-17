@@ -48,6 +48,7 @@
   filp_open_block
   mm_trace_rss_stat
   get_slabinfo
+  isolate_folio
   xas_find
   contpte_ptep_test_and_clear_young
   tty_dev_name_to_number
@@ -59,7 +60,43 @@
   percpu_ref_exit
   android_debug_per_cpu_symbol
   android_debug_symbol
+  __traceiter_rpm_idle
+  __tracepoint_rpm_idle
+  __traceiter_rpm_suspend
+  __tracepoint_rpm_suspend
+  __traceiter_rpm_resume
+  __tracepoint_rpm_resume
+  __traceiter_rpm_return_int
+  __tracepoint_rpm_return_int
   __kfifo_len_r
+  mempool_init
+  mempool_exit
+  dm_register_target
+  dm_unregister_target
+  blk_crypto_evict_key
+  blk_crypto_derive_sw_secret
+  dm_shift_arg
+  dm_get_device
+  dm_put_device
+  dm_read_arg_group
+  dm_consume_args
+  bioset_init
+  dm_set_target_max_io_len
+  dm_per_bio_data
+  dm_bio_get_target_bio_nr
+  bioset_exit
+  dm_submit_bio_remap
+  dm_table_device_name
+  dm_table_event
+  empty_zero_page
+  dm_get_reserved_bio_based_ios
+  wait_for_completion_io
+  bio_crypt_set_ctx
+  zero_fill_bio_iter
+  percpu_ref_is_zero
+  __trace_bputs
+  __traceiter_android_vh_proactive_compact_wmark_high
+  __tracepoint_android_vh_proactive_compact_wmark_high
   __traceiter_android_vh_killed_process
   __tracepoint_android_vh_killed_process
   __traceiter_android_vh_rwsem_write_wait_finish
@@ -98,6 +135,8 @@
   __traceiter_android_vh_slab_free
   __traceiter_android_vh_should_fault_around
   __tracepoint_android_vh_should_fault_around
+  __traceiter_android_vh_add_lazyfree_bypass
+  __tracepoint_android_vh_add_lazyfree_bypass
   __traceiter_android_vh_mglru_should_abort_scan
   __tracepoint_android_vh_mglru_should_abort_scan
   __traceiter_android_vh_mglru_should_abort_scan_order
@@ -136,6 +175,10 @@
   __tracepoint_android_vh_udp_v6_connect
   __traceiter_android_rvh_dma_buf_stats_teardown
   __tracepoint_android_rvh_dma_buf_stats_teardown
+  __traceiter_android_vh_dma_buf_attr_show_start
+  __tracepoint_android_vh_dma_buf_attr_show_start
+  __traceiter_android_vh_dma_buf_attr_show_end
+  __tracepoint_android_vh_dma_buf_attr_show_end
   __traceiter_android_rvh_hw_protection_shutdown
   __tracepoint_android_rvh_hw_protection_shutdown
   __traceiter_android_rvh_bpf_int_jit_compile_ro
@@ -166,6 +209,16 @@
   __tracepoint_android_vh_cma_alloc_retry
   __tracepoint_android_vh_should_memcg_bypass
   __traceiter_android_vh_should_memcg_bypass
+  __traceiter_android_vh_rmqueue_smallest_bypass
+  __tracepoint_android_vh_rmqueue_smallest_bypass
+  __traceiter_android_vh_free_one_page_bypass
+  __tracepoint_android_vh_free_one_page_bypass
+  __traceiter_android_vh_reserve_highatomic_bypass
+  __tracepoint_android_vh_reserve_highatomic_bypass
+  __traceiter_android_vh_pagetypeinfo_show
+  __tracepoint_android_vh_pagetypeinfo_show
+  __traceiter_android_vh_watermark_fast_ok
+  __tracepoint_android_vh_watermark_fast_ok
   __traceiter_android_rvh_ogki_vfree_bypass
   __traceiter_android_rvh_ogki_vmalloc_node_bypass
   __traceiter_android_vh_ogki_async_psi_bypass
@@ -244,7 +297,15 @@
   __traceiter_android_vh_wq_wake_idle_worker
   __tracepoint_android_vh_wq_queue_work
   __tracepoint_android_vh_wq_wake_idle_worker
+<<<<<<< HEAD 杜晓:80398201:平台与内核开发部 
   __traceiter_android_rvh_do_read_fault
   __tracepoint_android_rvh_do_read_fault
   __traceiter_android_vh_io_statistics
   __tracepoint_android_vh_io_statistics
+||||||| merged common ancestors
+=======
+  __traceiter_android_vh_mutex_unlock_slowpath_bf_wakeq
+  __tracepoint_android_vh_mutex_unlock_slowpath_bf_wakeq
+  __traceiter_android_vh_io_statistics
+  __tracepoint_android_vh_io_statistics
+>>>>>>> android15-6.6-2025-06_r1

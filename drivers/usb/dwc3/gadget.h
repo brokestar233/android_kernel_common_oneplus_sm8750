@@ -119,7 +119,12 @@ int dwc3_gadget_ep0_queue(struct usb_ep *ep, struct usb_request *request,
 int __dwc3_gadget_ep_set_halt(struct dwc3_ep *dep, int value, int protocol);
 void dwc3_ep0_send_delayed_status(struct dwc3 *dwc);
 void dwc3_stop_active_transfer(struct dwc3_ep *dep, bool force, bool interrupt);
+<<<<<<< HEAD 赵航:80263926:器件与算法部 
 int dwc3_gadget_start_config(struct dwc3 *dwc, unsigned int resource_index);
+||||||| merged common ancestors
+=======
+int dwc3_gadget_start_config(struct dwc3 *dwc, unsigned int resource_index);
+>>>>>>> android15-6.6-2025-06_r1
 
 /**
  * dwc3_gadget_ep_get_transfer_index - Gets transfer index from HW
