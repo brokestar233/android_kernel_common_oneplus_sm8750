@@ -486,17 +486,10 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_add_folio);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lock_folio_drop_mmap_start);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lock_folio_drop_mmap_end);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_update_page);
-<<<<<<< HEAD 李江:80270997:平台与内核开发部 
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lruvec_add_folio);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lruvec_del_folio);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_async_mmap_readahead);
-||||||| merged common ancestors
-=======
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lruvec_add_folio);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lruvec_del_folio);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_add_lazyfree_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_async_mmap_readahead);
->>>>>>> android15-6.6-2025-06_r1
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_update_page_mapcount);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_add_page_to_lrulist);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_del_page_from_lrulist);
@@ -642,11 +635,6 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_direct_reclaim_begin);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_direct_reclaim_end);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_wq_queue_work);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_wq_wake_idle_worker);
-<<<<<<< HEAD 郑堂权:80370500:平台与内核开发部 
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_send_signal_locked);
-EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_do_read_fault);
-||||||| merged common ancestors
-=======
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_dma_buf_release);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_send_signal_locked);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_copy_page_to_user);
@@ -688,4 +676,3 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_fault_pre_folio_locked);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_folio_mapped);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_folio_remove_rmap_ptes);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_pageset_update);
->>>>>>> android15-6.6-2025-06_r1
