@@ -3212,18 +3212,8 @@
   xhci_remove_secondary_interrupter
   xhci_resume
   xhci_run
-<<<<<<< HEAD 杜晓:80398201:平台与内核开发部 
-||||||| merged common ancestors
-  xhci_sideband_add_endpoint
-  xhci_sideband_create_interrupter
-  xhci_sideband_register
-  xhci_sideband_remove_endpoint
-  xhci_sideband_remove_interrupter
-  xhci_sideband_unregister
-=======
   xhci_set_interrupter_moderation
   xhci_stop_endpoint_sync
->>>>>>> android15-6.6-2025-06_r1
   xhci_suspend
   zs_compact
   zs_create_pool
