@@ -516,18 +516,10 @@ static void dwc3_free_trb_pool(struct dwc3_ep *dep)
 static int dwc3_gadget_set_xfer_resource(struct dwc3_ep *dep)
 {
 	struct dwc3_gadget_ep_cmd_params params;
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
 	int ret;
 
 	if (dep->flags & DWC3_EP_RESOURCE_ALLOCATED)
 		return 0;
-||||||| merged common ancestors
-=======
-	int ret;
-
-	if (dep->flags & DWC3_EP_RESOURCE_ALLOCATED)
-		return 0;
->>>>>>> android15-6.6-2025-06_r1
 
 	memset(&params, 0x00, sizeof(params));
 
@@ -535,110 +527,34 @@ static int dwc3_gadget_set_xfer_resource(struct dwc3_ep *dep)
 
 	ret = dwc3_send_gadget_ep_cmd(dep, DWC3_DEPCMD_SETTRANSFRESOURCE,
 			&params);
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
 	if (ret)
 		return ret;
 
 	dep->flags |= DWC3_EP_RESOURCE_ALLOCATED;
 	return 0;
-||||||| merged common ancestors
-=======
-	if (ret)
-		return ret;
-
-	dep->flags |= DWC3_EP_RESOURCE_ALLOCATED;
-	return 0;
->>>>>>> android15-6.6-2025-06_r1
 }
 
 /**
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
  * dwc3_gadget_start_config - reset endpoint resources
  * @dwc: pointer to the DWC3 context
  * @resource_index: DEPSTARTCFG.XferRscIdx value (must be 0 or 2)
-||||||| merged common ancestors
- * dwc3_gadget_start_config - configure ep resources
- * @dep: endpoint that is being enabled
-=======
- * dwc3_gadget_start_config - reset endpoint resources
- * @dwc: pointer to the DWC3 context
- * @resource_index: DEPSTARTCFG.XferRscIdx value (must be 0 or 2)
->>>>>>> android15-6.6-2025-06_r1
  *
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
  * Set resource_index=0 to reset all endpoints' resources allocation. Do this as
  * part of the power-on/soft-reset initialization.
-||||||| merged common ancestors
- * Issue a %DWC3_DEPCMD_DEPSTARTCFG command to @dep. After the command's
- * completion, it will set Transfer Resource for all available endpoints.
-=======
- * Set resource_index=0 to reset all endpoints' resources allocation. Do this as
- * part of the power-on/soft-reset initialization.
->>>>>>> android15-6.6-2025-06_r1
  *
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
  * Set resource_index=2 to reset only non-control endpoints' resources. Do this
  * on receiving the SET_CONFIGURATION request or hibernation resume.
-||||||| merged common ancestors
- * The assignment of transfer resources cannot perfectly follow the data book
- * due to the fact that the controller driver does not have all knowledge of the
- * configuration in advance. It is given this information piecemeal by the
- * composite gadget framework after every SET_CONFIGURATION and
- * SET_INTERFACE. Trying to follow the databook programming model in this
- * scenario can cause errors. For two reasons:
- *
- * 1) The databook says to do %DWC3_DEPCMD_DEPSTARTCFG for every
- * %USB_REQ_SET_CONFIGURATION and %USB_REQ_SET_INTERFACE (8.1.5). This is
- * incorrect in the scenario of multiple interfaces.
- *
- * 2) The databook does not mention doing more %DWC3_DEPCMD_DEPXFERCFG for new
- * endpoint on alt setting (8.1.6).
- *
- * The following simplified method is used instead:
- *
- * All hardware endpoints can be assigned a transfer resource and this setting
- * will stay persistent until either a core reset or hibernation. So whenever we
- * do a %DWC3_DEPCMD_DEPSTARTCFG(0) we can go ahead and do
- * %DWC3_DEPCMD_DEPXFERCFG for every hardware endpoint as well. We are
- * guaranteed that there are as many transfer resources as endpoints.
- *
- * This function is called for each endpoint when it is being enabled but is
- * triggered only when called for EP0-out, which always happens first, and which
- * should only happen in one of the above conditions.
-=======
- * Set resource_index=2 to reset only non-control endpoints' resources. Do this
- * on receiving the SET_CONFIGURATION request or hibernation resume.
->>>>>>> android15-6.6-2025-06_r1
  */
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
 int dwc3_gadget_start_config(struct dwc3 *dwc, unsigned int resource_index)
-||||||| merged common ancestors
-static int dwc3_gadget_start_config(struct dwc3_ep *dep)
-=======
-int dwc3_gadget_start_config(struct dwc3 *dwc, unsigned int resource_index)
->>>>>>> android15-6.6-2025-06_r1
 {
 	struct dwc3_gadget_ep_cmd_params params;
-<<<<<<< HEAD 刘炜:80375434:器件与算法部 
-||||||| merged common ancestors
-	struct dwc3		*dwc;
-=======
 	struct dwc3_ep		*dep;
->>>>>>> android15-6.6-2025-06_r1
 	u32			cmd;
 	int			i;
 	int			ret;
 
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
 	if (resource_index != 0 && resource_index != 2)
 		return -EINVAL;
-||||||| merged common ancestors
-	if (dep->number)
-		return 0;
-=======
-	if (resource_index != 0 && resource_index != 2)
-		return -EINVAL;
->>>>>>> android15-6.6-2025-06_r1
 
 	memset(&params, 0x00, sizeof(params));
 	cmd = DWC3_DEPCMD_DEPSTARTCFG;
@@ -648,22 +564,6 @@ int dwc3_gadget_start_config(struct dwc3 *dwc, unsigned int resource_index)
 	if (ret)
 		return ret;
 
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
-	/* Reset resource allocation flags */
-	for (i = resource_index; i < dwc->num_eps && dwc->eps[i]; i++)
-		dwc->eps[i]->flags &= ~DWC3_EP_RESOURCE_ALLOCATED;
-||||||| merged common ancestors
-	for (i = 0; i < DWC3_ENDPOINTS_NUM; i++) {
-		struct dwc3_ep *dep = dwc->eps[i];
-
-		if (!dep)
-			continue;
-
-		ret = dwc3_gadget_set_xfer_resource(dep);
-		if (ret)
-			return ret;
-	}
-=======
 	/* Reset resource allocation flags */
 	for (i = resource_index; i < dwc->num_eps; i++) {
 		dep = dwc->eps[i];
@@ -672,7 +572,6 @@ int dwc3_gadget_start_config(struct dwc3 *dwc, unsigned int resource_index)
 
 		dep->flags &= ~DWC3_EP_RESOURCE_ALLOCATED;
 	}
->>>>>>> android15-6.6-2025-06_r1
 
 	return 0;
 }
@@ -1013,22 +912,12 @@ static int __dwc3_gadget_ep_enable(struct dwc3_ep *dep, unsigned int action)
 	if (ret)
 		return ret;
 
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
 	if (!(dep->flags & DWC3_EP_RESOURCE_ALLOCATED)) {
 		ret = dwc3_gadget_set_xfer_resource(dep);
 		if (ret)
 			return ret;
 	}
 
-||||||| merged common ancestors
-=======
-	if (!(dep->flags & DWC3_EP_RESOURCE_ALLOCATED)) {
-		ret = dwc3_gadget_set_xfer_resource(dep);
-		if (ret)
-			return ret;
-	}
-
->>>>>>> android15-6.6-2025-06_r1
 	if (!(dep->flags & DWC3_EP_ENABLED)) {
 		struct dwc3_trb	*trb_st_hw;
 		struct dwc3_trb	*trb_link;
@@ -3083,22 +2972,12 @@ static int __dwc3_gadget_start(struct dwc3 *dwc)
 	/* Start with SuperSpeed Default */
 	dwc3_gadget_ep0_desc.wMaxPacketSize = cpu_to_le16(512);
 
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
 	ret = dwc3_gadget_start_config(dwc, 0);
 	if (ret) {
 		dev_err(dwc->dev, "failed to config endpoints\n");
 		return ret;
 	}
 
-||||||| merged common ancestors
-=======
-	ret = dwc3_gadget_start_config(dwc, 0);
-	if (ret) {
-		dev_err(dwc->dev, "failed to config endpoints\n");
-		return ret;
-	}
-
->>>>>>> android15-6.6-2025-06_r1
 	dep = dwc->eps[0];
 	dep->flags = 0;
 	ret = __dwc3_gadget_ep_enable(dep, DWC3_DEPCFG_ACTION_INIT);

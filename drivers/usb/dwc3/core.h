@@ -762,12 +762,7 @@ struct dwc3_ep {
 #define DWC3_EP_PENDING_CLEAR_STALL	BIT(11)
 #define DWC3_EP_TXFIFO_RESIZED		BIT(12)
 #define DWC3_EP_DELAY_STOP             BIT(13)
-<<<<<<< HEAD 赵航:80263926:器件与算法部 
 #define DWC3_EP_RESOURCE_ALLOCATED	BIT(14)
-||||||| merged common ancestors
-=======
-#define DWC3_EP_RESOURCE_ALLOCATED	BIT(14)
->>>>>>> android15-6.6-2025-06_r1
 
 	/* This last one is specific to EP0 */
 #define DWC3_EP0_DIR_IN			BIT(31)
