@@ -145,6 +145,11 @@ module_param_named(exclusive_loads, zswap_exclusive_loads_enabled, bool, 0644);
 /* Number of zpools in zswap_pool (empirically determined for scalability) */
 #define ZSWAP_NR_ZPOOLS 32
 
+bool zswap_is_enabled(void)
+{
+	return zswap_enabled;
+}
+
 bool zswap_never_enabled(void)
 {
 	return !static_branch_maybe(CONFIG_ZSWAP_DEFAULT_ON, &zswap_ever_enabled);
