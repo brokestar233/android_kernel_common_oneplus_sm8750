@@ -96,3 +96,9 @@ config ZRAM_MULTI_COMP
 	  re-compress pages using a potentially slower but more effective
 	  compression algorithm. Note, that IDLE page recompression
 	  requires ZRAM_TRACK_ENTRY_ACTIME.
+
+config OPLUS_FEATURE_ZRAM_OPT
+	tristate "zram optimization"
+	default y
+	help
+	  define this config to add oplus zram optimization feature
