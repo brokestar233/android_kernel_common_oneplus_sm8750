@@ -22,7 +22,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.0.0-rc2"
+#define ADIOS_VERSION "2.0.0"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -34,13 +34,13 @@ enum adios_op_type {
 };
 
 // Global variable to control the latency
-static u64 default_global_latency_window = 16000000ULL;
+static u64 default_global_latency_window = 32000000ULL;
 // Ratio below which batch queues should be refilled
-static u8  default_bq_refill_below_ratio = 15;
+static u8  default_bq_refill_below_ratio = 25;
 
 // Dynamic thresholds for shrinkage
-static u32 default_lm_shrink_at_kreqs  = 10000;
-static u32 default_lm_shrink_at_gbytes =   100;
+static u32 default_lm_shrink_at_kreqs  =  5000;
+static u32 default_lm_shrink_at_gbytes =    50;
 static u32 default_lm_shrink_resist    =     2;
 
 // Latency targets for each operation type
@@ -324,6 +324,9 @@ static void latency_model_update(
 	bool time_elapsed;
 	bool small_processed = false, large_processed = false;
 	struct per_cpu_lm_buckets *aggr = ad->aggr_buckets;
+	struct latency_bucket_small *asb;
+	struct latency_bucket_large *alb;
+	struct per_cpu_lm_buckets *pcpu_b;
 	unsigned long flags;
 	int cpu;
 
@@ -333,17 +336,19 @@ static void latency_model_update(
 
 	// Aggregate data from all CPUs and reset per-cpu buckets.
 	for_each_possible_cpu(cpu) {
-		struct per_cpu_lm_buckets *pcpu_b = per_cpu_ptr(model->pcpu_buckets, cpu);
+		pcpu_b = per_cpu_ptr(model->pcpu_buckets, cpu);
 
 		for (u8 i = 0; i < LM_LAT_BUCKET_COUNT; i++) {
 			if (pcpu_b->small_bucket[i].count) {
-				aggr->small_bucket[i].count += pcpu_b->small_bucket[i].count;
-				aggr->small_bucket[i].sum_latency += pcpu_b->small_bucket[i].sum_latency;
+				asb = &aggr->small_bucket[i];
+				asb->count          += pcpu_b->small_bucket[i].count;
+				asb->sum_latency    += pcpu_b->small_bucket[i].sum_latency;
 			}
 			if (pcpu_b->large_bucket[i].count) {
-				aggr->large_bucket[i].count += pcpu_b->large_bucket[i].count;
-				aggr->large_bucket[i].sum_latency += pcpu_b->large_bucket[i].sum_latency;
-				aggr->large_bucket[i].sum_block_size += pcpu_b->large_bucket[i].sum_block_size;
+				alb = &aggr->large_bucket[i];
+				alb->count          += pcpu_b->large_bucket[i].count;
+				alb->sum_latency    += pcpu_b->large_bucket[i].sum_latency;
+				alb->sum_block_size += pcpu_b->large_bucket[i].sum_block_size;
 			}
 		}
 		// Reset per-cpu buckets after aggregating
@@ -598,11 +603,9 @@ static void adios_request_merged(struct request_queue *q, struct request *req,
 	bool dl_idx = adios_optype_not_read(req);
 	struct adios_data *ad = q->elevator->elevator_data;
 
-	// if the merge was a front merge, we need to reposition request
-	if (type == ELEVATOR_FRONT_MERGE) {
-		del_from_dl_tree(ad, dl_idx, req);
-		add_to_dl_tree(ad, dl_idx, req);
-	}
+	// Reposition request in the deadline-sorted tree
+	del_from_dl_tree(ad, dl_idx, req);
+	add_to_dl_tree(ad, dl_idx, req);
 }
 
 // Handle merging of requests after one has been merged into another
