@@ -1,0 +1,6 @@
+config CRYPTO_LZ4K_OPLUS
+	tristate "Lz4k_oplus compression algorithm"
+	select CRYPTO_ALGAPI
+	select CRYPTO_ACOMP2
+	help
+	  This is the lz4k_oplus algorithm.
