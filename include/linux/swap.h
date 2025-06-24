@@ -744,5 +744,7 @@ static inline bool mem_cgroup_swap_full(struct folio *folio)
 }
 #endif
 
+extern int vm_kcompressd;
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */
