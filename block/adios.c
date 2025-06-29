@@ -22,7 +22,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.0.0"
+#define ADIOS_VERSION "2.1.0"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -127,7 +127,7 @@ struct adios_data {
 	u32 async_depth;
 	u8  bq_refill_below_ratio;
 
-	u8 bq_page;
+	bool bq_page;
 	bool more_bq_ready;
 	struct list_head batch_queue[ADIOS_BQ_PAGES][ADIOS_OPTYPES];
 	u32 batch_count[ADIOS_BQ_PAGES][ADIOS_OPTYPES];
@@ -703,100 +703,74 @@ static struct adios_rq_data *get_dl_first_rd(struct adios_data *ad, bool idx) {
 	return list_first_entry(&dl_group->rqs, struct adios_rq_data, dl_node);
 }
 
-// Select the next request to dispatch from the deadline-sorted red-black tree
-static struct request *next_request(struct adios_data *ad) {
-	struct adios_rq_data *rd;
-	bool dl_idx, bias_idx, reduce_bias;
-
-	if (!ad->dl_queued)
-		return NULL;
-
-	dl_idx = ad->dl_queued >> 1;
-	rd = get_dl_first_rd(ad, dl_idx);
-
-	bias_idx = ad->dl_bias < 0;
-	reduce_bias = (bias_idx == dl_idx);
-
-	if (ad->dl_queued == 0x3) {
-		struct adios_rq_data *trd[2];
-		trd[0] = get_dl_first_rd(ad, 0);
-		trd[1] = rd;
-
-		rd = trd[bias_idx];
-
-		reduce_bias =
-			(trd[bias_idx]->deadline > trd[((u8)bias_idx + 1) % 2]->deadline);
-	}
-
-	if (reduce_bias) {
-		s64 sign = ((int)bias_idx << 1) - 1;
-		if (unlikely(!rd->pred_lat))
-			ad->dl_bias = sign;
-		else {
-			ad->dl_bias += sign * (s64)((rd->pred_lat *
-				adios_prio_to_weight[ad->dl_prio[bias_idx] + 20]) >> 10);
-		}
-	}
-
-	return rd->rq;
-}
-
-// Reset the batch queue counts for a given page
-static void reset_batch_counts(struct adios_data *ad, u8 page) {
-	memset(&ad->batch_count[page], 0, sizeof(ad->batch_count[page]));
-}
-
-// Initialize all batch queues
-static void init_batch_queues(struct adios_data *ad) {
-	for (u8 page = 0; page < ADIOS_BQ_PAGES; page++) {
-		reset_batch_counts(ad, page);
-
-		for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++)
-			INIT_LIST_HEAD(&ad->batch_queue[page][optype]);
-	}
-}
-
 // Fill the batch queues with requests from the deadline-sorted red-black tree
 static bool fill_batch_queues(struct adios_data *ad, u64 current_lat) {
-	u32 count = 0;
+	struct adios_rq_data *rd;
+	struct request *rq;
 	u32 optype_count[ADIOS_OPTYPES] = {0};
-	u8 page = (ad->bq_page + 1) % ADIOS_BQ_PAGES;
+	u32 count = 0;
+	u8 optype;
+	bool page = !ad->bq_page, dl_idx, bias_idx, reduce_bias;
 
-	reset_batch_counts(ad, page);
+	// Reset batch queue counts for the back page
+	memset(&ad->batch_count[page], 0, sizeof(ad->batch_count[page]));
 
 	scoped_guard(spinlock_irqsave, &ad->lock)
 		while (true) {
-			struct request *rq = next_request(ad);
-			if (!rq)
+
+			// Check if there are any requests queued in the deadline tree
+			if (!ad->dl_queued)
 				break;
 
-			struct adios_rq_data *rd = get_rq_data(rq);
-			u8 optype = adios_optype(rq);
-			current_lat += rd->pred_lat;
+			dl_idx = ad->dl_queued >> 1;
+			// Get the first request from the deadline-sorted tree
+			rd = get_dl_first_rd(ad, dl_idx);
+			bias_idx = ad->dl_bias < 0;
+
+			// If read and write requests are queued, choose one based on bias
+			if (ad->dl_queued == 0x3) {
+				struct adios_rq_data *trd[2] = {get_dl_first_rd(ad, 0), rd};
+				rd = trd[bias_idx];
+
+				reduce_bias = (trd[bias_idx]->deadline > trd[!bias_idx]->deadline);
+			} else
+				reduce_bias = (bias_idx == dl_idx);
+			
+			rq = rd->rq;
+			optype = adios_optype(rq);
 
 			// Check batch size and total predicted latency
-			if (count && (!ad->latency_model[optype].base || 
-				ad->batch_count[page][optype] >= ad->batch_limit[optype] ||
-				current_lat > ad->global_latency_window)) {
+			if (count && (!ad->latency_model[optype].base ||
+					ad->batch_count[page][optype] >= ad->batch_limit[optype] ||
+					(current_lat + rd->pred_lat) > ad->global_latency_window))
 				break;
+
+			if (reduce_bias) {
+				s64 sign = ((int)bias_idx << 1) - 1;
+				if (unlikely(!rd->pred_lat))
+					ad->dl_bias = sign;
+				else
+					// Adjust the bias based on the predicted latency
+					ad->dl_bias += sign * (s64)((rd->pred_lat *
+						adios_prio_to_weight[ad->dl_prio[bias_idx] + 20]) >> 10);
 			}
 
 			remove_request(ad, rq);
 
 			// Add request to the corresponding batch queue
 			list_add_tail(&rq->queuelist, &ad->batch_queue[page][optype]);
-			ad->batch_count[page][optype]++;
 			atomic64_add(rd->pred_lat, &ad->total_pred_lat);
+			current_lat += rd->pred_lat;
+			ad->batch_count[page][optype]++;
 			optype_count[optype]++;
 			count++;
 		}
 
 	if (count) {
 		ad->more_bq_ready = true;
-		for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++) {
+		for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++)
 			if (ad->batch_actual_max_size[optype] < optype_count[optype])
 				ad->batch_actual_max_size[optype] = optype_count[optype];
-		}
 		if (ad->batch_actual_max_total < count)
 			ad->batch_actual_max_total = count;
 	}
@@ -806,7 +780,7 @@ static bool fill_batch_queues(struct adios_data *ad, u64 current_lat) {
 // Flip to the next batch queue page
 static void flip_bq_page(struct adios_data *ad) {
 	ad->more_bq_ready = false;
-	ad->bq_page = (ad->bq_page + 1) % ADIOS_BQ_PAGES;
+	ad->bq_page = !ad->bq_page;
 }
 
 // Dispatch a request from the batch queues
@@ -818,16 +792,16 @@ static struct request *dispatch_from_bq(struct adios_data *ad) {
 
 	tpl = atomic64_read(&ad->total_pred_lat);
 
-	if (!ad->more_bq_ready && (!tpl ||
-			tpl < div_u64(ad->global_latency_window * ad->bq_refill_below_ratio, 100)))
+	if (!ad->more_bq_ready && (!tpl || tpl < div_u64(
+			ad->global_latency_window * ad->bq_refill_below_ratio, 100)))
 		fill_batch_queues(ad, tpl);
 
 again:
 	// Check if there are any requests in the batch queues
 	for (u8 i = 0; i < ADIOS_OPTYPES; i++) {
 		if (!list_empty(&ad->batch_queue[ad->bq_page][i])) {
-			rq = list_first_entry(&ad->batch_queue[ad->bq_page][i],
-									struct request, queuelist);
+			rq = list_first_entry(
+				&ad->batch_queue[ad->bq_page][i], struct request, queuelist);
 			list_del_init(&rq->queuelist);
 			return rq;
 		}
@@ -1006,7 +980,10 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 		ad->batch_limit[cpu] = default_batch_limit[cpu];
 	}
 	timer_setup(&ad->update_timer, update_timer_callback, 0);
-	init_batch_queues(ad);
+	
+	for (u8 page = 0; page < ADIOS_BQ_PAGES; page++)
+		for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++)
+			INIT_LIST_HEAD(&ad->batch_queue[page][optype]);
 
 	spin_lock_init(&ad->lock);
 	spin_lock_init(&ad->pq_lock);
