@@ -387,6 +387,10 @@ static int relinquish_walker(const struct kvm_pgtable_visit_ctx *ctx,
 	if (!kvm_pte_valid(pte))
 		return 0;
 
+	/* We don't support splitting non-leaf mappings */
+	if (ctx->level != (KVM_PGTABLE_MAX_LEVELS - 1))
+		return -E2BIG;
+
 	state = pkvm_getstate(kvm_pgtable_stage2_pte_prot(pte));
 	if (state != data->expected_state)
 		return -EPERM;
@@ -433,8 +437,7 @@ int __pkvm_guest_relinquish_to_host(struct pkvm_hyp_vcpu *vcpu,
 		goto end;
 
 	/* Zap the guest stage2 pte and return ownership to the host */
-	ret = kvm_pgtable_stage2_annotate(&vm->pgt, ipa, PAGE_SIZE,
-					  &vcpu->vcpu.arch.stage2_mc, 0);
+	ret = kvm_pgtable_stage2_unmap(&vm->pgt, ipa, PAGE_SIZE);
 	if (ret)
 		goto end;
 
@@ -2760,6 +2763,30 @@ unlock:
 
 }
 
+int __pkvm_host_split_guest(u64 pfn, u64 gfn, u64 size, struct pkvm_hyp_vcpu *vcpu)
+{
+	struct kvm_hyp_memcache *mc = &vcpu->vcpu.arch.stage2_mc;
+	struct pkvm_hyp_vm *vm = pkvm_hyp_vcpu_to_hyp_vm(vcpu);
+	u64 ipa = hyp_pfn_to_phys(gfn);
+	int ret;
+
+	if (size != PMD_SIZE)
+		return -EINVAL;
+
+	guest_lock_component(vm);
+
+	/*
+	 * stage2_split() already checks the existing mapping is valid and PMD-level.
+	 * No other check is necessary.
+	 */
+
+	ret = kvm_pgtable_stage2_split(&vm->pgt, ipa, size, mc);
+
+	guest_unlock_component(vm);
+
+	return ret;
+}
+
 int __pkvm_host_donate_guest(struct pkvm_hyp_vcpu *vcpu, u64 pfn, u64 gfn,
 			     u64 nr_pages)
 {
@@ -3016,6 +3043,26 @@ int host_stage2_get_leaf(phys_addr_t phys, kvm_pte_t *ptep, u32 *level)
 	host_unlock_component();
 
 	return ret;
+}
+
+int guest_stage2_pa(struct pkvm_hyp_vm *vm, u64 ipa, phys_addr_t *phys)
+{
+	kvm_pte_t pte;
+	u32 level;
+	int ret;
+
+	guest_lock_component(vm);
+	ret = kvm_pgtable_get_leaf(&vm->pgt, ipa, &pte, &level);
+	guest_unlock_component(vm);
+
+	if (ret)
+		return ret;
+
+	if (!kvm_pte_valid(pte) || level != KVM_PGTABLE_MAX_LEVELS - 1)
+		return -EINVAL;
+
+	*phys = kvm_pte_to_phys(pte);
+	return 0;
 }
 
 #ifdef CONFIG_NVHE_EL2_DEBUG

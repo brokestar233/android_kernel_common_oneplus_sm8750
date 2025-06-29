@@ -1871,8 +1871,8 @@ size_t fault_in_safe_writeable(const char __user *uaddr, size_t size)
 	} while (start != end);
 	mmap_read_unlock(mm);
 
-	if (size > (unsigned long)uaddr - start)
-		return size - ((unsigned long)uaddr - start);
+	if (size > start - (unsigned long)uaddr)
+		return size - (start - (unsigned long)uaddr);
 	return 0;
 }
 EXPORT_SYMBOL(fault_in_safe_writeable);
@@ -2080,8 +2080,7 @@ static long check_and_migrate_movable_pages(unsigned long nr_pages,
 {
 	LIST_HEAD(movable_page_list);
 
-	collect_longterm_unpinnable_pages(&movable_page_list,
-						nr_pages, pages);
+	collect_longterm_unpinnable_pages(&movable_page_list, nr_pages, pages);
 	if (list_empty(&movable_page_list))
 		return 0;
 

@@ -326,6 +326,11 @@ static __always_inline void __folio_dup_file_rmap(struct folio *folio,
 
 	switch (level) {
 	case RMAP_LEVEL_PTE:
+		if (!folio_test_large(folio)) {
+			atomic_inc(&page->_mapcount);
+			break;
+		}
+
 		do {
 			trace_android_vh_update_page_mapcount(page, true, false, NULL, &success);
 			if (!success)
@@ -408,6 +413,14 @@ static __always_inline int __folio_try_dup_anon_rmap(struct folio *folio,
 				if (PageAnonExclusive(page + i))
 					return -EBUSY;
 		}
+
+		if (!folio_test_large(folio)) {
+			if (PageAnonExclusive(page))
+				ClearPageAnonExclusive(page);
+			atomic_inc(&page->_mapcount);
+			break;
+		}
+
 		do {
 			if (PageAnonExclusive(page))
 				ClearPageAnonExclusive(page);
@@ -729,7 +742,12 @@ int folio_mkclean(struct folio *);
 int pfn_mkclean_range(unsigned long pfn, unsigned long nr_pages, pgoff_t pgoff,
 		      struct vm_area_struct *vma);
 
-void remove_migration_ptes(struct folio *src, struct folio *dst, bool locked);
+enum rmp_flags {
+	RMP_LOCKED		= 1 << 0,
+	RMP_USE_SHARED_ZEROPAGE	= 1 << 1,
+};
+
+void remove_migration_ptes(struct folio *src, struct folio *dst, int flags);
 
 int page_mapped_in_vma(struct page *page, struct vm_area_struct *vma);
 
