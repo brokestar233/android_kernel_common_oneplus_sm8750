@@ -33,6 +33,7 @@
   sdhci_set_clock
   sdhci_set_uhs_signaling
   sdhci_suspend_host
+  sdhci_reset_tuning
 
 # required by vh_sched.ko
   __traceiter_android_vh_map_util_freq
@@ -51,6 +52,8 @@
   v4l2_ctrl_type_op_log
   v4l2_m2m_buf_done_and_job_finish
   v4l2_m2m_last_buf
+  v4l2_type_names
+  devm_devfreq_register_opp_notifier
 
 # required by jpu_heap.ko
   kmem_cache_size
@@ -64,3 +67,17 @@
 # required by xhci-asr.ko
   extcon_find_edev_by_node
 
+# required by clk-asr.ko
+  clk_register_mux_table
+
+# required by keypad-asr.ko
+  input_device_enabled
+  fwnode_create_software_node
+
+# required by asr_mipi_panel.ko
+  devm_of_find_backlight
+
+# required by usb_offload.ko
+  usb_set_interface
+  usb_control_msg
+  snd_usb_find_format
