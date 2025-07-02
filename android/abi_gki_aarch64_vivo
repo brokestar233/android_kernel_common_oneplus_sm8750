@@ -157,6 +157,7 @@
   __traceiter_android_vh_look_around_migrate_folio
   __traceiter_android_vh_lruvec_add_folio
   __traceiter_android_vh_lruvec_del_folio
+  __traceiter_android_vh_mempool_alloc_skip_wait
   __traceiter_android_vh_mm_free_page
   __traceiter_android_vh_mmap_region
   __traceiter_android_vh_mutex_init
@@ -290,6 +291,7 @@
   __tracepoint_android_vh_look_around_migrate_folio
   __tracepoint_android_vh_lruvec_add_folio
   __tracepoint_android_vh_lruvec_del_folio
+  __tracepoint_android_vh_mempool_alloc_skip_wait
   __tracepoint_android_vh_mm_free_page
   __tracepoint_android_vh_mmap_region
   __tracepoint_android_vh_mutex_init

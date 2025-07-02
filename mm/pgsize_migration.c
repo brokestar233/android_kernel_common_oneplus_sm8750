@@ -167,8 +167,6 @@ static __always_inline bool str_has_suffix(const char *str, const char *suffix)
  * VMAs of the current task.
  *
  * Returns true if in linker context, otherwise false.
- *
- * Caller must hold mmap lock in read mode.
  */
 static inline bool linker_ctx(void)
 {
@@ -180,14 +178,14 @@ static inline bool linker_ctx(void)
 	if (!regs)
 		return false;
 
-	vma = find_vma(mm, instruction_pointer(regs));
+	vma = lock_vma_under_rcu(mm, instruction_pointer(regs));
 
 	/* Current execution context, the VMA must be present */
 	BUG_ON(!vma);
 
 	file = vma->vm_file;
 	if (!file)
-		return false;
+		goto out;
 
 	if ((vma->vm_flags & VM_EXEC)) {
 		char buf[64];
@@ -205,10 +203,13 @@ static inline bool linker_ctx(void)
 		 *
 		 * Check the base name (linker64).
 		 */
-		if (!strcmp(kbasename(path), "linker64"))
+		if (!strcmp(kbasename(path), "linker64")) {
+			vma_end_read(vma);
 			return true;
+		}
 	}
-
+out:
+	vma_end_read(vma);
 	return false;
 }
 
@@ -270,6 +271,9 @@ static const struct vm_operations_struct pad_vma_ops = {
 	.name = pad_vma_name,
 };
 
+/* Defined in kernel/fork.c */
+extern struct kmem_cache *vm_area_cachep;
+
 /*
  * Returns a new VMA representing the padding in @vma;
  * returns NULL if no padding in @vma or allocation failed.
@@ -281,7 +285,7 @@ static struct vm_area_struct *get_pad_vma(struct vm_area_struct *vma)
 	if (!is_pgsize_migration_enabled() || !(vma->vm_flags & VM_PAD_MASK))
 		return NULL;
 
-	pad = kzalloc(sizeof(struct vm_area_struct), GFP_KERNEL);
+	pad = kmem_cache_alloc(vm_area_cachep, GFP_KERNEL);
 	if (!pad) {
 		pr_warn("Page size migration: Failed to allocate padding VMA");
 		return NULL;
@@ -347,7 +351,7 @@ void show_map_pad_vma(struct vm_area_struct *vma, struct seq_file *m,
 	else
 		((show_pad_maps_fn)func)(m, pad);
 
-	kfree(pad);
+	kmem_cache_free(vm_area_cachep, pad);
 }
 
 /*
