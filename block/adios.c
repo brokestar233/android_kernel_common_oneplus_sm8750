@@ -22,7 +22,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.1.0"
+#define ADIOS_VERSION "2.1.2"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -107,6 +107,7 @@ struct latency_model {
 };
 
 #define ADIOS_BQ_PAGES 2
+#define ADIOS_MAX_INSERTS_PER_LOCK 16
 
 // Adios scheduler data
 struct adios_data {
@@ -410,8 +411,9 @@ static void latency_model_input(struct adios_data *ad,
 		struct latency_model *model, u32 block_size, u64 latency, u64 pred_lat) {
 	u8 bucket_index;
 	struct per_cpu_lm_buckets *buckets;
+	int cpu = get_cpu();
 
-	buckets = this_cpu_ptr(model->pcpu_buckets);
+	buckets = per_cpu_ptr(model->pcpu_buckets, cpu);
 
 	if (block_size <= LM_BLOCK_SIZE_THRESHOLD) {
 		// Handle small requests
@@ -422,6 +424,8 @@ static void latency_model_input(struct adios_data *ad,
 
 		buckets->small_bucket[bucket_index].count++;
 		buckets->small_bucket[bucket_index].sum_latency += latency;
+
+		put_cpu();
 
 		if (unlikely(!model->base)) {
 			latency_model_update(ad, model);
@@ -440,6 +444,8 @@ static void latency_model_input(struct adios_data *ad,
 		buckets->large_bucket[bucket_index].count++;
 		buckets->large_bucket[bucket_index].sum_latency += latency;
 		buckets->large_bucket[bucket_index].sum_block_size += block_size;
+
+		put_cpu();
 	}
 }
 
@@ -648,8 +654,6 @@ static void insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 		return;
 	}
 
-	guard(spinlock_irqsave)(&ad->lock);
-
 	if (blk_mq_sched_try_insert_merge(q, rq, free))
 		return;
 
@@ -666,14 +670,24 @@ static void insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 static void adios_insert_requests(struct blk_mq_hw_ctx *hctx,
 				   struct list_head *list,
 				   blk_insert_t insert_flags) {
+	struct request_queue *q = hctx->queue;
+	struct adios_data *ad = q->elevator->elevator_data;
 	struct request *rq;
+	bool stop = false;
 	LIST_HEAD(free);
 
-	while (!list_empty(list)) {
-		rq = list_first_entry(list, struct request, queuelist);
-		list_del_init(&rq->queuelist);
-		insert_request(hctx, rq, insert_flags, &free);
-	}
+	do {
+	scoped_guard(spinlock_irqsave, &ad->lock)
+		for (int i = 0; i < ADIOS_MAX_INSERTS_PER_LOCK; i++) {
+			if (list_empty(list)) {
+				stop = true;
+				break;
+			}
+			rq = list_first_entry(list, struct request, queuelist);
+			list_del_init(&rq->queuelist);
+			insert_request(hctx, rq, insert_flags, &free);
+		}
+	} while (!stop);
 
 	blk_mq_free_requests(&free);
 }
