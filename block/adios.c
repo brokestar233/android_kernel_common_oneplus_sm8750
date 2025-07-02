@@ -22,7 +22,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.1.2"
+#define ADIOS_VERSION "2.1.3"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -433,8 +433,10 @@ static void latency_model_input(struct adios_data *ad,
 		}
 	} else {
 		// Handle large requests
-		if (!model->base || !pred_lat)
+		if (!model->base || !pred_lat) {
+			put_cpu();
 			return;
+		}
 
 		bucket_index = lm_input_bucket_index(latency, pred_lat);
 
