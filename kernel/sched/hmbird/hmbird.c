@@ -2300,6 +2300,8 @@ static int check_misfit_task_on_little(struct task_struct *p, struct rq *rq,
 
 	if (!cpumask_test_cpu(cpu, iso_masks.little))
 		return false;
+	if (p->pid == scx_systemui_pid)
+		return true;
 
 	gen_cluster_ctx(&ctx, BIG);
 	dsq_misfit = (dsq_int >= SCHED_PROP_DEADLINE_LEVEL1 &&
