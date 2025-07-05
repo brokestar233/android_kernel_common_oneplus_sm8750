@@ -7,6 +7,7 @@
 #
 
 # Some driver Makefiles miss $(srctree)/ for include directive.
+ccflags-y += -O3 -ffast-math
 ifdef building_out_of_srctree
 MAKEFLAGS += --include-dir=$(srctree)
 endif

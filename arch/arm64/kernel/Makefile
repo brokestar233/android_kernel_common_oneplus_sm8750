@@ -2,7 +2,7 @@
 #
 # Makefile for the linux kernel.
 #
-
+ccflags-y += -O3 -ffast-math
 CFLAGS_armv8_deprecated.o := -I$(src)
 
 CFLAGS_REMOVE_ftrace.o = $(CC_FLAGS_FTRACE)

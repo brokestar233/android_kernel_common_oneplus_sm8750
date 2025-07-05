@@ -5,7 +5,7 @@
 # 2 Sep 2000, Christoph Hellwig <hch@infradead.org>
 # Rewritten to use lists instead of if-statements.
 #
-
+ccflags-y += -O3 -ffast-math
 obj-y				:= devres.o socket.o core/
 
 obj-$(CONFIG_COMPAT)		+= compat.o
