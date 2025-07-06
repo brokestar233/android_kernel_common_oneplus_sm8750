@@ -139,5 +139,13 @@ struct zram {
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
+	int hybridswap_loglevel; // 日志级别
+    bool hybridswap_enabled; // hybridswap 开关
+    bool swapd_paused; // swapd 暂停状态
+    bool core_enabled; // 核心功能开关
+    struct file *loop_device; // 循环设备
+    u64 dev_life; // 设备寿命
+    u64 quota_day; // 每日配额
+    u64 zram_increase; // zram 容量增加
 };
 #endif
