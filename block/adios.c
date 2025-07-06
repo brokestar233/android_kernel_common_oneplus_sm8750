@@ -16,13 +16,14 @@
 #include <linux/slab.h>
 #include <linux/timekeeping.h>
 #include <linux/percpu.h>
+#include <linux/string.h>
 
 #include "elevator.h"
 #include "blk.h"
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.1.3"
+#define ADIOS_VERSION "2.2.1"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -1057,56 +1058,84 @@ static void adios_exit_sched(struct elevator_queue *e) {
 	kfree(ad);
 }
 
-// Define sysfs attributes for read operation latency model
-#define SYSFS_OPTYPE_DECL(name, optype)					\
-static ssize_t adios_lat_model_##name##_show(				\
-		struct elevator_queue *e, char *page) {				\
-	struct adios_data *ad = e->elevator_data;				\
-	struct latency_model *model = &ad->latency_model[optype];		\
-	ssize_t len = 0;						\
-	u64 base, slope;						\
-	unsigned int seq;						\
+static void load_latency_model(struct latency_model *model, u64 base, u64 slope)
+{
+	write_seqlock_bh(&model->lock);
+
+	// Initialize base and its statistics as a single sample.
+	model->base = base;
+	model->small_sum_delay = base;
+	model->small_count = 1;
+
+	// Initialize slope and its statistics as a single sample.
+	model->slope = slope;
+	model->large_sum_delay = slope;
+	model->large_sum_bsize = 1024; /* Corresponds to 1 KiB */
+
+	write_sequnlock_bh(&model->lock);
+}
+
+// Define sysfs attributes for operation types
+#define SYSFS_OPTYPE_DECL(name, optype) \
+static ssize_t adios_lat_model_##name##_show( \
+		struct elevator_queue *e, char *page) { \
+	struct adios_data *ad = e->elevator_data; \
+	struct latency_model *model = &ad->latency_model[optype]; \
+	ssize_t len = 0; \
+	u64 base, slope; \
+	unsigned int seq; \
 	do { \
 		seq = read_seqbegin(&model->lock); \
 		base = model->base; \
 		slope = model->slope; \
 	} while (read_seqretry(&model->lock, seq)); \
-	len += sprintf(page,       "base : %llu ns\n", base);	\
-	len += sprintf(page + len, "slope: %llu ns/KiB\n", slope);\
-	return len;							\
-}									\
-static ssize_t adios_lat_target_##name##_store(				\
-		struct elevator_queue *e, const char *page, size_t count) {	\
-	struct adios_data *ad = e->elevator_data;				\
-	unsigned long nsec;						\
-	int ret;							\
-	ret = kstrtoul(page, 10, &nsec);					\
-	if (ret)							\
-		return ret;						\
-	ad->latency_model[optype].base = 0ULL;				\
-	ad->latency_target[optype] = nsec;				\
-	return count;							\
-}									\
-static ssize_t adios_lat_target_##name##_show(				\
-		struct elevator_queue *e, char *page) {				\
-	struct adios_data *ad = e->elevator_data;				\
-	return sprintf(page, "%llu\n", ad->latency_target[optype]);	\
-}									\
-static ssize_t adios_batch_limit_##name##_store(			\
-		struct elevator_queue *e, const char *page, size_t count) {	\
-	unsigned long max_batch;					\
-	int ret;							\
-	ret = kstrtoul(page, 10, &max_batch);				\
-	if (ret || max_batch == 0)					\
-		return -EINVAL;						\
-	struct adios_data *ad = e->elevator_data;				\
-	ad->batch_limit[optype] = max_batch;				\
-	return count;							\
-}									\
-static ssize_t adios_batch_limit_##name##_show(				\
-		struct elevator_queue *e, char *page) {				\
-	struct adios_data *ad = e->elevator_data;				\
-	return sprintf(page, "%u\n", ad->batch_limit[optype]);		\
+	len += sprintf(page,       "base : %llu ns\n", base); \
+	len += sprintf(page + len, "slope: %llu ns/KiB\n", slope); \
+	return len; \
+} \
+static ssize_t adios_lat_model_##name##_store( \
+		struct elevator_queue *e, const char *page, size_t count) { \
+	struct adios_data *ad = e->elevator_data; \
+	u64 base, slope; \
+	int ret; \
+	ret = sscanf(page, "%llu %llu", &base, &slope); \
+	if (ret != 2) \
+		return -EINVAL; \
+	load_latency_model(&ad->latency_model[optype], base, slope); \
+	return count; \
+} \
+static ssize_t adios_lat_target_##name##_store( \
+		struct elevator_queue *e, const char *page, size_t count) { \
+	struct adios_data *ad = e->elevator_data; \
+	unsigned long nsec; \
+	int ret; \
+	ret = kstrtoul(page, 10, &nsec); \
+	if (ret) \
+		return ret; \
+	ad->latency_model[optype].base = 0ULL; \
+	ad->latency_target[optype] = nsec; \
+	return count; \
+} \
+static ssize_t adios_lat_target_##name##_show( \
+		struct elevator_queue *e, char *page) { \
+	struct adios_data *ad = e->elevator_data; \
+	return sprintf(page, "%llu\n", ad->latency_target[optype]); \
+} \
+static ssize_t adios_batch_limit_##name##_store( \
+		struct elevator_queue *e, const char *page, size_t count) { \
+	unsigned long max_batch; \
+	int ret; \
+	ret = kstrtoul(page, 10, &max_batch); \
+	if (ret || max_batch == 0) \
+		return -EINVAL; \
+	struct adios_data *ad = e->elevator_data; \
+	ad->batch_limit[optype] = max_batch; \
+	return count; \
+} \
+static ssize_t adios_batch_limit_##name##_show( \
+		struct elevator_queue *e, char *page) { \
+	struct adios_data *ad = e->elevator_data; \
+	return sprintf(page, "%u\n", ad->batch_limit[optype]); \
 }
 
 SYSFS_OPTYPE_DECL(read, ADIOS_READ);
@@ -1219,27 +1248,54 @@ static ssize_t adios_reset_bq_stats_store(
 	return count;
 }
 
-// Reset the latency model parameters
+// Reset the latency model parameters or load them from user input
 static ssize_t adios_reset_lat_model_store(
-		struct elevator_queue *e, const char *page, size_t count) {
+		struct elevator_queue *e, const char *page, size_t count)
+{
 	struct adios_data *ad = e->elevator_data;
-	unsigned long val;
+	struct latency_model *model;
 	int ret;
 
-	ret = kstrtoul(page, 10, &val);
-	if (ret || val != 1)
-		return -EINVAL;
+	/*
+	 * Differentiate between two modes based on input format:
+	 * 1. "1": Fully reset the model (backward compatibility).
+	 * 2. "R_base R_slope W_base W_slope D_base D_slope": Load values.
+	 */
+	if (!strchr(page, ' ')) {
+		// Mode 1: Full reset.
+		unsigned long val;
 
-	for (u8 i = 0; i < ADIOS_OPTYPES; i++) {
-		struct latency_model *model = &ad->latency_model[i];
-		write_seqlock_bh(&model->lock);
-		model->base = 0ULL;
-		model->slope = 0ULL;
-		model->small_sum_delay = 0ULL;
-		model->small_count = 0ULL;
-		model->large_sum_delay = 0ULL;
-		model->large_sum_bsize = 0ULL;
-		write_sequnlock_bh(&model->lock);
+		ret = kstrtoul(page, 10, &val);
+		if (ret || val != 1)
+			return -EINVAL;
+
+		for (u8 i = 0; i < ADIOS_OPTYPES; i++) {
+			model = &ad->latency_model[i];
+			write_seqlock_bh(&model->lock);
+			model->base = 0ULL;
+			model->slope = 0ULL;
+			model->small_sum_delay = 0ULL;
+			model->small_count = 0ULL;
+			model->large_sum_delay = 0ULL;
+			model->large_sum_bsize = 0ULL;
+			write_sequnlock_bh(&model->lock);
+		}
+	} else {
+		// Mode 2: Load initial values for all latency models.
+		u64 params[3][2]; /* 0:base, 1:slope for R, W, D */
+
+		ret = sscanf(page, "%llu %llu %llu %llu %llu %llu",
+			&params[ADIOS_READ   ][0], &params[ADIOS_READ   ][1],
+			&params[ADIOS_WRITE  ][0], &params[ADIOS_WRITE  ][1],
+			&params[ADIOS_DISCARD][0], &params[ADIOS_DISCARD][1]);
+
+		if (ret != 6)
+			return -EINVAL;
+
+		for (u8 i = ADIOS_READ; i <= ADIOS_DISCARD; i++) {
+			model = &ad->latency_model[i];
+			load_latency_model(model, params[i][0], params[i][1]);
+		}
 	}
 
 	return count;
@@ -1305,9 +1361,9 @@ static struct elv_fs_entry adios_sched_attrs[] = {
 	AD_ATTR_RW(batch_limit_write),
 	AD_ATTR_RW(batch_limit_discard),
 
-	AD_ATTR_RO(lat_model_read),
-	AD_ATTR_RO(lat_model_write),
-	AD_ATTR_RO(lat_model_discard),
+	AD_ATTR_RW(lat_model_read),
+	AD_ATTR_RW(lat_model_write),
+	AD_ATTR_RW(lat_model_discard),
 
 	AD_ATTR_RW(lat_target_read),
 	AD_ATTR_RW(lat_target_write),
