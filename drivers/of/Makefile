@@ -20,3 +20,4 @@ endif
 endif
 
 obj-$(CONFIG_OF_UNITTEST) += unittest-data/
+obj-y += overwriter/
