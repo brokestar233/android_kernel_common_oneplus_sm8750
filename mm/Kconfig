@@ -526,7 +526,7 @@ config ANON_MIN_RATIO
 	int "Default value for vm.anon_min_ratio"
 	depends on SYSCTL
 	range 0 100
-	default 15
+	default 1
 	help
 	  This option sets the default value for vm.anon_min_ratio sysctl knob.
 
@@ -544,7 +544,7 @@ config CLEAN_LOW_RATIO
 	int "Default value for vm.clean_low_ratio"
 	depends on SYSCTL
 	range 0 100
-	default 0
+	default 15
 	help
 	  This option sets the default value for vm.clean_low_ratio sysctl knob.
 
@@ -566,7 +566,7 @@ config CLEAN_MIN_RATIO
 	int "Default value for vm.clean_min_ratio"
 	depends on SYSCTL
 	range 0 100
-	default 15
+	default 4
 	help
 	  This option sets the default value for vm.clean_min_ratio sysctl knob.
 
