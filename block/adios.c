@@ -23,7 +23,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.2.4"
+#define ADIOS_VERSION "2.2.5"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -942,7 +942,7 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 	struct adios_data *ad;
 	struct elevator_queue *eq;
 	int ret = -ENOMEM;
-	int cpu = 0;
+	u8 optype = 0;
 
 	eq = elevator_alloc(q, e);
 	if (!eq)
@@ -989,7 +989,7 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 		goto destroy_dl_group_pool;
 	}
 
-	for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++) {
+	for (optype = 0; optype < ADIOS_OPTYPES; optype++) {
 		struct latency_model *model = &ad->latency_model[optype];
 		seqlock_init(&model->lock);
 
@@ -1026,8 +1026,8 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 
 free_buckets:
 	pr_err("adios: Failed to allocate per-cpu buckets\n");
-	while (--cpu >= 0) {
-		struct latency_model *prev_model = &ad->latency_model[cpu];
+	while (--optype >= 0) {
+		struct latency_model *prev_model = &ad->latency_model[optype];
 		free_percpu(prev_model->pcpu_buckets);
 	}
 	kfree(ad->aggr_buckets);
