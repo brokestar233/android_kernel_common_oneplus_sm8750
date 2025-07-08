@@ -2036,8 +2036,6 @@ static void zram_reset_device(struct zram *zram)
 	down_write(&zram->init_lock);
 
 	zram->limit_pages = 0;
-	zram->hybridswap_enabled = true;
-	zram->core_enabled = true;
 
 	set_capacity_and_notify(zram->disk, 0);
 	part_stat_set_all(zram->disk->part0, 0);
@@ -2168,68 +2166,6 @@ static const struct block_device_operations zram_devops = {
 	.owner = THIS_MODULE
 };
 
-static ssize_t hybridswap_vmstat_show(struct device *dev,
-                                     struct device_attribute *attr, char *buf)
-{
-    struct zram *zram = dev_to_zram(dev);
-    down_read(&zram->init_lock);
-    ssize_t ret = scnprintf(buf, PAGE_SIZE,
-                           "pages_stored: %llu\n"
-                           "compr_data_size: %llu\n"
-                           "same_pages: %llu\n"
-                           "huge_pages: %llu\n",
-                           (u64)atomic64_read(&zram->stats.pages_stored),
-                           (u64)atomic64_read(&zram->stats.compr_data_size),
-                           (u64)atomic64_read(&zram->stats.same_pages),
-                           (u64)atomic64_read(&zram->stats.huge_pages));
-    up_read(&zram->init_lock);
-    return ret;
-}
-
-static ssize_t hybridswap_enable_show(struct device *dev,
-                                     struct device_attribute *attr, char *buf)
-{
-    struct zram *zram = dev_to_zram(dev);
-    down_read(&zram->init_lock);
-    ssize_t ret = scnprintf(buf, PAGE_SIZE, "%d\n", zram->hybridswap_enabled);
-    up_read(&zram->init_lock);
-    return ret;
-}
-
-static ssize_t hybridswap_core_enable_show(struct device *dev,
-                                          struct device_attribute *attr, char *buf)
-{
-    struct zram *zram = dev_to_zram(dev);
-    down_read(&zram->init_lock);
-    ssize_t ret = scnprintf(buf, PAGE_SIZE, "%d\n", zram->core_enabled);
-    up_read(&zram->init_lock);
-    return ret;
-}
-
-static ssize_t hybridswap_report_show(struct device *dev,
-                                     struct device_attribute *attr, char *buf)
-{
-    // 占位符：返回默认报告
-    return scnprintf(buf, PAGE_SIZE, "No report available\n");
-}
-
-static ssize_t hybridswap_stat_snap_show(struct device *dev,
-                                        struct device_attribute *attr, char *buf)
-{
-    // 占位符：返回默认统计快照
-    return scnprintf(buf, PAGE_SIZE, "No snapshot available\n");
-}
-
-static ssize_t hybridswap_meminfo_show(struct device *dev,
-                                      struct device_attribute *attr, char *buf)
-{
-    struct sysinfo si;
-    si_meminfo(&si);
-    return scnprintf(buf, PAGE_SIZE,
-                     "totalram: %lu\nfreeram: %lu\n",
-                     si.totalram, si.freeram);
-}
-
 static DEVICE_ATTR_WO(compact);
 static DEVICE_ATTR_RW(disksize);
 static DEVICE_ATTR_RO(initstate);
@@ -2249,12 +2185,6 @@ static DEVICE_ATTR_RW(writeback_limit_enable);
 static DEVICE_ATTR_RW(recomp_algorithm);
 static DEVICE_ATTR_WO(recompress);
 #endif
-static DEVICE_ATTR_RO(hybridswap_vmstat);
-static DEVICE_ATTR_RO(hybridswap_enable);
-static DEVICE_ATTR_RO(hybridswap_core_enable);
-static DEVICE_ATTR_RO(hybridswap_report);
-static DEVICE_ATTR_RO(hybridswap_stat_snap);
-static DEVICE_ATTR_RO(hybridswap_meminfo);
 
 static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_disksize.attr,
@@ -2282,12 +2212,6 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_recomp_algorithm.attr,
 	&dev_attr_recompress.attr,
 #endif
-	&dev_attr_hybridswap_vmstat.attr,
-    &dev_attr_hybridswap_enable.attr,
-    &dev_attr_hybridswap_core_enable.attr,
-    &dev_attr_hybridswap_report.attr,
-    &dev_attr_hybridswap_stat_snap.attr,
-    &dev_attr_hybridswap_meminfo.attr,
 	NULL,
 };
 
