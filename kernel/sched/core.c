@@ -38,6 +38,10 @@
 #include <linux/sched/rseq_api.h>
 #include <linux/sched/rt.h>
 
+#ifdef CONFIG_QOS_CTRL
+#include <linux/sched/qos_ctrl.h>
+#endif
+
 #include <linux/blkdev.h>
 #include <linux/context_tracking.h>
 #include <linux/cpuset.h>
@@ -4898,6 +4902,10 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	int ret;
 
 	trace_android_rvh_sched_fork(p);
+
+#ifdef CONFIG_QOS_CTRL
+	init_task_qos(p);
+#endif
 
 	__sched_fork(clone_flags, p);
 	/*
