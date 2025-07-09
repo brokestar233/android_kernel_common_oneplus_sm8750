@@ -70,6 +70,10 @@
 #include <linux/sysfs.h>
 #include <linux/user_events.h>
 
+#ifdef CONFIG_QOS_CTRL
+#include <linux/sched/qos_ctrl.h>
+#endif
+
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
 #include <asm/mmu_context.h>
@@ -832,6 +836,10 @@ void __noreturn do_exit(long code)
 
 	io_uring_files_cancel();
 	exit_signals(tsk);  /* sets PF_EXITING */
+
+#ifdef CONFIG_QOS_CTRL
+	sched_exit_qos_list(tsk);
+#endif
 
 	trace_android_vh_exit_check(current);
 
