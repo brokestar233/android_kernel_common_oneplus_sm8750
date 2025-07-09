@@ -738,6 +738,20 @@ struct kmap_ctrl {
 #endif
 };
 
+#ifdef CONFIG_QOS_CTRL
+struct qos_task_struct {
+	/*
+	 * 'in_qos' marks the qos level o current task, greater value for
+	 * greater qos, range from (NO_QOS, NR_QOS)
+	 *
+	 *
+	 * 'qos_list' use to track task with qos supply in auth_struct
+	 */
+	int                 in_qos;
+	struct list_head    qos_list;
+};
+#endif
+
 struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/*
@@ -1532,7 +1546,11 @@ struct task_struct {
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
 #endif
+#ifdef CONFIG_QOS_CTRL
+	ANDROID_KABI_USE(3,struct qos_task_struct *qts);
+#else
 	ANDROID_KABI_RESERVE(3);
+#endif
 	ANDROID_KABI_RESERVE(4);
 	ANDROID_KABI_RESERVE(5);
 	ANDROID_KABI_RESERVE(6);
