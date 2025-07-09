@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0
+config AUTHORITY_CTRL
+	tristate "Authority Control for RTG & QOS"
+	default y
+	help
+	  Control thread's authority for specific kenrel feature such as RTG
+	  or QOS. Use uid as the authentication granularity. Status switching
+	  will change uid's authority, and would trigger additional actions
+	  registered by specific kernel feature.
+
+config QOS_CTRL
+	bool "Multiple Level Qos Control for thread"
+	default y
+	depends on AUTHORITY_CTRL
+	help
+	  If set, thread can apply qos for less execution latency and get more
+	  cpu supply. Permission and absolute supply aggressiveness was controlled
+	  by AUTHORITY_CTRL.
+
+config RTG_AUTHORITY
+	bool "Authority Control for SCHED_RTG_FRAME"
+	default n
+	depends on AUTHORITY_CTRL
+	depends on SCHED_RTG_FRAME
+	help
+	  Authority control for SCHED_RTG_FRAME. If set, access to SCHED_RTG_FRAME's
+	  ioctl cmd will be restricted.
+
+config QOS_AUTHORITY
+	bool "Authority Control for QOS_CTRL"
+	default y
+	depends on AUTHORITY_CTRL
+	depends on QOS_CTRL
+	help
+	  Authority control for QOS_CTRL. If set, access to QOS_CTRL's ioctl cmd will
+	  be restricted.
+
+config AUTH_QOS_DEBUG
+	bool "Debug fs for qos_ctrl and auth_ctrl"
+	default n
+	depends on AUTHORITY_CTRL
+	depends on RTG_AUTHORITY
+	depends on QOS_AUTHORITY
+	help
+	  If set, debug node will show auth and qos info
+
+config QOS_POLICY_MAX_NR
+	int "Number of supported qos policy"
+	range 5 20
+	default 5
+	depends on QOS_CTRL
+	help
+	  Qos policy number limit. Truly initialized qos policy could small then
+	  this value.
+
