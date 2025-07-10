@@ -200,7 +200,7 @@ static bool is_numeric_value(const char *value)
 static int __init remove_dt_node(const char *path)
 {
     struct device_node *np, *parent, *child, *prev_child;
-    unsigned long flags;  // 添加 flags 变量声明
+    unsigned long flags;
     int ret = 0;
 
     pr_info("%s: Removing node: '%s'\n", PATCH_TAG, path);
@@ -258,7 +258,7 @@ static int __init remove_dt_property(const char *path, const char *prop_name)
 {
     struct device_node *np;
     struct property *prop, *prev_prop;
-    unsigned long flags;  // 添加 flags 变量声明
+    unsigned long flags;
     int ret = 0;
 
     pr_info("%s: Removing property '%s' from node: '%s'\n", PATCH_TAG, prop_name, path);
@@ -307,6 +307,195 @@ static int __init remove_dt_property(const char *path, const char *prop_name)
     return ret;
 }
 
+/* Create a new device tree node */
+static int __init create_dt_node(const char *path)
+{
+    struct device_node *np, *parent;
+    char *node_name, *parent_path;
+    unsigned long flags;
+    int ret = 0;
+
+    pr_info("%s: Creating node: '%s'\n", PATCH_TAG, path);
+
+    /* Find the last '/' to separate parent path and node name */
+    node_name = strrchr(path, '/');
+    if (!node_name || node_name == path) {
+        pr_err("%s: Invalid path format for node creation: '%s'\n", PATCH_TAG, path);
+        return -EINVAL;
+    }
+
+    /* Duplicate path to split */
+    parent_path = kstrdup(path, GFP_ATOMIC);
+    if (!parent_path) {
+        pr_err("%s: Failed to allocate memory for parent path\n", PATCH_TAG);
+        return -ENOMEM;
+    }
+
+    /* Split parent path and node name */
+    parent_path[node_name - path] = '\0';
+    node_name++;
+
+    /* Find parent node */
+    parent = of_find_node_by_path(parent_path);
+    if (!parent) {
+        pr_err("%s: Parent node not found: '%s'\n", PATCH_TAG, parent_path);
+        kfree(parent_path);
+        return -ENODEV;
+    }
+
+    /* Check if node already exists */
+    np = of_find_node_by_path(path);
+    if (np) {
+        pr_info("%s: Node '%s' already exists\n", PATCH_TAG, path);
+        of_node_put(np);
+        of_node_put(parent);
+        kfree(parent_path);
+        return 0;
+    }
+
+    /* Create new node */
+    np = kzalloc(sizeof(*np), GFP_ATOMIC);
+    if (!np) {
+        pr_err("%s: Failed to allocate memory for new node\n", PATCH_TAG);
+        of_node_put(parent);
+        kfree(parent_path);
+        return -ENOMEM;
+    }
+
+    /* 初始化node的关键字段 */
+    of_node_init(np);  /* 如果内核版本支持，调用此函数 */
+
+    np->name = kstrdup(node_name, GFP_ATOMIC);
+    if (!np->name) {
+        pr_err("%s: Failed to allocate memory for node name\n", PATCH_TAG);
+        kfree(np);
+        of_node_put(parent);
+        kfree(parent_path);
+        return -ENOMEM;
+    }
+
+    np->full_name = kstrdup(path, GFP_ATOMIC);
+    if (!np->full_name) {
+        pr_err("%s: Failed to allocate memory for full node name\n", PATCH_TAG);
+        kfree(np->name);
+        kfree(np);
+        of_node_put(parent);
+        kfree(parent_path);
+        return -ENOMEM;
+    }
+
+    /* Link node to parent */
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    np->parent = of_node_get(parent);  /* 增加parent的引用计数 */
+    np->sibling = parent->child;
+    parent->child = np;
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+
+    pr_info("%s: Successfully created node: '%s'\n", PATCH_TAG, path);
+
+    of_node_put(parent);
+    kfree(parent_path);
+    return ret;
+}
+
+/* Create a new device tree property with a value */
+static int __init create_dt_property(const char *path, const char *prop_name, const char *value)
+{
+    struct device_node *np;
+    struct property *prop;
+    unsigned long flags;
+    u8 *bin_value = NULL;
+    size_t bin_len;
+    int ret = 0;
+    bool is_string_value;
+
+    pr_info("%s: Creating property '%s' in node '%s' with value '%s'\n", PATCH_TAG, prop_name, path, value);
+
+    /* Find the device tree node */
+    np = of_find_node_by_path(path);
+    if (!np) {
+        pr_err("%s: DT node not found: '%s'\n", PATCH_TAG, path);
+        return -ENODEV;
+    }
+
+    /* Check if property already exists */
+    prop = of_find_property(np, prop_name, NULL);
+    if (prop) {
+        pr_info("%s: Property '%s' already exists in node '%s'\n", PATCH_TAG, prop_name, path);
+        of_node_put(np);
+        return -EEXIST;
+    }
+
+    /* Allocate new property */
+    prop = kzalloc(sizeof(*prop), GFP_ATOMIC);
+    if (!prop) {
+        pr_err("%s: Failed to allocate memory for new property\n", PATCH_TAG);
+        of_node_put(np);
+        return -ENOMEM;
+    }
+
+    /* Set property name */
+    prop->name = kstrdup(prop_name, GFP_ATOMIC);
+    if (!prop->name) {
+        pr_err("%s: Failed to allocate memory for property name\n", PATCH_TAG);
+        kfree(prop);
+        of_node_put(np);
+        return -ENOMEM;
+    }
+
+    /* 检查value是否为空 */
+    if (!value) {
+        /* 创建空属性 */
+        prop->length = 0;
+        prop->value = NULL;
+        pr_info("%s: Created empty property '%s'\n", PATCH_TAG, prop_name);
+    } else {
+        /* Determine if this is a string or numeric value */
+        is_string_value = !is_numeric_value(value);
+
+        if (is_string_value) {
+            /* Handle as string value */
+            size_t str_len = strlen(value);
+            prop->length = str_len + 1;  /* Include null terminator */
+            prop->value = kzalloc(prop->length, GFP_ATOMIC);
+            if (!prop->value) {
+                pr_err("%s: Failed to allocate memory for string value\n", PATCH_TAG);
+                kfree(prop->name);
+                kfree(prop);
+                of_node_put(np);
+                return -ENOMEM;
+            }
+            memcpy(prop->value, value, str_len);
+            ((char *)prop->value)[str_len] = '\0';  /* 确保null终止 */
+            pr_info("%s: Created string property '%s' with value '%s' (len=%d)\n", 
+                    PATCH_TAG, prop_name, value, prop->length);
+        } else {
+            /* Handle as numeric value */
+            ret = parse_numbers(value, &bin_value, &bin_len);
+            if (ret != 0) {
+                pr_err("%s: Failed to parse numeric value '%s': %d\n", PATCH_TAG, value, ret);
+                kfree(prop->name);
+                kfree(prop);
+                of_node_put(np);
+                return ret;
+            }
+
+            prop->length = bin_len;
+            prop->value = bin_value;
+            pr_info("%s: Created numeric property '%s' with length %zu\n", PATCH_TAG, prop_name, bin_len);
+        }
+    }
+
+    /* Link property to node */
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    prop->next = np->properties;
+    np->properties = prop;
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+
+    of_node_put(np);
+    return ret;
+}
+
 static int __init patch_device_tree(const char *input)
 {
     struct device_node *np;
@@ -332,10 +521,9 @@ static int __init patch_device_tree(const char *input)
         return -ENOMEM;
     }
 
-    /* Check if this is a remove operation */
-    if (dup[0] == 'r' || dup[0] == 'd') {
-        operation = dup[0];
-        
+    /* Check operation type */
+    operation = dup[0];
+    if (operation == 'r' || operation == 'd' || operation == 'c' || operation == 'a') {
         /* Skip operation character and following space */
         char *op_input = dup + 1;
         while (*op_input && (*op_input == ' ' || *op_input == '\t'))
@@ -348,7 +536,6 @@ static int __init patch_device_tree(const char *input)
             return ret;
         } else if (operation == 'd') {
             /* Remove property: "d /path/to/node/property" */
-            /* Find the last '/' to separate path and property */
             char *last_slash = strrchr(op_input, '/');
             if (!last_slash || last_slash == op_input) {
                 pr_err("%s: Invalid format for remove property operation: no valid path\n", PATCH_TAG);
@@ -356,12 +543,10 @@ static int __init patch_device_tree(const char *input)
                 return -EINVAL;
             }
             
-            /* Split path and property name */
             *last_slash = '\0';
             path = op_input;
             prop_name = last_slash + 1;
             
-            /* Remove leading/trailing whitespace from property name */
             while (*prop_name && (*prop_name == ' ' || *prop_name == '\t'))
                 prop_name++;
             
@@ -371,10 +556,54 @@ static int __init patch_device_tree(const char *input)
             ret = remove_dt_property(path, prop_name);
             kfree(dup);
             return ret;
+        } else if (operation == 'c') {
+            /* Create node: "c /path/to/node" */
+            ret = create_dt_node(op_input);
+            kfree(dup);
+            return ret;
+        } else if (operation == 'a') {
+            /* Create property: "a /path/to/node/property value" */
+            space_pos = strchr(op_input, ' ');
+            if (!space_pos) {
+                pr_err("%s: Invalid format for create property operation: no value specified\n", PATCH_TAG);
+                kfree(dup);
+                return -EINVAL;
+            }
+            
+            *space_pos = '\0';
+            path = op_input;
+            value = space_pos + 1;
+            
+            while (*value && (*value == ' ' || *value == '\t' || *value == '\n'))
+                value++;
+            
+            if (*value == '\0') {
+                pr_err("%s: Empty value for create property operation\n", PATCH_TAG);
+                kfree(dup);
+                return -EINVAL;
+            }
+            
+            prop_name = strrchr(path, '/');
+            if (!prop_name || prop_name == path) {
+                pr_err("%s: Invalid path format for create property: '%s'\n", PATCH_TAG, path);
+                kfree(dup);
+                return -EINVAL;
+            }
+            
+            *prop_name = '\0';
+            prop_name++;
+            
+            pr_info("%s: Parsed path: '%s'\n", PATCH_TAG, path);
+            pr_info("%s: Property name: '%s'\n", PATCH_TAG, prop_name);
+            pr_info("%s: Property value: '%s'\n", PATCH_TAG, value);
+            
+            ret = create_dt_property(path, prop_name, value);
+            kfree(dup);
+            return ret;
         }
     }
     
-    /* Find the first space to separate path and value */
+    /* Existing modify property operation */
     space_pos = strchr(dup, ' ');
     if (!space_pos) {
         pr_err("%s: Invalid input format, no space found\n", PATCH_TAG);
@@ -540,16 +769,83 @@ static int __init patch_device_tree(const char *input)
     return 0;
 }
 
+static char *get_property_from_cmdline(const char *input)
+{
+    char *cmdline = saved_command_line;
+    char *prop_buf = NULL;
+    char *prop_start, *prop_end;
+    int len;
+
+    pr_info("Kernel cmdline: %s\n", cmdline);
+
+    /* Construct the property prefix (e.g., "input=") */
+    char *prop_prefix = kmalloc(strlen(input) + 2, GFP_ATOMIC);
+    if (!prop_prefix) {
+        pr_err("Failed to allocate memory for property prefix\n");
+        return NULL;
+    }
+    snprintf(prop_prefix, strlen(input) + 2, "%s=", input);
+
+    /* Find the property in the command line */
+    prop_start = strstr(cmdline, prop_prefix);
+    if (prop_start) {
+        prop_start += strlen(prop_prefix);
+        prop_end = strchr(prop_start, ' ');
+        len = prop_end ? (prop_end - prop_start) : strlen(prop_start);
+
+        /* Allocate memory for the property value */
+        prop_buf = kmalloc(len + 1, GFP_ATOMIC);
+        if (prop_buf) {
+            strncpy(prop_buf, prop_start, len);
+            prop_buf[len] = '\0';
+            pr_info("Found property %s: %s\n", input, prop_buf);
+        } else {
+            pr_err("Failed to allocate memory for property value\n");
+        }
+    } else {
+        pr_err("Property %s not found in cmdline\n", input);
+    }
+
+    kfree(prop_prefix);
+    return prop_buf ? prop_buf : NULL;
+}
+
 static int __init overwrite_config_init(void)
 {
+    char *device_name = get_property_from_cmdline("oplusboot.prjname");
+    
     for (int i = 0; i < overwrite_config_line_count; i++) {
         const char *line = overwrite_config_lines[i];
+        char *line_copy = kstrdup(line, GFP_ATOMIC);
+        if (!line_copy) {
+            pr_err("Failed to allocate memory for line copy\n");
+            continue;
+        }
 
-        patch_device_tree(line);
+        /* Split prefix and value */
+        char *prefix = line_copy;
+        char *value = strchr(line_copy, ':');
+        if (value) {
+            *value = '\0'; /* Null-terminate prefix */
+            value++;       /* Move to the value part */
+            
+            /* Check if prefix matches device_name or "common" */
+            if ((device_name && strcmp(prefix, device_name) == 0) || 
+                strcmp(prefix, "common") == 0) {
+                patch_device_tree(value);
+                pr_info("Applied patch for prefix %s with value %s\n", prefix, value);
+            } else {
+                pr_info("Skipped patch for prefix %s (device: %s)\n", prefix, device_name ? device_name : "none");
+            }
+        } else {
+            pr_err("Invalid line format: %s\n", line);
+        }
+        
+        kfree(line_copy);
     }
     
+    kfree(device_name);
     return 0;
 }
 
-// 使用尽可能早的初始化为硬件设置
 early_initcall(overwrite_config_init);
