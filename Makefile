@@ -5,6 +5,8 @@ SUBLEVEL = 108
 EXTRAVERSION =
 NAME = Pinguïn Aangedreven
 
+KCFLAGS += -D__ANDROID_COMMON_KERNEL__
+
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
 # More info can be located in ./README
