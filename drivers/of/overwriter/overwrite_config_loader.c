@@ -507,6 +507,8 @@ static int __init patch_device_tree(const char *input)
     int ret;
     bool is_string_value = false;
     char operation;
+    char *op_input;
+    size_t final_len;
 
     if (!input || strlen(input) == 0) {
         pr_err("%s: Invalid input\n", PATCH_TAG);
@@ -525,7 +527,7 @@ static int __init patch_device_tree(const char *input)
     operation = dup[0];
     if (operation == 'r' || operation == 'd' || operation == 'c' || operation == 'a') {
         /* Skip operation character and following space */
-        char *op_input = dup + 1;
+        op_input = dup + 1;
         while (*op_input && (*op_input == ' ' || *op_input == '\t'))
             op_input++;
         
@@ -706,7 +708,7 @@ static int __init patch_device_tree(const char *input)
         old_value = prop->value;
         
         /* If the parsed length is smaller than original, pad with zeros */
-        size_t final_len = max(bin_len, (size_t)prop->length);
+        final_len = max(bin_len, (size_t)prop->length);
         
         prop->value = kzalloc(final_len, GFP_ATOMIC);  /* kzalloc zeros the memory */
         if (!prop->value) {
