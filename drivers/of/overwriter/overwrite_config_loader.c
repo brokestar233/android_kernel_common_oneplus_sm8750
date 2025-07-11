@@ -398,6 +398,108 @@ static int __init create_dt_node(const char *path)
     return ret;
 }
 
+/*
+ * 新增函数: parse_hex_bytes
+ * 解析形如 "[00 11 22 FF]" 的十六进制字节字符串，将其转换为二进制字节数组。
+ */
+static int parse_hex_bytes(const char *value_str, u8 **out_buf, size_t *out_len)
+{
+    char *dup, *p, *token_start;
+    u8 *buf;
+    size_t count = 0, i = 0;
+    unsigned long val;
+    char *endptr;
+
+    // 确保字符串以 '[' 开头，以 ']' 结尾，并且至少有 "[]"
+    if (!value_str || strlen(value_str) < 2 || value_str[0] != '[' || value_str[strlen(value_str) - 1] != ']') {
+        pr_err("parse_hex_bytes: Invalid format, must be like '[00 FF 12]'\n");
+        return -EINVAL;
+    }
+
+    // 复制内部内容，跳过 '[' 和 ']'
+    dup = kstrdup(value_str + 1, GFP_ATOMIC);
+    if (!dup)
+        return -ENOMEM;
+    dup[strlen(dup) - 1] = '\0'; // 移除末尾的 ']'
+
+    // 第一遍：计算字节数量
+    p = dup;
+    while (*p) {
+        if (is_hex_digit(*p)) {
+            // 找到一个十六进制字符，假设这是一个字节的开始
+            count++;
+            // 跳过当前字节的两个十六进制字符和可能的空格
+            p++; 
+            if (is_hex_digit(*p)) p++;
+            while (*p && (*p == ' ' || *p == '\t' || *p == '\n')) p++;
+        } else if (*p == ' ' || *p == '\t' || *p == '\n') {
+            p++;
+        } else {
+            pr_err("parse_hex_bytes: Invalid character '%c' in hex string '%s'\n", *p, value_str);
+            kfree(dup);
+            return -EINVAL;
+        }
+    }
+
+    if (count == 0) {
+        pr_info("parse_hex_bytes: No hex bytes found in '%s'\n", value_str);
+        *out_buf = NULL;
+        *out_len = 0;
+        kfree(dup);
+        return 0;
+    }
+
+    pr_info("parse_hex_bytes: found %zu bytes in '%s'\n", count, value_str);
+
+    buf = kmalloc(count, GFP_ATOMIC);
+    if (!buf) {
+        kfree(dup);
+        return -ENOMEM;
+    }
+
+    // 第二遍：解析每个字节
+    p = dup;
+    i = 0;
+    while (*p && i < count) {
+        // 跳过空格
+        while (*p && (*p == ' ' || *p == '\t' || *p == '\n')) p++;
+
+        if (!*p) break; // 已经处理完所有内容
+
+        token_start = p;
+        // 确保有两个十六进制字符
+        if (!is_hex_digit(token_start[0]) || !is_hex_digit(token_start[1])) {
+            pr_err("parse_hex_bytes: Invalid hex byte format '%s' in '%s'\n", token_start, value_str);
+            kfree(buf);
+            kfree(dup);
+            return -EINVAL;
+        }
+        p += 2; // 跳过两个十六进制字符
+
+        char byte_str[3];
+        strncpy(byte_str, token_start, 2);
+        byte_str[2] = '\0';
+
+        val = simple_strtoul(byte_str, &endptr, 16);
+        if (endptr == byte_str || *endptr != '\0') {
+            pr_err("parse_hex_bytes: invalid hex byte '%s'\n", byte_str);
+            kfree(buf);
+            kfree(dup);
+            return -EINVAL;
+        }
+        
+        buf[i++] = (u8)val;
+    }
+
+    *out_buf = buf;
+    *out_len = i;
+    kfree(dup);
+
+    pr_info("parse_hex_bytes: successfully parsed %zu bytes\n", i);
+    return 0;
+}
+
+
 /* Create a new device tree property with a value */
 static int __init create_dt_property(const char *path, const char *prop_name, const char *value)
 {
@@ -408,6 +510,7 @@ static int __init create_dt_property(const char *path, const char *prop_name, co
     size_t bin_len;
     int ret = 0;
     bool is_string_value;
+    bool is_hex_byte_value = false;
 
     pr_info("%s: Creating property '%s' in node '%s' with value '%s'\n", PATCH_TAG, prop_name, path, value);
 
@@ -450,39 +553,55 @@ static int __init create_dt_property(const char *path, const char *prop_name, co
         prop->value = NULL;
         pr_info("%s: Created empty property '%s'\n", PATCH_TAG, prop_name);
     } else {
-        /* Determine if this is a string or numeric value */
-        is_string_value = !is_numeric_value(value);
-
-        if (is_string_value) {
-            /* Handle as string value */
-            size_t str_len = strlen(value);
-            prop->length = str_len + 1;  /* Include null terminator */
-            prop->value = kzalloc(prop->length, GFP_ATOMIC);
-            if (!prop->value) {
-                pr_err("%s: Failed to allocate memory for string value\n", PATCH_TAG);
-                kfree(prop->name);
-                kfree(prop);
-                of_node_put(np);
-                return -ENOMEM;
-            }
-            memcpy(prop->value, value, str_len);
-            ((char *)prop->value)[str_len] = '\0';  /* 确保null终止 */
-            pr_info("%s: Created string property '%s' with value '%s' (len=%d)\n", 
-                    PATCH_TAG, prop_name, value, prop->length);
-        } else {
-            /* Handle as numeric value */
-            ret = parse_numbers(value, &bin_value, &bin_len);
+        // 检查是否为十六进制字节数组格式
+        if (value[0] == '[' && value[strlen(value) - 1] == ']') {
+            is_hex_byte_value = true;
+            ret = parse_hex_bytes(value, &bin_value, &bin_len);
             if (ret != 0) {
-                pr_err("%s: Failed to parse numeric value '%s': %d\n", PATCH_TAG, value, ret);
+                pr_err("%s: Failed to parse hex byte value '%s': %d\n", PATCH_TAG, value, ret);
                 kfree(prop->name);
                 kfree(prop);
                 of_node_put(np);
                 return ret;
             }
-
             prop->length = bin_len;
             prop->value = bin_value;
-            pr_info("%s: Created numeric property '%s' with length %zu\n", PATCH_TAG, prop_name, bin_len);
+            pr_info("%s: Created hex byte property '%s' with length %zu\n", PATCH_TAG, prop_name, bin_len);
+        } else {
+            /* Determine if this is a string or numeric value */
+            is_string_value = !is_numeric_value(value);
+
+            if (is_string_value) {
+                /* Handle as string value */
+                size_t str_len = strlen(value);
+                prop->length = str_len + 1;  /* Include null terminator */
+                prop->value = kzalloc(prop->length, GFP_ATOMIC);
+                if (!prop->value) {
+                    pr_err("%s: Failed to allocate memory for string value\n", PATCH_TAG);
+                    kfree(prop->name);
+                    kfree(prop);
+                    of_node_put(np);
+                    return -ENOMEM;
+                }
+                memcpy(prop->value, value, str_len);
+                ((char *)prop->value)[str_len] = '\0';  /* 确保null终止 */
+                pr_info("%s: Created string property '%s' with value '%s' (len=%d)\n", 
+                        PATCH_TAG, prop_name, value, prop->length);
+            } else {
+                /* Handle as numeric value */
+                ret = parse_numbers(value, &bin_value, &bin_len);
+                if (ret != 0) {
+                    pr_err("%s: Failed to parse numeric value '%s': %d\n", PATCH_TAG, value, ret);
+                    kfree(prop->name);
+                    kfree(prop);
+                    of_node_put(np);
+                    return ret;
+                }
+
+                prop->length = bin_len;
+                prop->value = bin_value;
+                pr_info("%s: Created numeric property '%s' with length %zu\n", PATCH_TAG, prop_name, bin_len);
+            }
         }
     }
 
@@ -506,6 +625,7 @@ static int __init patch_device_tree(const char *input)
     size_t bin_len;
     int ret;
     bool is_string_value = false;
+    bool is_hex_byte_value = false;
     char operation;
     char *op_input;
     size_t final_len;
@@ -665,101 +785,160 @@ static int __init patch_device_tree(const char *input)
     
     pr_info("%s: Found property '%s', current length: %d\n", PATCH_TAG, prop_name, prop->length);
 
-    /* Determine if this is a string value or numeric value */
-    is_string_value = !is_numeric_value(value);
-    
-    if (is_string_value) {
-        /* Handle as string value */
-        size_t str_len = strlen(value);
-        size_t final_len = str_len + 1;  /* Include null terminator */
-        
-        pr_info("%s: Treating value as string (len=%zu)\n", PATCH_TAG, str_len);
-        
-        /* Save old value and update property */
-        old_value = prop->value;
-        
-        prop->value = kzalloc(final_len, GFP_ATOMIC);
-        if (!prop->value) {
-            pr_err("%s: Failed to allocate memory for string value\n", PATCH_TAG);
-            prop->value = old_value;  /* Restore old value */
-            of_node_put(np);
-            kfree(dup);
-            return -ENOMEM;
-        }
-        
-        /* Copy the string value */
-        memcpy(prop->value, value, str_len);
-        prop->length = final_len;
-        
-        pr_info("%s: Patched %s/%s to string '%s' (len=%zu)\n", PATCH_TAG, path, prop_name, value, final_len);
-    } else {
-        /* Handle as numeric value - parse the numbers */
-        ret = parse_numbers(value, &bin_value, &bin_len);
+    // 检查是否为十六进制字节数组格式
+    if (value[0] == '[' && value[strlen(value) - 1] == ']') {
+        is_hex_byte_value = true;
+        ret = parse_hex_bytes(value, &bin_value, &bin_len);
         if (ret != 0) {
-            pr_err("%s: Failed to parse numeric value '%s': %d\n", PATCH_TAG, value, ret);
+            pr_err("%s: Failed to parse hex byte value '%s': %d\n", PATCH_TAG, value, ret);
             of_node_put(np);
             kfree(dup);
             return ret;
         }
 
-        pr_info("%s: Parsed %zu bytes from numeric value string\n", PATCH_TAG, bin_len);
+        pr_info("%s: Parsed %zu bytes from hex byte string\n", PATCH_TAG, bin_len);
 
-        /* Save old value and update property */
         old_value = prop->value;
-        
-        /* If the parsed length is smaller than original, pad with zeros */
-        final_len = max(bin_len, (size_t)prop->length);
-        
-        prop->value = kzalloc(final_len, GFP_ATOMIC);  /* kzalloc zeros the memory */
+        final_len = bin_len; // 对于直接写入字节，长度就是解析出来的字节长度
+
+        prop->value = kzalloc(final_len, GFP_ATOMIC);
         if (!prop->value) {
-            pr_err("%s: Failed to allocate memory for numeric value\n", PATCH_TAG);
-            prop->value = old_value;  /* Restore old value */
+            pr_err("%s: Failed to allocate memory for hex byte value\n", PATCH_TAG);
+            prop->value = old_value;
             kfree(bin_value);
             of_node_put(np);
             kfree(dup);
             return -ENOMEM;
         }
-        
-        /* Copy the parsed data */
         memcpy(prop->value, bin_value, bin_len);
         prop->length = final_len;
 
-        pr_info("%s: Updated property length from %d to %zu bytes\n", PATCH_TAG, 
-                 prop->length, final_len);
-
-        /* Create hex string for logging */
-        if (bin_len > 0) {
-            size_t hex_str_size = bin_len * 5 + 1;  /* "0xNN " per byte + null */
-            char *hex_str = kmalloc(hex_str_size, GFP_ATOMIC);
-            if (hex_str) {
-                size_t j, pos = 0;
-                hex_str[0] = '\0';  /* Initialize string */
-                for (j = 0; j < bin_len; j++) {
-                    int written = snprintf(hex_str + pos, hex_str_size - pos, "0x%02x", bin_value[j]);
-                    if (written > 0 && pos + written < hex_str_size) {
-                        pos += written;
-                    }
-                    if (j < bin_len - 1 && pos < hex_str_size - 1) {
-                        hex_str[pos++] = ' ';
-                        hex_str[pos] = '\0';
-                    }
-                }
-                pr_info("%s: Patched %s/%s to %s (len=%zu)\n", PATCH_TAG, path, prop_name, hex_str, bin_len);
-                kfree(hex_str);
-            } else {
-                pr_info("%s: Patched %s/%s to binary data (%zu bytes)\n", PATCH_TAG, path, prop_name, bin_len);
-            }
-        }
-        
-        /* Clean up numeric value buffer */
+        pr_info("%s: Patched %s/%s to hex bytes (len=%zu)\n", PATCH_TAG, path, prop_name, final_len);
         kfree(bin_value);
+
+    } else {
+        /* Determine if this is a string value or numeric value */
+        is_string_value = !is_numeric_value(value);
+        
+        if (is_string_value) {
+            /* Handle as string value */
+            size_t str_len = strlen(value);
+            size_t final_len = str_len + 1;  /* Include null terminator */
+            
+            pr_info("%s: Treating value as string (len=%zu)\n", PATCH_TAG, str_len);
+            
+            /* Save old value and update property */
+            old_value = prop->value;
+            
+            prop->value = kzalloc(final_len, GFP_ATOMIC);
+            if (!prop->value) {
+                pr_err("%s: Failed to allocate memory for string value\n", PATCH_TAG);
+                prop->value = old_value;  /* Restore old value */
+                of_node_put(np);
+                kfree(dup);
+                return -ENOMEM;
+            }
+            
+            /* Copy the string value */
+            memcpy(prop->value, value, str_len);
+            prop->length = final_len;
+            
+            pr_info("%s: Patched %s/%s to string '%s' (len=%zu)\n", PATCH_TAG, path, prop_name, value, final_len);
+        } else {
+            /* Handle as numeric value - parse the numbers */
+            ret = parse_numbers(value, &bin_value, &bin_len);
+            if (ret != 0) {
+                pr_err("%s: Failed to parse numeric value '%s': %d\n", PATCH_TAG, value, ret);
+                of_node_put(np);
+                kfree(dup);
+                return ret;
+            }
+
+            pr_info("%s: Parsed %zu bytes from numeric value string\n", PATCH_TAG, bin_len);
+
+            /* Save old value and update property */
+            old_value = prop->value;
+            
+            /* If the parsed length is smaller than original, pad with zeros */
+            final_len = max(bin_len, (size_t)prop->length);
+            
+            prop->value = kzalloc(final_len, GFP_ATOMIC);  /* kzalloc zeros the memory */
+            if (!prop->value) {
+                pr_err("%s: Failed to allocate memory for numeric value\n", PATCH_TAG);
+                prop->value = old_value;  /* Restore old value */
+                kfree(bin_value);
+                of_node_put(np);
+                kfree(dup);
+                return -ENOMEM;
+            }
+            
+            /* Copy the parsed data */
+            memcpy(prop->value, bin_value, bin_len);
+            prop->length = final_len;
+
+            pr_info("%s: Updated property length from %d to %zu bytes\n", PATCH_TAG, 
+                     prop->length, final_len);
+
+            /* Create hex string for logging */
+            if (bin_len > 0) {
+                size_t hex_str_size = bin_len * 5 + 1;  /* "0xNN " per byte + null */
+                char *hex_str = kmalloc(hex_str_size, GFP_ATOMIC);
+                if (hex_str) {
+                    size_t j, pos = 0;
+                    hex_str[0] = '\0';  /* Initialize string */
+                    for (j = 0; j < bin_len; j++) {
+                        int written = snprintf(hex_str + pos, hex_str_size - pos, "0x%02x", bin_value[j]);
+                        if (written > 0 && pos + written < hex_str_size) {
+                            pos += written;
+                        }
+                        if (j < bin_len - 1 && pos < hex_str_size - 1) {
+                            hex_str[pos++] = ' ';
+                            hex_str[pos] = '\0';
+                        }
+                    }
+                    pr_info("%s: Patched %s/%s to %s (len=%zu)\n", PATCH_TAG, path, prop_name, hex_str, bin_len);
+                    kfree(hex_str);
+                } else {
+                    pr_info("%s: Patched %s/%s to binary data (%zu bytes)\n", PATCH_TAG, path, prop_name, bin_len);
+                }
+            }
+            
+            /* Clean up numeric value buffer */
+            kfree(bin_value);
+        }
     }
+
 
     /* Verify the updated value */
     if (prop->length > 0) {
         if (is_string_value) {
             pr_info("%s: Verification - string value: '%s', length: %d\n", PATCH_TAG, (char *)prop->value, prop->length);
-        } else {
+        } else if (is_hex_byte_value) {
+             // 打印十六进制字节验证
+            if (prop->value && prop->length > 0) {
+                size_t hex_str_size = prop->length * 3 + 1; // "NN " per byte + null
+                char *hex_str = kmalloc(hex_str_size, GFP_ATOMIC);
+                if (hex_str) {
+                    size_t j, pos = 0;
+                    hex_str[0] = '[';
+                    pos = 1;
+                    for (j = 0; j < prop->length; j++) {
+                        int written = snprintf(hex_str + pos, hex_str_size - pos, "%02x ", ((u8 *)prop->value)[j]);
+                        if (written > 0 && pos + written < hex_str_size) {
+                            pos += written;
+                        }
+                    }
+                    if (pos > 1) hex_str[pos-1] = ']'; // 替换最后一个空格为 ']'
+                    else hex_str[pos++] = ']'; // 如果没有内容，直接加 ']'
+                    hex_str[pos] = '\0';
+                    pr_info("%s: Verification - hex byte value: '%s', length: %d\n", PATCH_TAG, hex_str, prop->length);
+                    kfree(hex_str);
+                } else {
+                     pr_info("%s: Verification - hex byte value (binary), length: %d\n", PATCH_TAG, prop->length);
+                }
+            }
+        }
+        else { // numeric value
             u8 *val = (u8 *)prop->value;
             pr_info("%s: Verification - first byte: 0x%02x, length: %d\n", PATCH_TAG, val[0], prop->length);
         }
