@@ -1,7 +1,13 @@
-#ifndef __OVERWRITE_CONFIGS_H
-#define __OVERWRITE_CONFIGS_H
+#ifndef _OVERWRITE_CONFIGS_H
+#define _OVERWRITE_CONFIGS_H
 
-extern const char *overwrite_config_lines[];
-extern const int overwrite_config_line_count;
+struct overwrite_config_group {
+    const char *prefix;
+    const char *const *values;
+    int count;
+};
 
-#endif
+extern const struct overwrite_config_group overwrite_config_groups[];
+extern const int overwrite_config_group_count;
+
+#endif /* _OVERWRITE_CONFIGS_H */
