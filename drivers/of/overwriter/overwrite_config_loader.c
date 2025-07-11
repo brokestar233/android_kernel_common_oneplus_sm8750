@@ -849,3 +849,53 @@ static int __init overwrite_config_init(void)
 }
 
 early_initcall(overwrite_config_init);
+
+static int __init print_info(void)
+{
+    pr_info("|-----------------------------------------------------------------------------|\n");
+    pr_info("|                                   ^7JJ?!:                                   |\n");
+    pr_info("|                                :?P#BGPG#B5!:                                |\n");
+    pr_info("|                      :^^^^^^^!5##P7^   ^JG#BJ~^^^^^^^:                      |\n");
+    pr_info("|                  ^?PBBBBBBBBB#BJ^         !YB#BBBBBBBBB57:                  |\n");
+    pr_info("|                 !B&P7~^^^^^^^^              :^^^^^^^^~?G&G~                 |\n");
+    pr_info("|                !B&Y                                    :5&B~                |\n");
+    pr_info("|               ~B&Y                                      :P&G^               |\n");
+    pr_info("|           ^!J5B&P:              :^!7J!                   ^G&BY?!:           |\n");
+    pr_info("|         !5##G5J7:           ^!YPB#BGP?                    ^7J5G##5~         |\n");
+    pr_info("|        7##J^             ^?P##GY7~:                            ^Y##7        |\n");
+    pr_info("|       :P&P             ~Y##P7^                                  :P&P        |\n");
+    pr_info("|       :P&5           :Y##Y^        :!?5PGGGGP5Y?!:               5&P:       |\n");
+    pr_info("|       :P&5          ~G&P~       :!5B#G5J?77??Y5G##P7:            5&P:       |\n");
+    pr_info("|      :J##?         !B&Y        !G&G?^           ^?P#B?:          ?##J:      |\n");
+    pr_info("|     7G&P~         ^G&5        ?##J:                !G&P^          !G&G!     |\n");
+    pr_info("|   :Y#B?           J&B~       !##?                   ^P&P:          :J##?    |\n");
+    pr_info("|   ?&#!           :P&5        Y&G^                    !##?            J#B~   |\n");
+    pr_info("|   ?&B!           ^G#J        J&B~         ^7!:       :G&Y            ?#B~   |\n");
+    pr_info("|   :5&B!          :G&Y        ^G&P^       :5&G:       :G&Y           ?##J    |\n");
+    pr_info("|     ?B#5^         Y&G^        ^5#BY!^::^7P&G!        !##7         ~P&B7     |\n");
+    pr_info("|      ^5#B7        ^G&5          ~YG#BBBBBP?:        ^G&5:        ?##Y:      |\n");
+    pr_info("|       :P&5         ~B&5:           :~~~^:          ~G&P^         5&P:       |\n");
+    pr_info("|       :P&5          ^P&B7                        :J##Y:          5&P:       |\n");
+    pr_info("|       :P&5            7G&G?^                   ~YB#P~            P&P:       |\n");
+    pr_info("|        ?##J:           :7P##PJ!^          :^7YG#BY~            ^J##7        |\n");
+    pr_info("|         !P##PY?!:         ^75GBBBPP5YY55PGB#BPJ!:         :!?YP##P!         |\n");
+    pr_info("|           ^7J5B&5:            :~7?JY555YJ?!^:            :P&B5J7^           |\n");
+    pr_info("|               ~B&Y                                      :5&G^               |\n");
+    pr_info("|                !#&J                                    :5&B~                |\n");
+    pr_info("|                 7B&P7~^^^^^^^^              :^^^^^^^^~?G&G!                 |\n");
+    pr_info("|                  ^?PBBBB#BB###GJ^         ~YB#####BBBBBP?:                  |\n");
+    pr_info("|                     :^^^^~^^^!5##P7:   ^?G#BY~^^^^~^^:                      |\n");
+    pr_info("|                                ^?P#BGPG#B57:                                |\n");
+    pr_info("|                                   ^7JJ?!:                                   |\n");
+    pr_info("|-----------------------------------------------------------------------------|\n");
+    pr_info("|    Link: https://github.com/project-trans and https://project-trans.org/    |\n");
+    pr_info("|-----------------------------------------------------------------------------|\n");
+    pr_info("|    Never surrender to anxiety and depression,                               |\n");
+    pr_info("|    we will eventually have our place in this world                          |\n");
+    pr_info("|    If you can remember my name, if you can all remember my name,            |\n");
+    pr_info("|    maybe I or \"we\", will be able to live freely one day                     |\n");
+    pr_info("|-----------------------------------------------------------------------------|\n");
+    return 0;
+}
+
+late_initcall(print_info)
