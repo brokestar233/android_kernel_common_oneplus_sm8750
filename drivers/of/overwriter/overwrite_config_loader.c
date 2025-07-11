@@ -995,37 +995,43 @@ static int __init overwrite_config_init(void)
 {
     char *device_name = get_property_from_cmdline("oplusboot.prjname");
     
-    for (int i = 0; i < overwrite_config_line_count; i++) {
-        const char *line = overwrite_config_lines[i];
-        char *line_copy = kstrdup(line, GFP_ATOMIC);
-        if (!line_copy) {
-            pr_err("Failed to allocate memory for line copy\n");
-            continue;
-        }
+    const struct overwrite_config_group *common_group = NULL;
+    const struct overwrite_config_group *device_group = NULL;
 
-        /* Split prefix and value */
-        char *prefix = line_copy;
-        char *value = strchr(line_copy, ':');
-        if (value) {
-            *value = '\0'; /* Null-terminate prefix */
-            value++;       /* Move to the value part */
-            
-            /* Check if prefix matches device_name or "common" */
-            if ((device_name && strcmp(prefix, device_name) == 0) || 
-                strcmp(prefix, "common") == 0) {
-                patch_device_tree(value);
-                pr_info("Applied patch for prefix %s with value %s\n", prefix, value);
-            } else {
-                pr_info("Skipped patch for prefix %s (device: %s)\n", prefix, device_name ? device_name : "none");
-            }
-        } else {
-            pr_err("Invalid line format: %s\n", line);
-        }
+    // 第一遍遍历：找到 common 组和当前设备对应的组
+    for (int i = 0; i < overwrite_config_group_count; i++) {
+        const struct overwrite_config_group *group = &overwrite_config_groups[i];
         
-        kfree(line_copy);
+        if (strcmp(group->prefix, "common") == 0) {
+            common_group = group;
+        } else if (device_name && strcmp(group->prefix, device_name) == 0) {
+            device_group = group;
+        }
+    }
+
+    // 应用 common 配置
+    if (common_group) {
+        pr_info("Applying common configs...\n");
+        for (int i = 0; i < common_group->count; i++) {
+            patch_device_tree(common_group->values[i]);
+            pr_info("  Applied common patch: %s\n", common_group->values[i]);
+        }
+    } else {
+        pr_info("No common configs found.\n");
+    }
+
+    // 应用设备特有配置（如果存在）
+    if (device_group) {
+        pr_info("Applying device-specific configs for %s...\n", device_name);
+        for (int i = 0; i < device_group->count; i++) {
+            patch_device_tree(device_group->values[i]);
+            pr_info("  Applied device patch: %s\n", device_group->values[i]);
+        }
+    } else {
+        pr_info("No device-specific configs found for %s.\n", device_name ? device_name : "none");
     }
     
-    kfree(device_name);
+    kfree(device_name); // 释放获取到的设备名内存
     return 0;
 }
 
