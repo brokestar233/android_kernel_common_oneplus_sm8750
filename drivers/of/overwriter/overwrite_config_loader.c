@@ -19,7 +19,7 @@ static int parse_numbers(const char *value_str, u8 **out_buf, size_t *out_len)
     char *dup, *p, *token_start;
     u8 *buf;
     size_t count = 0, i = 0;
-    unsigned long val;
+    unsigned long val; // 使用 unsigned long 来存储更大的值
     char *endptr;
     bool in_token = false;
 
@@ -80,20 +80,21 @@ static int parse_numbers(const char *value_str, u8 **out_buf, size_t *out_len)
                     val = simple_strtoul(token_start, &endptr, 10);
                 }
                 
-                if (endptr == token_start || *endptr != '\0' || val > 0xFFFF) {
-                    pr_err("parse_numbers: invalid number '%s' (must be <= 0xFFFF)\n", token_start);
+                // 修改最大值检查，允许32位值
+                if (endptr == token_start || *endptr != '\0' || val > 0xFFFFFFFFUL) {
+                    pr_err("parse_numbers: invalid number '%s' (must be <= 0xFFFFFFFF)\n", token_start);
                     kfree(buf);
                     kfree(dup);
                     return -EINVAL;
                 }
                 
-                /* Convert to 4-byte big-endian (0x0000XXXX) */
-                buf[i * 4 + 0] = 0x00;               /* High byte padding */
-                buf[i * 4 + 1] = 0x00;               /* High byte padding */
-                buf[i * 4 + 2] = (val >> 8) & 0xFF;  /* High byte of value */
-                buf[i * 4 + 3] = val & 0xFF;         /* Low byte of value */
+                // 将值转换为4字节大端格式
+                buf[i * 4 + 0] = (u8)((val >> 24) & 0xFF); // Highest byte
+                buf[i * 4 + 1] = (u8)((val >> 16) & 0xFF); // High byte
+                buf[i * 4 + 2] = (u8)((val >> 8) & 0xFF);  // Low byte
+                buf[i * 4 + 3] = (u8)(val & 0xFF);         // Lowest byte
                 
-                pr_info("parse_numbers: parsed value[%zu] = 0x%04lx -> [0x%02x, 0x%02x, 0x%02x, 0x%02x]\n", 
+                pr_info("parse_numbers: parsed value[%zu] = 0x%08lx -> [0x%02x, 0x%02x, 0x%02x, 0x%02x]\n", 
                         i, val, buf[i * 4 + 0], buf[i * 4 + 1], buf[i * 4 + 2], buf[i * 4 + 3]);
                 i++;
                 in_token = false;
@@ -112,20 +113,21 @@ static int parse_numbers(const char *value_str, u8 **out_buf, size_t *out_len)
             val = simple_strtoul(token_start, &endptr, 10);
         }
         
-        if (endptr == token_start || *endptr != '\0' || val > 0xFFFF) {
-            pr_err("parse_numbers: invalid number '%s' (must be <= 0xFFFF)\n", token_start);
+        // 修改最大值检查，允许32位值
+        if (endptr == token_start || *endptr != '\0' || val > 0xFFFFFFFFUL) {
+            pr_err("parse_numbers: invalid number '%s' (must be <= 0xFFFFFFFF)\n", token_start);
             kfree(buf);
             kfree(dup);
             return -EINVAL;
         }
         
-        /* Convert to 4-byte big-endian (0x0000XXXX) */
-        buf[i * 4 + 0] = 0x00;               /* High byte padding */
-        buf[i * 4 + 1] = 0x00;               /* High byte padding */
-        buf[i * 4 + 2] = (val >> 8) & 0xFF;  /* High byte of value */
-        buf[i * 4 + 3] = val & 0xFF;         /* Low byte of value */
+        // 将值转换为4字节大端格式
+        buf[i * 4 + 0] = (u8)((val >> 24) & 0xFF); // Highest byte
+        buf[i * 4 + 1] = (u8)((val >> 16) & 0xFF); // High byte
+        buf[i * 4 + 2] = (u8)((val >> 8) & 0xFF);  // Low byte
+        buf[i * 4 + 3] = (u8)(val & 0xFF);         // Lowest byte
         
-        pr_info("parse_numbers: parsed final value[%zu] = 0x%04lx -> [0x%02x, 0x%02x, 0x%02x, 0x%02x]\n", 
+        pr_info("parse_numbers: parsed final value[%zu] = 0x%08lx -> [0x%02x, 0x%02x, 0x%02x, 0x%02x]\n", 
                 i, val, buf[i * 4 + 0], buf[i * 4 + 1], buf[i * 4 + 2], buf[i * 4 + 3]);
         i++;
     }
