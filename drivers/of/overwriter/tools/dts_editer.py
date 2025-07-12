@@ -231,6 +231,24 @@ class DTSParser:
                 # 遇到意外字符，前进以避免无限循环
                 i += 1
 
+class PropertyEditDialog(simpledialog.Dialog):
+    """自定义属性编辑对话框，支持多行输入"""
+    def __init__(self, parent, title, prompt, initialvalue=""):
+        self.prompt = prompt
+        self.initialvalue = initialvalue
+        super().__init__(parent, title)
+
+    def body(self, master):
+        ttk.Label(master, text=self.prompt).pack(padx=5, pady=5, anchor=tk.W)
+        self.text_widget = tk.Text(master, wrap="word", width=60, height=10, font=('TkDefaultFont', 10))
+        self.text_widget.insert(tk.END, self.initialvalue)
+        self.text_widget.pack(padx=5, pady=5)
+        self.text_widget.focus_set()
+        return self.text_widget # initial focus
+
+    def apply(self):
+        self.result = self.text_widget.get("1.0", tk.END).strip()
+
 class DTSEditor:
     """DTS编辑器主类"""
     
@@ -288,6 +306,11 @@ class DTSEditor:
         edit_menu.add_command(label="删除节点", command=self.delete_node)
         edit_menu.add_command(label="添加属性", command=self.add_property)
         edit_menu.add_command(label="删除属性", command=self.delete_property)
+
+        # 比较菜单
+        compare_menu = tk.Menu(menubar, tearoff=0, bg="#f0f0f0", fg="black")
+        menubar.add_cascade(label="比较", menu=compare_menu)
+        compare_menu.add_command(label="生成DTS差异补丁", command=self.generate_diff_patch)
     
     def create_tree_view(self, parent):
         """创建树形视图"""
@@ -545,7 +568,7 @@ class DTSEditor:
                 parent_item = self.tree.parent(item)
                 
                 # 处理根节点属性的情况
-                if parent_item == self.VIRTUAL_ROOT_ID: # 根节点属性
+                if parent_item == self.VIRTUAL_ROOT_ID: # 根节点属性的父item是虚拟根节点ID
                     node = self.dts_root
                 else:
                     node = self._get_node_from_item(parent_item)
@@ -563,7 +586,10 @@ class DTSEditor:
                     # 弹出对话框时去除引号和尖括号
                     initial_display_value = original_value_from_node.strip('<>"') 
 
-                    new_value = simpledialog.askstring("编辑属性", f"编辑 {prop_name}:", initialvalue=initial_display_value)
+                    # 使用自定义对话框 PropertyEditDialog
+                    dialog = PropertyEditDialog(self.root, "编辑属性", f"编辑属性 '{prop_name}' 的值:", initialvalue=initial_display_value)
+                    new_value = dialog.result
+                    
                     if new_value is not None:
                         # 在保存时根据原始格式添加回去
                         if value_format_type == "string" and not (new_value.startswith('"') and new_value.endswith('"')):
@@ -637,7 +663,10 @@ class DTSEditor:
         # 弹出对话框时去除引号和尖括号
         initial_display_value = original_value_from_node.strip('<>"') 
         
-        new_value = simpledialog.askstring("编辑属性", f"编辑 {prop_name}:", initialvalue=initial_display_value)
+        # 使用自定义对话框 PropertyEditDialog
+        dialog = PropertyEditDialog(self.root, "编辑属性", f"编辑属性 '{prop_name}' 的值:", initialvalue=initial_display_value)
+        new_value = dialog.result
+
         if new_value is not None:
             # 在保存时根据原始格式添加回去
             if value_format_type == "string" and not (new_value.startswith('"') and new_value.endswith('"')):
@@ -763,8 +792,17 @@ class DTSEditor:
             messagebox.showwarning("警告", "请选择一个有效的节点")
             return
         
-        prop_name = simpledialog.askstring("添加属性", "请输入属性名称:")
-        if prop_name:
+        # 将属性名和值放在一个弹窗中
+        prop_dialog = simpledialog.askstring("添加属性", "请输入属性名称和值 (格式: 属性名=值):")
+        if prop_dialog:
+            if '=' not in prop_dialog:
+                messagebox.showerror("错误", "输入格式不正确，应为 '属性名=值'")
+                return
+
+            prop_name, prop_value = prop_dialog.split('=', 1)
+            prop_name = prop_name.strip()
+            prop_value = prop_value.strip()
+
             # 检查属性名称是否有效，允许DTS属性名包含字母、数字、下划线、连字符、逗号、点、井号、@符号
             if not re.fullmatch(r'[a-zA-Z0-9_\-,\.#@]+', prop_name): 
                 messagebox.showerror("错误", "属性名称包含非法字符，只能包含字母、数字、下划线、连字符、逗号、点、井号或@符号。")
@@ -773,13 +811,12 @@ class DTSEditor:
             if prop_name in node.properties:
                 messagebox.showwarning("警告", f"属性 '{prop_name}' 已存在于当前节点下。")
                 return
-            prop_value = simpledialog.askstring("添加属性", f"请输入属性 '{prop_name}' 的值:")
-            if prop_value is not None:
-                # 添加属性时，用户输入的如果需要引号或尖括号，也需要手动输入，这里不自动添加
-                node.set_property(prop_name, prop_value)
-                self.populate_property_tree(node)
-                self.populate_tree()
-                messagebox.showinfo("成功", f"属性 '{prop_name}' 添加成功")
+            
+            # 这里不自动添加引号或尖括号，用户需要手动输入
+            node.set_property(prop_name, prop_value)
+            self.populate_property_tree(node)
+            self.populate_tree()
+            messagebox.showinfo("成功", f"属性 '{prop_name}' 添加成功")
     
     def delete_property(self):
         """删除属性"""
@@ -1034,9 +1071,7 @@ class DTSEditor:
         
         if file_path:
             try:
-                patch_content_lines = []
-                # 比较虚拟根节点 (dts_root) 的属性和子节点
-                self._compare_nodes_for_patch(self.dts_root, self.original_dts_root, patch_content_lines)
+                patch_content_lines = self._get_patch_lines(self.dts_root, self.original_dts_root)
                 
                 # 确保最后有一个空行
                 patch_content = "\n".join(patch_content_lines) + "\n"
@@ -1046,56 +1081,122 @@ class DTSEditor:
                 messagebox.showinfo("成功", f"补丁文件生成成功: {file_path}\n")
             except Exception as e:
                 messagebox.showerror("错误", f"生成补丁文件失败: {e}")
-    
-    def _compare_nodes_for_patch(self, current_node: DTSNode, original_node: DTSNode, patch_lines: List[str]):
-        """
-        递归比较当前DTS树和原始DTS树的差异，生成补丁行。
-        注意：这里的current_node和original_node是用于递归比较的局部节点，
-        它们的full_path是相对于根节点的完整路径。
-        """
-        
-        # 比较当前节点的属性
-        # 查找被删除的属性 (在原始节点有，在当前节点无)
-        for prop_name in original_node.properties:
-            if prop_name not in current_node.properties:
-                patch_lines.append(f"d {original_node.get_property_path(prop_name)}")
-        
-        # 查找新增或修改的属性
-        for prop_name, curr_prop_value in current_node.properties.items():
-            orig_prop_value = original_node.properties.get(prop_name)
+
+    def generate_diff_patch(self):
+        """生成两个DTS文件的差异补丁"""
+        messagebox.showinfo("选择DTS文件", "请先选择基准DTS文件 (DTS1)。")
+        file_path1 = filedialog.askopenfilename(
+            title="选择基准DTS文件 (DTS1)",
+            filetypes=[("DTS files", "*.dts"), ("All files", "*.*")]
+        )
+        if not file_path1:
+            return
+
+        messagebox.showinfo("选择DTS文件", "请选择目标DTS文件 (DTS2)。")
+        file_path2 = filedialog.askopenfilename(
+            title="选择目标DTS文件 (DTS2)",
+            filetypes=[("DTS files", "*.dts"), ("All files", "*.*")]
+        )
+        if not file_path2:
+            return
+
+        try:
+            parser1 = DTSParser()
+            dts1_root = parser1.parse_file(file_path1)
+
+            parser2 = DTSParser()
+            dts2_root = parser2.parse_file(file_path2)
             
-            # Bug1 Fix: 生成补丁时不应该带””和<>，所以这里进行strip
-            # 这里对比的时候需要使用strip后的值进行对比
-            curr_stripped_value = str(curr_prop_value).strip('<>"')
-            orig_stripped_value = str(orig_prop_value).strip('<>"') if orig_prop_value is not None else None
+            patch_content_lines = self._get_patch_lines(dts2_root, dts1_root)
 
-            if orig_prop_value is None:
-                # 新增属性
-                patch_lines.append(f"a {current_node.get_property_path(prop_name)} {curr_stripped_value}")
-            elif orig_stripped_value != curr_stripped_value: # 比较去除引号和尖括号后的值
-                # 属性值被修改
-                patch_lines.append(f"{current_node.get_property_path(prop_name)} {curr_stripped_value}")
+            # 保存补丁
+            save_path = filedialog.asksaveasfilename(
+                title="保存差异补丁文件",
+                defaultextension=".patch",
+                filetypes=[("Patch files", "*.patch"), ("All files", "*.*")]
+            )
+            if save_path:
+                patch_content = "\n".join(patch_content_lines) + "\n"
+                with open(save_path, 'w', encoding='utf-8') as f:
+                    f.write(patch_content)
+                messagebox.showinfo("成功", f"差异补丁文件生成成功: {save_path}")
 
-        # 比较子节点
-        # 查找被删除的节点 (在原始树有，在当前树无)
-        for orig_child_name, orig_child_node in original_node.children.items():
-            if orig_child_name not in current_node.children:
-                # 确保路径以 / 开头，并且是相对于顶级DTS节点的完整路径
-                patch_lines.append(f"r {orig_child_node.full_path}")
-        
-        # 查找新增或修改的节点
-        for curr_child_name, curr_child_node in current_node.children.items():
-            if curr_child_name not in original_node.children:
-                # 新增节点
-                patch_lines.append(f"c {curr_child_node.full_path}")
-                # 新增节点的所有属性 (以 'a' 开头创建)
-                for prop_name, prop_value in curr_child_node.properties.items():
-                    # Bug1 Fix: 补丁写入原始值，并去除引号和尖括号
-                    patch_lines.append(f"a {curr_child_node.get_property_path(prop_name)} {str(prop_value).strip('<>\"')}") 
-            else:
-                # 节点存在于两棵树中，递归比较其内部
-                orig_child_node = original_node.children[curr_child_name]
-                self._compare_nodes_for_patch(curr_child_node, orig_child_node, patch_lines) # 递归比较子节点
+        except Exception as e:
+            messagebox.showerror("错误", f"生成差异补丁失败: {e}")
+
+    def _get_patch_lines(self, current_dts_root: DTSNode, original_dts_root: DTSNode) -> List[str]:
+        """
+        生成补丁行的核心逻辑，返回一个包含补丁行的列表。
+        按照 d (删除属性), r (删除节点), c (创建节点), a (创建属性), 修改值 的顺序排序。
+        """
+        patch_lines_delete_prop = []
+        patch_lines_remove_node = []
+        patch_lines_create_node = []
+        patch_lines_create_prop = []
+        patch_lines_modify_prop = []
+
+        # 辅助函数，收集差异
+        def collect_diffs_recursive(curr_node: DTSNode, orig_node: DTSNode):
+            # 1. 比较属性
+            # 查找被删除的属性 (在原始节点有，在当前节点无)
+            for prop_name in orig_node.properties:
+                if prop_name not in curr_node.properties:
+                    patch_lines_delete_prop.append(f"d {orig_node.get_property_path(prop_name)}")
+            
+            # 查找新增或修改的属性
+            for prop_name, curr_prop_value in curr_node.properties.items():
+                orig_prop_value = orig_node.properties.get(prop_name)
+                
+                # Bug1 Fix: 生成补丁时不应该带””和<>，所以这里进行strip
+                # 这里对比的时候需要使用strip后的值进行对比
+                curr_stripped_value = str(curr_prop_value).strip('<>"')
+                orig_stripped_value = str(orig_prop_value).strip('<>"') if orig_prop_value is not None else None
+
+                if orig_prop_value is None:
+                    # 新增属性
+                    patch_lines_create_prop.append(f"a {curr_node.get_property_path(prop_name)} {curr_stripped_value}")
+                elif orig_stripped_value != curr_stripped_value: # 比较去除引号和尖括号后的值
+                    # 属性值被修改
+                    patch_lines_modify_prop.append(f"{curr_node.get_property_path(prop_name)} {curr_stripped_value}")
+
+            # 2. 比较子节点
+            # 查找被删除的节点 (在原始树有，在当前树无)
+            for orig_child_name, orig_child_node in orig_node.children.items():
+                if orig_child_name not in curr_node.children:
+                    # 确保路径以 / 开头，并且是相对于顶级DTS节点的完整路径
+                    patch_lines_remove_node.append(f"r {orig_child_node.full_path}")
+            
+            # 查找新增或修改的节点
+            for curr_child_name, curr_child_node in curr_node.children.items():
+                if curr_child_name not in orig_node.children:
+                    # 新增节点
+                    patch_lines_create_node.append(f"c {curr_child_node.full_path}")
+                    # 新增节点的所有属性 (以 'a' 开头创建)
+                    # 递归收集新增节点下的所有属性
+                    def collect_new_node_props(node: DTSNode):
+                        for prop_name, prop_value in node.properties.items():
+                            patch_lines_create_prop.append(f"a {node.get_property_path(prop_name)} {str(prop_value).strip('<>\"')}")
+                        for child in node.children.values():
+                            collect_new_node_props(child)
+                    collect_new_node_props(curr_child_node)
+
+                else:
+                    # 节点存在于两棵树中，递归比较其内部
+                    orig_child_node = orig_node.children[curr_child_name]
+                    collect_diffs_recursive(curr_child_node, orig_child_node) # 递归比较子节点
+
+        # 从根节点开始收集差异
+        collect_diffs_recursive(current_dts_root, original_dts_root)
+
+        # 按照 d, r, c, a, 修改值 的顺序拼接补丁行
+        all_patch_lines = []
+        all_patch_lines.extend(patch_lines_delete_prop)
+        all_patch_lines.extend(patch_lines_remove_node)
+        all_patch_lines.extend(patch_lines_create_node)
+        all_patch_lines.extend(patch_lines_create_prop)
+        all_patch_lines.extend(patch_lines_modify_prop)
+
+        return all_patch_lines
     
     def load_patch(self):
         """加载补丁文件"""
@@ -1165,20 +1266,22 @@ class DTSEditor:
     
     def _format_value_for_dts(self, value: str) -> str:
         """根据补丁中的值判断是否需要添加引号或尖括号以符合DTS格式"""
-        # 如果值已经包含引号或尖括号，或者包含空格，则直接使用
+        # 如果值已经包含引号或尖括号，则直接使用
         if (value.startswith('"') and value.endswith('"')) or \
-           (value.startswith('<') and value.endswith('>')) or \
-           (' ' in value):
+           (value.startswith('<') and value.endswith('>')):
             return value
         
-        # 尝试判断是否是十六进制数组
-        hex_array_match = re.fullmatch(r'([0-9a-fA-FxX\s]+)', value)
-        if hex_array_match and '0x' in value.lower():
-            # 简单判断是否看起来像十六进制数组，如果是，则加尖括号
+        # 尝试判断是否是十六进制数组 (包含 '0x' 且只包含十六进制字符和空格)
+        # 注意这里需要更严格的判断，避免将普通字符串误判为十六进制数组
+        if re.fullmatch(r'^(0x[0-9a-fA-F]+\s*)+$', value.strip()):
             return f"<{value}>"
         
-        # 否则，视为普通字符串，加引号
-        return f'"{value}"'
+        # 如果值中包含空格，并且不是十六进制数组，则视为字符串
+        if ' ' in value and not re.fullmatch(r'^(0x[0-9a-fA-F]+\s*)+$', value.strip()):
+            return f'"{value}"'
+
+        # 否则，视为普通值，不加引号或尖括号
+        return value
 
 
     def _get_node_from_path_string(self, path_string: str) -> Optional[DTSNode]:
