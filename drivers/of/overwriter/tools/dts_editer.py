@@ -793,15 +793,15 @@ class DTSEditor:
             return
         
         # 将属性名和值放在一个弹窗中
-        prop_dialog = simpledialog.askstring("添加属性", "请输入属性名称和值 (格式: 属性名=值):")
-        if prop_dialog:
+        prop_dialog = simpledialog.askstring("添加属性", "请输入属性名称和值 (格式: 属性名=值) \n(要创建空属性，请输入 '属性名=') :")
+        if prop_dialog is not None: # 用户点击了取消按钮，simpledialog.askstring返回None
             if '=' not in prop_dialog:
-                messagebox.showerror("错误", "输入格式不正确，应为 '属性名=值'")
+                messagebox.showerror("错误", "输入格式不正确，应为 '属性名=值' 或 '属性名='")
                 return
 
             prop_name, prop_value = prop_dialog.split('=', 1)
             prop_name = prop_name.strip()
-            prop_value = prop_value.strip()
+            prop_value = prop_value.strip() # 这里允许为空字符串
 
             # 检查属性名称是否有效，允许DTS属性名包含字母、数字、下划线、连字符、逗号、点、井号、@符号
             if not re.fullmatch(r'[a-zA-Z0-9_\-,\.#@]+', prop_name): 
@@ -1149,15 +1149,16 @@ class DTSEditor:
                 
                 # Bug1 Fix: 生成补丁时不应该带””和<>，所以这里进行strip
                 # 这里对比的时候需要使用strip后的值进行对比
-                curr_stripped_value = str(curr_prop_value).strip('<>"')
-                orig_stripped_value = str(orig_prop_value).strip('<>"') if orig_prop_value is not None else None
+                # 补丁中不允许出现尖括号和引号，所以这里需要去除
+                curr_patch_value = str(curr_prop_value).strip('<>"')
+                orig_patch_value = str(orig_prop_value).strip('<>"') if orig_prop_value is not None else None
 
                 if orig_prop_value is None:
-                    # 新增属性
-                    patch_lines_create_prop.append(f"a {curr_node.get_property_path(prop_name)} {curr_stripped_value}")
-                elif orig_stripped_value != curr_stripped_value: # 比较去除引号和尖括号后的值
+                    # 新增属性，即使值为空，也生成创建属性的补丁行
+                    patch_lines_create_prop.append(f"a {curr_node.get_property_path(prop_name)} {curr_patch_value}")
+                elif orig_patch_value != curr_patch_value: # 比较去除引号和尖括号后的值
                     # 属性值被修改
-                    patch_lines_modify_prop.append(f"{curr_node.get_property_path(prop_name)} {curr_stripped_value}")
+                    patch_lines_modify_prop.append(f"{curr_node.get_property_path(prop_name)} {curr_patch_value}")
 
             # 2. 比较子节点
             # 查找被删除的节点 (在原始树有，在当前树无)
@@ -1175,6 +1176,7 @@ class DTSEditor:
                     # 递归收集新增节点下的所有属性
                     def collect_new_node_props(node: DTSNode):
                         for prop_name, prop_value in node.properties.items():
+                            # 对于新创建节点下的属性，其值也应去除引号和尖括号再加入补丁
                             patch_lines_create_prop.append(f"a {node.get_property_path(prop_name)} {str(prop_value).strip('<>\"')}")
                         for child in node.children.values():
                             collect_new_node_props(child)
@@ -1245,14 +1247,16 @@ class DTSEditor:
                 self._create_node_by_path(node_path)
             elif line.startswith('a '):
                 # 创建属性
-                parts = line[2:].strip().split(' ', 1)
-                if len(parts) == 2:
-                    attr_path, value = parts
-                    # Bug1 Fix: 应用补丁时，需要根据值的内容判断是否添加引号或尖括号
-                    # 如果值包含空格，或者以引号/尖括号开头，则保留原样
-                    # 否则如果需要作为字符串或十六进制数组，则根据实际情况添加
-                    formatted_value = self._format_value_for_dts(value)
-                    self._create_property_by_path(attr_path, formatted_value)
+                # 对 'a /soc/author/author ' 这种空属性值的情况，parts[1] 可能是空字符串
+                parts = line[2:].split(' ', 1) # 使用 split 而不是 strip().split(' ', 1)，因为空值会导致parts长度不足2
+                attr_path = parts[0].strip() # 路径部分总是有
+                value = parts[1] if len(parts) > 1 else "" # 值部分可能为空
+                
+                # Bug1 Fix: 应用补丁时，需要根据值的内容判断是否添加引号或尖括号
+                # 如果值包含空格，或者以引号/尖括号开头，则保留原样
+                # 否则如果需要作为字符串或十六进制数组，则根据实际情况添加
+                formatted_value = self._format_value_for_dts(value)
+                self._create_property_by_path(attr_path, formatted_value)
             else:
                 # 修改属性值
                 parts = line.split(' ', 1)
@@ -1265,7 +1269,13 @@ class DTSEditor:
                     print(f"警告：无法解析的补丁行: {line}")
     
     def _format_value_for_dts(self, value: str) -> str:
-        """根据补丁中的值判断是否需要添加引号或尖括号以符合DTS格式"""
+        """
+        根据补丁中的值判断是否需要添加引号或尖括号以符合DTS格式。
+        空字符串直接返回，不做任何修改，以便支持空属性。
+        """
+        if not value: # 如果值是空的，直接返回空字符串
+            return ""
+
         # 如果值已经包含引号或尖括号，则直接使用
         if (value.startswith('"') and value.endswith('"')) or \
            (value.startswith('<') and value.endswith('>')):
