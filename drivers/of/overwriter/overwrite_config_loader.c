@@ -514,7 +514,7 @@ static int __init create_dt_property(const char *path, const char *prop_name, co
     bool is_string_value;
     bool is_hex_byte_value = false;
 
-    pr_info("%s: Creating property '%s' in node '%s' with value '%s'\n", PATCH_TAG, prop_name, path, value);
+    pr_info("%s: Creating property '%s' in node '%s' with value '%s'\n", PATCH_TAG, prop_name, path, value ? value : "(null)");
 
     /* Find the device tree node */
     np = of_find_node_by_path(path);
@@ -548,14 +548,23 @@ static int __init create_dt_property(const char *path, const char *prop_name, co
         return -ENOMEM;
     }
 
-    /* 检查value是否为空 */
-    if (!value) {
-        /* 创建空属性 */
-        prop->length = 0;
-        prop->value = NULL;
-        pr_info("%s: Created empty property '%s'\n", PATCH_TAG, prop_name);
+    /* Check if value is NULL or empty string */
+    if (!value || value[0] == '\0') {
+        // Modified: When value is NULL or empty, write [00]
+        bin_value = kzalloc(1, GFP_ATOMIC); // Allocate 1 byte for 0x00
+        if (!bin_value) {
+            pr_err("%s: Failed to allocate memory for [00] value\n", PATCH_TAG);
+            kfree(prop->name);
+            kfree(prop);
+            of_node_put(np);
+            return -ENOMEM;
+        }
+        bin_value[0] = 0x00; // Set the byte to 0x00
+        prop->length = 1;
+        prop->value = bin_value;
+        pr_info("%s: Created property '%s' with default [00] value due to empty input\n", PATCH_TAG, prop_name);
     } else {
-        // 检查是否为十六进制字节数组格式
+        // Check if it's a hex byte array format
         if (value[0] == '[' && value[strlen(value) - 1] == ']') {
             is_hex_byte_value = true;
             ret = parse_hex_bytes(value, &bin_value, &bin_len);
@@ -586,8 +595,8 @@ static int __init create_dt_property(const char *path, const char *prop_name, co
                     return -ENOMEM;
                 }
                 memcpy(prop->value, value, str_len);
-                ((char *)prop->value)[str_len] = '\0';  /* 确保null终止 */
-                pr_info("%s: Created string property '%s' with value '%s' (len=%d)\n", 
+                ((char *)prop->value)[str_len] = '\0';  /* Ensure null termination */
+                pr_info("%s: Created string property '%s' with value '%s' (len=%d)\n",
                         PATCH_TAG, prop_name, value, prop->length);
             } else {
                 /* Handle as numeric value */
