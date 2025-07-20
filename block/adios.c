@@ -23,7 +23,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.2.5"
+#define ADIOS_VERSION "2.3.0"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -341,8 +341,6 @@ static void latency_model_update(
 	unsigned long flags;
 	int cpu;
 
-	reset_buckets(ad->aggr_buckets);
-
 	write_seqlock_irqsave(&model->lock, flags);
 
 	// Aggregate data from all CPUs and reset per-cpu buckets.
@@ -366,25 +364,29 @@ static void latency_model_update(
 		reset_buckets(pcpu_b);
 	}
 
+	// Count the number of entries in aggregated buckets
+	small_count = lm_count_small_entries(aggr->small_bucket);
+	large_count = lm_count_large_entries(aggr->large_bucket);
+
 	// Whether enough time has elapsed since the last update
 	now = jiffies;
 	time_elapsed = unlikely(!model->base) || model->last_update_jiffies +
 		msecs_to_jiffies(LM_INTERVAL_THRESHOLD) <= now;
 
-	// Count the number of entries in aggregated buckets
-	small_count = lm_count_small_entries(aggr->small_bucket);
-	large_count = lm_count_large_entries(aggr->large_bucket);
-
 	// Update small buckets
 	if (small_count && (time_elapsed ||
-			LM_SAMPLES_THRESHOLD <= small_count || !model->base))
+			LM_SAMPLES_THRESHOLD <= small_count || !model->base)) {
 		small_processed = lm_update_small_buckets(
 			model, aggr->small_bucket, small_count, !model->base);
+		memset(&aggr->small_bucket[0], 0, sizeof(aggr->small_bucket));
+	}
 	// Update large buckets
 	if (large_count && (time_elapsed ||
-			LM_SAMPLES_THRESHOLD <= large_count || !model->slope))
+			LM_SAMPLES_THRESHOLD <= large_count || !model->slope)) {
 		large_processed = lm_update_large_buckets(
 			model, aggr->large_bucket, large_count, !model->slope);
+		memset(&aggr->large_bucket[0], 0, sizeof(aggr->large_bucket));
+	}
 
 	// Update the base parameter if small bucket was processed
 	if (small_processed && likely(model->small_count))
@@ -395,8 +397,8 @@ static void latency_model_update(
 		model->slope = div_u64(model->large_sum_delay,
 			DIV_ROUND_UP_ULL(model->large_sum_bsize, 1024));
 
-	// Reset statistics and update last updated jiffies if time has elapsed
-	if (time_elapsed)
+	// Update last updated jiffies if update happened or time has elapsed
+	if (small_processed || large_processed || time_elapsed)
 		model->last_update_jiffies = now;
 
 	write_sequnlock_irqrestore(&model->lock, flags);
