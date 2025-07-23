@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause */
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
@@ -25,7 +25,15 @@
 /* ****************************************
 *  Compiler-specific
 ******************************************/
-#define ERR_STATIC static __attribute__((unused))
+#if defined(__GNUC__)
+#  define ERR_STATIC static __attribute__((unused))
+#elif defined (__cplusplus) || (defined (__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) /* C99 */)
+#  define ERR_STATIC static inline
+#elif defined(_MSC_VER)
+#  define ERR_STATIC static __inline
+#else
+#  define ERR_STATIC static  /* this version may generate warnings for unused static functions; disable the relevant warning */
+#endif
 
 
 /*-****************************************
@@ -67,7 +75,7 @@ ERR_STATIC const char* ERR_getErrorName(size_t code)
     return ERR_getErrorString(ERR_getErrorCode(code));
 }
 
-/*
+/**
  * Ignore: this is an internal helper.
  *
  * This is a helper function to help force C99-correctness during compilation.
@@ -81,7 +89,7 @@ void _force_has_format_string(const char *format, ...) {
   (void)format;
 }
 
-/*
+/**
  * Ignore: this is an internal helper.
  *
  * We want to force this function invocation to be syntactically correct, but
@@ -96,7 +104,7 @@ void _force_has_format_string(const char *format, ...) {
 
 #define ERR_QUOTE(str) #str
 
-/*
+/**
  * Return the specified error if the condition evaluates to true.
  *
  * In debug modes, prints additional information.
@@ -115,7 +123,7 @@ void _force_has_format_string(const char *format, ...) {
         }                                                                      \
     } while (0)
 
-/*
+/**
  * Unconditionally return the specified error.
  *
  * In debug modes, prints additional information.
@@ -130,7 +138,7 @@ void _force_has_format_string(const char *format, ...) {
         return ERROR(err);                                                   \
     } while(0)
 
-/*
+/**
  * If the provided expression evaluates to an error code, returns that error code.
  *
  * In debug modes, prints additional information.
