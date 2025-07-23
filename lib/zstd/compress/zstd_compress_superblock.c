@@ -20,7 +20,7 @@
 #include "zstd_compress_sequences.h"
 #include "zstd_compress_literals.h"
 
-/* ZSTD_compressSubBlock_literal() :
+/** ZSTD_compressSubBlock_literal() :
  *  Compresses literals section for a sub-block.
  *  When we have to write the Huffman table we will sometimes choose a header
  *  size larger than necessary. This is because we have to pick the header size
@@ -150,7 +150,7 @@ ZSTD_seqDecompressedSize(SeqStore_t const* seqStore,
     return matchLengthSum + litSize;
 }
 
-/* ZSTD_compressSubBlock_sequences() :
+/** ZSTD_compressSubBlock_sequences() :
  *  Compresses sequences section for a sub-block.
  *  fseMetadata->llType, fseMetadata->ofType, and fseMetadata->mlType have
  *  symbol compression modes for the super-block.
@@ -257,7 +257,7 @@ ZSTD_compressSubBlock_sequences(const ZSTD_fseCTables_t* fseTables,
     return (size_t)(op - ostart);
 }
 
-/* ZSTD_compressSubBlock() :
+/** ZSTD_compressSubBlock() :
  *  Compresses a single sub-block.
  *  @return : compressed size of the sub-block
  *            Or 0 if it failed to compress. */
@@ -470,7 +470,7 @@ static size_t sizeBlockSequences(const SeqDef* sp, size_t nbSeqs,
     return n;
 }
 
-/* ZSTD_compressSubBlock_multi() :
+/** ZSTD_compressSubBlock_multi() :
  *  Breaks super-block into multiple sub-blocks and compresses them.
  *  Entropy will be written into the first block.
  *  The following blocks use repeat_mode to compress.
