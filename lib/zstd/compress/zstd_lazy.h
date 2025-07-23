@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause */
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
@@ -14,7 +14,7 @@
 
 #include "zstd_compress_internal.h"
 
-/*
+/**
  * Dedicated Dictionary Search Structure bucket log. In the
  * ZSTD_dedicatedDictSearch mode, the hashTable has
  * 2 ** ZSTD_LAZY_DDSS_BUCKET_LOG entries in each bucket, rather than just
