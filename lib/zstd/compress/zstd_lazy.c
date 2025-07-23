@@ -66,7 +66,7 @@ void ZSTD_updateDUBT(ZSTD_MatchState_t* ms,
 }
 
 
-/* ZSTD_insertDUBT1() :
+/** ZSTD_insertDUBT1() :
  *  sort one already inserted but unsorted position
  *  assumption : curr >= btlow == (curr - btmask)
  *  doesn't fail */
@@ -390,7 +390,7 @@ size_t ZSTD_DUBT_findBestMatch(ZSTD_MatchState_t* ms,
 }
 
 
-/* ZSTD_BtFindBestMatch() : Tree updater, providing best match */
+/** ZSTD_BtFindBestMatch() : Tree updater, providing best match */
 FORCE_INLINE_TEMPLATE
 ZSTD_ALLOW_POINTER_OVERFLOW_ATTR
 size_t ZSTD_BtFindBestMatch( ZSTD_MatchState_t* ms,
@@ -405,7 +405,7 @@ size_t ZSTD_BtFindBestMatch( ZSTD_MatchState_t* ms,
     return ZSTD_DUBT_findBestMatch(ms, ip, iLimit, offBasePtr, mls, dictMode);
 }
 
-/* *********************************
+/***********************************
 * Dedicated dict search
 ***********************************/
 
@@ -1335,7 +1335,7 @@ size_t ZSTD_RowFindBestMatch(
 }
 
 
-/*
+/**
  * Generate search functions templated on (dictMode, mls, rowLog).
  * These functions are outlined for code size & compilation time.
  * ZSTD_searchMax() dispatches to the correct implementation function.
@@ -1461,7 +1461,7 @@ typedef enum { search_hashChain=0, search_binaryTree=1, search_rowHash=2 } searc
     }                                                             \
     ZSTD_UNREACHABLE;
 
-/*
+/**
  * Searches for the longest match at @p ip.
  * Dispatches to the correct implementation function based on the
  * (searchMethod, dictMode, mls, rowLog). We use switch statements
@@ -1572,7 +1572,7 @@ size_t ZSTD_compressBlock_lazy_generic(
     }
 
     /* Match Loop */
-#if defined(__x86_64__)
+#if defined(__GNUC__) && defined(__x86_64__)
     /* I've measured random a 5% speed loss on levels 5 & 6 (greedy) when the
      * code alignment is perturbed. To fix the instability align the loop on 32-bytes.
      */
@@ -1970,7 +1970,7 @@ size_t ZSTD_compressBlock_lazy_extDict_generic(
     }
 
     /* Match Loop */
-#if defined(__x86_64__)
+#if defined(__GNUC__) && defined(__x86_64__)
     /* I've measured random a 5% speed loss on levels 5 & 6 (greedy) when the
      * code alignment is perturbed. To fix the instability align the loop on 32-bytes.
      */
