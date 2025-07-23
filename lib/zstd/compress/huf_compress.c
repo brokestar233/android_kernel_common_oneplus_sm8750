@@ -16,6 +16,9 @@
 /* **************************************************************
 *  Compiler specifics
 ****************************************************************/
+#ifdef _MSC_VER    /* Visual Studio */
+#  pragma warning(disable : 4127)        /* disable: C4127: conditional expression is constant */
+#endif
 
 
 /* **************************************************************
@@ -350,7 +353,7 @@ U32 HUF_getNbBitsFromCTable(HUF_CElt const* CTable, U32 symbolValue)
 }
 
 
-/*
+/**
  * HUF_setMaxHeight():
  * Try to enforce @targetNbBits on the Huffman tree described in @huffNode.
  *
@@ -423,6 +426,7 @@ static U32 HUF_setMaxHeight(nodeElt* huffNode, U32 lastNonNull, U32 targetNbBits
                  * gain back half the rank.
                  */
                 U32 nBitsToDecrease = ZSTD_highbit32((U32)totalCost) + 1;
+                assert(nBitsToDecrease <= HUF_TABLELOG_MAX+1);
                 for ( ; nBitsToDecrease > 1; nBitsToDecrease--) {
                     U32 const highPos = rankLast[nBitsToDecrease];
                     U32 const lowPos = rankLast[nBitsToDecrease-1];
@@ -604,7 +608,7 @@ static void HUF_simpleQuickSort(nodeElt arr[], int low, int high) {
     }
 }
 
-/*
+/**
  * HUF_sort():
  * Sorts the symbols [0, maxSymbolValue] by count[symbol] in decreasing order.
  * This is a typical bucket sorting strategy that uses either quicksort or insertion sort to sort each bucket.
@@ -663,7 +667,7 @@ static void HUF_sort(nodeElt huffNode[], const unsigned count[], U32 const maxSy
 }
 
 
-/* HUF_buildCTable_wksp() :
+/** HUF_buildCTable_wksp() :
  *  Same as HUF_buildCTable(), but using externally allocated scratch buffer.
  *  `workSpace` must be aligned on 4-bytes boundaries, and be at least as large as sizeof(HUF_buildCTable_wksp_tables).
  */
@@ -715,7 +719,7 @@ static int HUF_buildTree(nodeElt* huffNode, U32 maxSymbolValue)
     return nonNullRank;
 }
 
-/*
+/**
  * HUF_buildCTableFromTree():
  * Build the CTable given the Huffman tree in huffNode.
  *
@@ -818,7 +822,7 @@ int HUF_validateCTable(const HUF_CElt* CTable, const unsigned* count, unsigned m
 
 size_t HUF_compressBound(size_t size) { return HUF_COMPRESSBOUND(size); }
 
-/* HUF_CStream_t:
+/** HUF_CStream_t:
  * Huffman uses its own BIT_CStream_t implementation.
  * There are three major differences from BIT_CStream_t:
  *   1. HUF_addBits() takes a HUF_CElt (size_t) which is
@@ -847,7 +851,7 @@ typedef struct {
     BYTE* endPtr;
 } HUF_CStream_t;
 
-/*! HUF_initCStream():
+/**! HUF_initCStream():
  * Initializes the bitstream.
  * @returns 0 or an error code.
  */
@@ -1039,7 +1043,7 @@ HUF_compress1X_usingCTable_internal_body_loop(HUF_CStream_t* bitC,
 
 }
 
-/*
+/**
  * Returns a tight upper bound on the output space needed by Huffman
  * with 8 bytes buffer to handle over-writes. If the output is at least
  * this large we don't need to do bounds checks during Huffman encoding.
