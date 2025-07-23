@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause */
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /* ******************************************************************
  * bitstream
  * Part of FSE library
@@ -33,6 +33,13 @@
 /*=========================================
 *  Target specific
 =========================================*/
+#ifndef ZSTD_NO_INTRINSICS
+#  if (defined(__BMI__) || defined(__BMI2__)) && defined(__GNUC__)
+#    include <immintrin.h>   /* support for bextr (experimental)/bzhi */
+#  elif defined(__ICCARM__)
+#    include <intrinsics.h>
+#  endif
+#endif
 
 #define STREAM_ACCUMULATOR_MIN_32  25
 #define STREAM_ACCUMULATOR_MIN_64  57
@@ -155,8 +162,17 @@ MEM_STATIC size_t BIT_initCStream(BIT_CStream_t* bitC,
 
 FORCE_INLINE_TEMPLATE BitContainerType BIT_getLowerBits(BitContainerType bitContainer, U32 const nbBits)
 {
+#if STATIC_BMI2 && !defined(ZSTD_NO_INTRINSICS)
+#  if (defined(__x86_64__) || defined(_M_X64)) && !defined(__ILP32__)
+    return _bzhi_u64(bitContainer, nbBits);
+#  else
+    DEBUG_STATIC_ASSERT(sizeof(bitContainer) == sizeof(U32));
+    return _bzhi_u32(bitContainer, nbBits);
+#  endif
+#else
     assert(nbBits < BIT_MASK_SIZE);
     return bitContainer & BIT_mask[nbBits];
+#endif
 }
 
 /*! BIT_addBits() :

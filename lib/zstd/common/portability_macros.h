@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause */
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
@@ -12,7 +12,7 @@
 #ifndef ZSTD_PORTABILITY_MACROS_H
 #define ZSTD_PORTABILITY_MACROS_H
 
-/*
+/**
  * This header file contains macro definitions to support portability.
  * This header is shared between C and ASM code, so it MUST only
  * contain macro definitions. It MUST not contain any C code.
@@ -38,10 +38,33 @@
 #endif
 
 /* detects whether we are being compiled under msan */
+#ifndef ZSTD_MEMORY_SANITIZER
+#  if __has_feature(memory_sanitizer)
+#    define ZSTD_MEMORY_SANITIZER 1
+#  else
+#    define ZSTD_MEMORY_SANITIZER 0
+#  endif
+#endif
 
 /* detects whether we are being compiled under asan */
+#ifndef ZSTD_ADDRESS_SANITIZER
+#  if __has_feature(address_sanitizer)
+#    define ZSTD_ADDRESS_SANITIZER 1
+#  elif defined(__SANITIZE_ADDRESS__)
+#    define ZSTD_ADDRESS_SANITIZER 1
+#  else
+#    define ZSTD_ADDRESS_SANITIZER 0
+#  endif
+#endif
 
 /* detects whether we are being compiled under dfsan */
+#ifndef ZSTD_DATAFLOW_SANITIZER
+# if __has_feature(dataflow_sanitizer)
+#  define ZSTD_DATAFLOW_SANITIZER 1
+# else
+#  define ZSTD_DATAFLOW_SANITIZER 0
+# endif
+#endif
 
 /* Mark the internal assembly functions as hidden  */
 #ifdef __ELF__
@@ -53,7 +76,17 @@
 #endif
 
 /* Compile time determination of BMI2 support */
+#ifndef STATIC_BMI2
+#  if defined(__BMI2__)
+#    define STATIC_BMI2 1
+#  elif defined(_MSC_VER) && defined(__AVX2__)
+#    define STATIC_BMI2 1 /* MSVC does not have a BMI2 specific flag, but every CPU that supports AVX2 also supports BMI2 */
+#  endif
+#endif
 
+#ifndef STATIC_BMI2
+#  define STATIC_BMI2 0
+#endif
 
 /* Enable runtime BMI2 dispatch based on the CPU.
  * Enabled for clang & gcc >=4.8 on x86 when BMI2 isn't enabled by default.
@@ -70,7 +103,7 @@
 #  endif
 #endif
 
-/*
+/**
  * Only enable assembly for GNU C compatible compilers,
  * because other platforms may not support GAS assembly syntax.
  *
@@ -81,9 +114,23 @@
  * Disable assembly when MSAN is enabled, because MSAN requires
  * 100% of code to be instrumented to work.
  */
-#define ZSTD_ASM_SUPPORTED 1
+#if defined(__GNUC__)
+#  if defined(__linux__) || defined(__linux) || defined(__APPLE__) || defined(_WIN32)
+#    if ZSTD_MEMORY_SANITIZER
+#      define ZSTD_ASM_SUPPORTED 0
+#    elif ZSTD_DATAFLOW_SANITIZER
+#      define ZSTD_ASM_SUPPORTED 0
+#    else
+#      define ZSTD_ASM_SUPPORTED 1
+#    endif
+#  else
+#    define ZSTD_ASM_SUPPORTED 0
+#  endif
+#else
+#  define ZSTD_ASM_SUPPORTED 0
+#endif
 
-/*
+/**
  * Determines whether we should enable assembly for x86-64
  * with BMI2.
  *
@@ -94,7 +141,14 @@
  *   - DYNAMIC_BMI2 is enabled
  *   - BMI2 is supported at compile time
  */
-#define ZSTD_ENABLE_ASM_X86_64_BMI2 0
+#if !defined(ZSTD_DISABLE_ASM) &&                                 \
+    ZSTD_ASM_SUPPORTED &&                                         \
+    defined(__x86_64__) &&                                        \
+    (DYNAMIC_BMI2 || defined(__BMI2__))
+# define ZSTD_ENABLE_ASM_X86_64_BMI2 1
+#else
+# define ZSTD_ENABLE_ASM_X86_64_BMI2 0
+#endif
 
 /*
  * For x86 ELF targets, add .note.gnu.property section for Intel CET in
@@ -113,6 +167,25 @@
 
 #ifndef ZSTD_CET_ENDBRANCH
 # define ZSTD_CET_ENDBRANCH
+#endif
+
+/**
+ * ZSTD_IS_DETERMINISTIC_BUILD must be set to 0 if any compilation macro is
+ * active that impacts the compressed output.
+ *
+ * NOTE: ZSTD_MULTITHREAD is allowed to be set or unset.
+ */
+#if defined(ZSTD_CLEVEL_DEFAULT) \
+    || defined(ZSTD_EXCLUDE_DFAST_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_GREEDY_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_LAZY_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_LAZY2_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_BTLAZY2_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_BTOPT_BLOCK_COMPRESSOR) \
+    || defined(ZSTD_EXCLUDE_BTULTRA_BLOCK_COMPRESSOR)
+# define ZSTD_IS_DETERMINISTIC_BUILD 0
+#else
+# define ZSTD_IS_DETERMINISTIC_BUILD 1
 #endif
 
 #endif /* ZSTD_PORTABILITY_MACROS_H */

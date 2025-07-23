@@ -16,6 +16,7 @@
 /* **************************************************************
 *  Dependencies
 ****************************************************************/
+#include <linux/types.h>             /* size_t */
 #include "../common/zstd_deps.h"  /* ZSTD_memcpy, ZSTD_memset */
 #include "../common/compiler.h"
 #include "../common/bitstream.h"  /* BIT_* */
@@ -60,7 +61,11 @@
 # define HUF_FAST_BMI2_ATTRS
 #endif
 
-#define HUF_EXTERN_C
+#ifdef __cplusplus
+# define HUF_EXTERN_C extern "C"
+#else
+# define HUF_EXTERN_C
+#endif
 #define HUF_ASM_DECL HUF_EXTERN_C
 
 #if DYNAMIC_BMI2
@@ -154,7 +159,7 @@ static size_t HUF_initFastDStream(BYTE const* ip) {
 }
 
 
-/*
+/**
  * The input/output arguments to the Huffman fast decoding loop:
  *
  * ip [in/out] - The input pointers, must be updated to reflect what is consumed.
@@ -179,7 +184,7 @@ typedef struct {
 
 typedef void (*HUF_DecompressFastLoopFn)(HUF_DecompressFastArgs*);
 
-/*
+/**
  * Initializes args for the fast decoding loop.
  * @returns 1 on success
  *          0 if the fallback implementation should be used.
@@ -192,7 +197,7 @@ static size_t HUF_DecompressFastArgs_init(HUF_DecompressFastArgs* args, void* ds
 
     const BYTE* const istart = (const BYTE*)src;
 
-    BYTE* const oend = ZSTD_maybeNullPtrAdd((BYTE*)dst, dstSize);
+    BYTE* const oend = (BYTE*)ZSTD_maybeNullPtrAdd(dst, (ptrdiff_t)dstSize);
 
     /* The fast decoding loop assumes 64-bit little-endian.
      * This condition is false on x32.
@@ -325,7 +330,7 @@ static size_t HUF_initRemainingDStream(BIT_DStream_t* bit, HUF_DecompressFastArg
 /*-***************************/
 typedef struct { BYTE nbBits; BYTE byte; } HUF_DEltX1;   /* single-symbol decoding */
 
-/*
+/**
  * Packs 4 HUF_DEltX1 structs into a U64. This is used to lay down 4 entries at
  * a time.
  */
@@ -341,7 +346,7 @@ static U64 HUF_DEltX1_set4(BYTE symbol, BYTE nbBits) {
     return D4;
 }
 
-/*
+/**
  * Increase the tableLog to targetTableLog and rescales the stats.
  * If tableLog > targetTableLog this is a no-op.
  * @returns New tableLog
@@ -575,7 +580,7 @@ HUF_decompress1X1_usingDTable_internal_body(
     const HUF_DTable* DTable)
 {
     BYTE* op = (BYTE*)dst;
-    BYTE* const oend = ZSTD_maybeNullPtrAdd(op, dstSize);
+    BYTE* const oend = (BYTE*)ZSTD_maybeNullPtrAdd(op, (ptrdiff_t)dstSize);
     const void* dtPtr = DTable + 1;
     const HUF_DEltX1* const dt = (const HUF_DEltX1*)dtPtr;
     BIT_DStream_t bitD;
@@ -827,7 +832,7 @@ _out:
     ZSTD_memcpy(&args->op, &op, sizeof(op));
 }
 
-/*
+/**
  * @returns @p dstSize on success (>= 6)
  *          0 if the fallback implementation should be used
  *          An error if an error occurred
@@ -842,7 +847,7 @@ HUF_decompress4X1_usingDTable_internal_fast(
 {
     void const* dt = DTable + 1;
     BYTE const* const ilowest = (BYTE const*)cSrc;
-    BYTE* const oend = ZSTD_maybeNullPtrAdd((BYTE*)dst, dstSize);
+    BYTE* const oend = (BYTE*)ZSTD_maybeNullPtrAdd(dst, (ptrdiff_t)dstSize);
     HUF_DecompressFastArgs args;
     {   size_t const ret = HUF_DecompressFastArgs_init(&args, dst, dstSize, cSrc, cSrcSize, DTable);
         FORWARD_IF_ERROR(ret, "Failed to init fast loop args");
@@ -952,7 +957,7 @@ typedef struct { BYTE symbol; } sortedSymbol_t;
 typedef U32 rankValCol_t[HUF_TABLELOG_MAX + 1];
 typedef rankValCol_t rankVal_t[HUF_TABLELOG_MAX];
 
-/*
+/**
  * Constructs a HUF_DEltX2 in a U32.
  */
 static U32 HUF_buildDEltX2U32(U32 symbol, U32 nbBits, U32 baseSeq, int level)
@@ -971,7 +976,7 @@ static U32 HUF_buildDEltX2U32(U32 symbol, U32 nbBits, U32 baseSeq, int level)
     }
 }
 
-/*
+/**
  * Constructs a HUF_DEltX2.
  */
 static HUF_DEltX2 HUF_buildDEltX2(U32 symbol, U32 nbBits, U32 baseSeq, int level)
@@ -983,7 +988,7 @@ static HUF_DEltX2 HUF_buildDEltX2(U32 symbol, U32 nbBits, U32 baseSeq, int level
     return DElt;
 }
 
-/*
+/**
  * Constructs 2 HUF_DEltX2s and packs them into a U64.
  */
 static U64 HUF_buildDEltX2U64(U32 symbol, U32 nbBits, U16 baseSeq, int level)
@@ -992,7 +997,7 @@ static U64 HUF_buildDEltX2U64(U32 symbol, U32 nbBits, U16 baseSeq, int level)
     return (U64)DElt + ((U64)DElt << 32);
 }
 
-/*
+/**
  * Fills the DTable rank with all the symbols from [begin, end) that are each
  * nbBits long.
  *
@@ -1359,7 +1364,7 @@ HUF_decompress1X2_usingDTable_internal_body(
 
     /* decode */
     {   BYTE* const ostart = (BYTE*) dst;
-        BYTE* const oend = ZSTD_maybeNullPtrAdd(ostart, dstSize);
+        BYTE* const oend = (BYTE*)ZSTD_maybeNullPtrAdd(ostart, (ptrdiff_t)dstSize);
         const void* const dtPtr = DTable+1;   /* force compiler to not use strict-aliasing */
         const HUF_DEltX2* const dt = (const HUF_DEltX2*)dtPtr;
         DTableDesc const dtd = HUF_getDTableDesc(DTable);
@@ -1668,7 +1673,7 @@ HUF_decompress4X2_usingDTable_internal_fast(
     HUF_DecompressFastLoopFn loopFn) {
     void const* dt = DTable + 1;
     const BYTE* const ilowest = (const BYTE*)cSrc;
-    BYTE* const oend = ZSTD_maybeNullPtrAdd((BYTE*)dst, dstSize);
+    BYTE* const oend = (BYTE*)ZSTD_maybeNullPtrAdd(dst, (ptrdiff_t)dstSize);
     HUF_DecompressFastArgs args;
     {
         size_t const ret = HUF_DecompressFastArgs_init(&args, dst, dstSize, cSrc, cSrcSize, DTable);
@@ -1810,7 +1815,7 @@ static const algo_time_t algoTime[16 /* Quantization */][2 /* single, double */]
 };
 #endif
 
-/* HUF_selectDecoder() :
+/** HUF_selectDecoder() :
  *  Tells which decoder is likely to decode faster,
  *  based on a set of pre-computed metrics.
  * @return : 0==HUF_decompress4X1, 1==HUF_decompress4X2 .

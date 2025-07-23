@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause */
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
@@ -12,13 +12,16 @@
 #ifndef ZSTD_COMMON_CPU_H
 #define ZSTD_COMMON_CPU_H
 
-/*
+/**
  * Implementation taken from folly/CpuId.h
  * https://github.com/facebook/folly/blob/master/folly/CpuId.h
  */
 
 #include "mem.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 typedef struct {
     U32 f1c;
@@ -32,7 +35,59 @@ MEM_STATIC ZSTD_cpuid_t ZSTD_cpuid(void) {
     U32 f1d = 0;
     U32 f7b = 0;
     U32 f7c = 0;
-#if defined(__i386__) && defined(__PIC__) && !defined(__clang__) && defined(__GNUC__)
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#if !defined(_M_X64) || !defined(__clang__) || __clang_major__ >= 16
+    int reg[4];
+    __cpuid((int*)reg, 0);
+    {
+        int const n = reg[0];
+        if (n >= 1) {
+            __cpuid((int*)reg, 1);
+            f1c = (U32)reg[2];
+            f1d = (U32)reg[3];
+        }
+        if (n >= 7) {
+            __cpuidex((int*)reg, 7, 0);
+            f7b = (U32)reg[1];
+            f7c = (U32)reg[2];
+        }
+    }
+#else
+    /* Clang compiler has a bug (fixed in https://reviews.llvm.org/D101338) in
+     * which the `__cpuid` intrinsic does not save and restore `rbx` as it needs
+     * to due to being a reserved register. So in that case, do the `cpuid`
+     * ourselves. Clang supports inline assembly anyway.
+     */
+    U32 n;
+    __asm__(
+        "pushq %%rbx\n\t"
+        "cpuid\n\t"
+        "popq %%rbx\n\t"
+        : "=a"(n)
+        : "a"(0)
+        : "rcx", "rdx");
+    if (n >= 1) {
+      U32 f1a;
+      __asm__(
+          "pushq %%rbx\n\t"
+          "cpuid\n\t"
+          "popq %%rbx\n\t"
+          : "=a"(f1a), "=c"(f1c), "=d"(f1d)
+          : "a"(1)
+          :);
+    }
+    if (n >= 7) {
+      __asm__(
+          "pushq %%rbx\n\t"
+          "cpuid\n\t"
+          "movq %%rbx, %%rax\n\t"
+          "popq %%rbx"
+          : "=a"(f7b), "=c"(f7c)
+          : "a"(7), "c"(0)
+          : "rdx");
+    }
+#endif
+#elif defined(__i386__) && defined(__PIC__) && !defined(__clang__) && defined(__GNUC__)
     /* The following block like the normal cpuid branch below, but gcc
      * reserves ebx for use of its pic register so we must specially
      * handle the save and restore to avoid clobbering the register

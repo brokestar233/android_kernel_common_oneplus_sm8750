@@ -26,7 +26,7 @@ typedef struct {
     U64 stopMask;
 } ldmRollingHashState_t;
 
-/* ZSTD_ldm_gear_init():
+/** ZSTD_ldm_gear_init():
  *
  * Initializes the rolling hash state such that it will honor the
  * settings in params. */
@@ -58,7 +58,7 @@ static void ZSTD_ldm_gear_init(ldmRollingHashState_t* state, ldmParams_t const* 
     }
 }
 
-/* ZSTD_ldm_gear_reset()
+/** ZSTD_ldm_gear_reset()
  * Feeds [data, data + minMatchLength) into the hash without registering any
  * splits. This effectively resets the hash state. This is used when skipping
  * over data, either at the beginning of a block, or skipping sections.
@@ -85,7 +85,7 @@ static void ZSTD_ldm_gear_reset(ldmRollingHashState_t* state,
 #undef GEAR_ITER_ONCE
 }
 
-/* ZSTD_ldm_gear_feed():
+/** ZSTD_ldm_gear_feed():
  *
  * Registers in the splits array all the split points found in the first
  * size bytes following the data pointer. This function terminates when
@@ -182,7 +182,7 @@ size_t ZSTD_ldm_getMaxNbSeq(ldmParams_t params, size_t maxChunkSize)
     return params.enableLdm == ZSTD_ps_enable ? (maxChunkSize / params.minMatchLength) : 0;
 }
 
-/* ZSTD_ldm_getBucket() :
+/** ZSTD_ldm_getBucket() :
  *  Returns a pointer to the start of the bucket associated with hash. */
 static ldmEntry_t* ZSTD_ldm_getBucket(
         const ldmState_t* ldmState, size_t hash, U32 const bucketSizeLog)
@@ -190,7 +190,7 @@ static ldmEntry_t* ZSTD_ldm_getBucket(
     return ldmState->hashTable + (hash << bucketSizeLog);
 }
 
-/* ZSTD_ldm_insertEntry() :
+/** ZSTD_ldm_insertEntry() :
  *  Insert the entry with corresponding hash into the hash table */
 static void ZSTD_ldm_insertEntry(ldmState_t* ldmState,
                                  size_t const hash, const ldmEntry_t entry,
@@ -204,7 +204,7 @@ static void ZSTD_ldm_insertEntry(ldmState_t* ldmState,
 
 }
 
-/* ZSTD_ldm_countBackwardsMatch() :
+/** ZSTD_ldm_countBackwardsMatch() :
  *  Returns the number of bytes that match backwards before pIn and pMatch.
  *
  *  We count only bytes where pMatch >= pBase and pIn >= pAnchor. */
@@ -221,7 +221,7 @@ static size_t ZSTD_ldm_countBackwardsMatch(
     return matchLength;
 }
 
-/* ZSTD_ldm_countBackwardsMatch_2segments() :
+/** ZSTD_ldm_countBackwardsMatch_2segments() :
  *  Returns the number of bytes that match backwards from pMatch,
  *  even with the backwards match spanning 2 different segments.
  *
@@ -242,7 +242,7 @@ static size_t ZSTD_ldm_countBackwardsMatch_2segments(
     return matchLength;
 }
 
-/* ZSTD_ldm_fillFastTables() :
+/** ZSTD_ldm_fillFastTables() :
  *
  *  Fills the relevant tables for the ZSTD_fast and ZSTD_dfast strategies.
  *  This is similar to ZSTD_loadDictionaryContent.
@@ -324,7 +324,7 @@ void ZSTD_ldm_fillHashTable(
 }
 
 
-/* ZSTD_ldm_limitTableUpdate() :
+/** ZSTD_ldm_limitTableUpdate() :
  *
  *  Sets cctx->nextToUpdate to a position corresponding closer to anchor
  *  if it is far way
@@ -631,7 +631,7 @@ ZSTD_ldm_skipSequences(RawSeqStore_t* rawSeqStore, size_t srcSize, U32 const min
     }
 }
 
-/*
+/**
  * If the sequence length is longer than remaining then the sequence is split
  * between this block and the next.
  *

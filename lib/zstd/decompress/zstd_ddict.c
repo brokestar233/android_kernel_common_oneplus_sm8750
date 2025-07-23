@@ -25,6 +25,9 @@
 #include "zstd_decompress_internal.h"
 #include "zstd_ddict.h"
 
+#if defined(ZSTD_LEGACY_SUPPORT) && (ZSTD_LEGACY_SUPPORT>=1)
+#  include "../legacy/zstd_legacy.h"
+#endif
 
 
 
