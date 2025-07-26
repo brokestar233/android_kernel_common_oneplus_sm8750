@@ -2397,6 +2397,9 @@ static char *custom_module_blacklist[] = {
 #if IS_BUILTIN(CONFIG_ZSMALLOC)
     "zsmalloc",
 #endif
+#if IS_BUILTIN(CONFIG_TCP_CONG_BBR)
+    "oplus_network_tuning",
+#endif
 };
 
 static bool blacklisted(const char *module_name)
