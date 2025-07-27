@@ -750,7 +750,11 @@ struct vm_area_struct {
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
 
+#ifdef CONFIG_UKSM
+	ANDROID_KABI_USE(1, struct vma_slot *uksm_vma_slot);
+#else
 	ANDROID_KABI_RESERVE(1);
+#endif
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
@@ -978,23 +982,6 @@ struct mm_struct {
 #ifdef CONFIG_IOMMU_SVA
 		u32 pasid;
 #endif
-#ifdef CONFIG_KSM
-		/*
-		 * Represent how many pages of this process are involved in KSM
-		 * merging (not including ksm_zero_pages).
-		 */
-		unsigned long ksm_merging_pages;
-		/*
-		 * Represent how many pages are checked for ksm merging
-		 * including merged and not merged.
-		 */
-		unsigned long ksm_rmap_items;
-		/*
-		 * Represent how many empty pages are merged with kernel zero
-		 * pages when enabling KSM use_zero_pages.
-		 */
-		atomic_long_t ksm_zero_pages;
-#endif /* CONFIG_KSM */
 #ifdef CONFIG_LRU_GEN
 		struct {
 			/* this mm_struct is on lru_gen_mm_list */
@@ -1012,7 +999,11 @@ struct mm_struct {
 		} lru_gen;
 #endif /* CONFIG_LRU_GEN */
 
+#ifdef CONFIG_KSM
+		ANDROID_KABI_USE(1, struct ksm *ksm);
+#else  /* !CONFIG_KSM */
 		ANDROID_KABI_RESERVE(1);
+#endif /* CONFIG_KSM */
 		ANDROID_BACKPORT_USE(1, struct task_dma_buf_info *dmabuf_info);
 	} __randomize_layout;
 
@@ -1022,6 +1013,26 @@ struct mm_struct {
 	 */
 	unsigned long cpu_bitmap[];
 };
+
+#ifdef CONFIG_KSM
+struct ksm {
+	/*
+	 * Represent how many pages of this process are involved in KSM
+	 * merging (not including ksm_zero_pages).
+	 */
+	unsigned long ksm_merging_pages;
+	/*
+	 * Represent how many pages are checked for ksm merging
+	 * including merged and not merged.
+	 */
+	unsigned long ksm_rmap_items;
+	/*
+	 * Represent how many empty pages are merged with kernel zero
+	 * pages when enabling KSM use_zero_pages.
+	 */
+	atomic_long_t ksm_zero_pages;
+};
+#endif /* CONFIG_KSM */
 
 #define MM_MT_FLAGS	(MT_FLAGS_ALLOC_RANGE | MT_FLAGS_LOCK_EXTERN | \
 			 MT_FLAGS_USE_RCU)
