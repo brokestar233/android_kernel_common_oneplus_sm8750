@@ -394,7 +394,7 @@ static inline struct ksm_rmap_item *alloc_rmap_item(void)
 static inline void free_rmap_item(struct ksm_rmap_item *rmap_item)
 {
 	ksm_rmap_items--;
-	rmap_item->mm->ksm_rmap_items--;
+	rmap_item->mm->ksm->ksm_rmap_items--;
 	rmap_item->mm = NULL;	/* debug safety */
 	kmem_cache_free(rmap_item_cache, rmap_item);
 }
@@ -680,7 +680,7 @@ static void remove_node_from_stable_tree(struct ksm_stable_node *stable_node)
 			ksm_pages_shared--;
 		}
 
-		rmap_item->mm->ksm_merging_pages--;
+		rmap_item->mm->ksm->ksm_merging_pages--;
 
 		VM_BUG_ON(stable_node->rmap_hlist_len <= 0);
 		stable_node->rmap_hlist_len--;
@@ -831,7 +831,7 @@ static void remove_rmap_item_from_tree(struct ksm_rmap_item *rmap_item)
 		else
 			ksm_pages_shared--;
 
-		rmap_item->mm->ksm_merging_pages--;
+		rmap_item->mm->ksm->ksm_merging_pages--;
 
 		VM_BUG_ON(stable_node->rmap_hlist_len <= 0);
 		stable_node->rmap_hlist_len--;
@@ -2102,7 +2102,7 @@ static void stable_tree_append(struct ksm_rmap_item *rmap_item,
 	else
 		ksm_pages_shared++;
 
-	rmap_item->mm->ksm_merging_pages++;
+	rmap_item->mm->ksm->ksm_merging_pages++;
 }
 
 /*
@@ -2299,7 +2299,7 @@ static struct ksm_rmap_item *get_next_rmap_item(struct ksm_mm_slot *mm_slot,
 	if (rmap_item) {
 		/* It has already been zeroed */
 		rmap_item->mm = mm_slot->slot.mm;
-		rmap_item->mm->ksm_rmap_items++;
+		rmap_item->mm->ksm->ksm_rmap_items++;
 		rmap_item->address = addr;
 		rmap_item->rmap_list = *rmap_list;
 		*rmap_list = rmap_item;
@@ -2787,6 +2787,13 @@ void __ksm_exit(struct mm_struct *mm)
 		mmap_write_unlock(mm);
 	}
 
+	if (mm) {
+    	if (mm->ksm) {
+        	kfree(mm->ksm);
+        	mm->ksm = NULL;
+    	}
+	}
+
 	trace_ksm_exit(mm);
 }
 
@@ -3111,8 +3118,8 @@ static void wait_while_offlining(void)
 #ifdef CONFIG_PROC_FS
 long ksm_process_profit(struct mm_struct *mm)
 {
-	return (long)(mm->ksm_merging_pages + mm_ksm_zero_pages(mm)) * PAGE_SIZE -
-		mm->ksm_rmap_items * sizeof(struct ksm_rmap_item);
+	return (long)(mm->ksm->ksm_merging_pages + mm_ksm_zero_pages(mm)) * PAGE_SIZE -
+		mm->ksm->ksm_rmap_items * sizeof(struct ksm_rmap_item);
 }
 #endif /* CONFIG_PROC_FS */
 
