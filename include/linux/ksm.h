@@ -38,20 +38,27 @@ extern atomic_long_t ksm_zero_pages;
 static inline void ksm_map_zero_page(struct mm_struct *mm)
 {
 	atomic_long_inc(&ksm_zero_pages);
-	atomic_long_inc(&mm->ksm_zero_pages);
+	atomic_long_inc(&mm->ksm->ksm_zero_pages);
 }
+
+void rmap_walk_ksm(struct folio *folio, struct rmap_walk_control *rwc);
+void folio_migrate_ksm(struct folio *newfolio, struct folio *folio);
+
+#ifdef CONFIG_KSM_LEGACY
+int __ksm_enter(struct mm_struct *mm);
+void __ksm_exit(struct mm_struct *mm);
 
 static inline void ksm_might_unmap_zero_page(struct mm_struct *mm, pte_t pte)
 {
 	if (is_ksm_zero_pte(pte)) {
 		atomic_long_dec(&ksm_zero_pages);
-		atomic_long_dec(&mm->ksm_zero_pages);
+		atomic_long_dec(&mm->ksm->ksm_zero_pages);
 	}
 }
 
 static inline long mm_ksm_zero_pages(struct mm_struct *mm)
 {
-	return atomic_long_read(&mm->ksm_zero_pages);
+	return atomic_long_read(&mm->ksm->ksm_zero_pages);
 }
 
 static inline int ksm_fork(struct mm_struct *mm, struct mm_struct *oldmm)
@@ -101,6 +108,41 @@ void collect_procs_ksm(struct page *page, struct list_head *to_kill,
 #ifdef CONFIG_PROC_FS
 long ksm_process_profit(struct mm_struct *);
 #endif /* CONFIG_PROC_FS */
+
+#elif defined(CONFIG_UKSM)
+
+struct folio *ksm_might_need_to_copy(struct folio *folio,
+			struct vm_area_struct *vma, unsigned long addr);
+
+void collect_procs_ksm(struct folio *folio, struct page *page,
+		struct list_head *to_kill, int force_early);
+
+long ksm_process_profit(struct mm_struct *);
+
+static inline void ksm_might_unmap_zero_page(struct mm_struct *mm, pte_t pte)
+{
+}
+
+static inline long mm_ksm_zero_pages(struct mm_struct *mm)
+{
+	return 0;
+}
+
+static inline int ksm_fork(struct mm_struct *mm, struct mm_struct *oldmm)
+{
+	return 0;
+}
+
+static inline int ksm_execve(struct mm_struct *mm)
+{
+	return 0;
+}
+
+static inline void ksm_exit(struct mm_struct *mm)
+{
+}
+#endif /* !CONFIG_UKSM */
+
 
 #else  /* !CONFIG_KSM */
 
@@ -156,5 +198,7 @@ static inline void folio_migrate_ksm(struct folio *newfolio, struct folio *old)
 }
 #endif /* CONFIG_MMU */
 #endif /* !CONFIG_KSM */
+
+#include <linux/uksm.h>
 
 #endif /* __LINUX_KSM_H */

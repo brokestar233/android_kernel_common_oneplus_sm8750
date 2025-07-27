@@ -70,6 +70,7 @@ TEST_GEN_FILES += split_huge_page_test
 TEST_GEN_FILES += ksm_tests
 TEST_GEN_FILES += ksm_functional_tests
 TEST_GEN_FILES += mdwe_test
+TEST_GEN_FILES += uksm_tests
 
 ifneq ($(ARCH),arm64)
 TEST_GEN_PROGS += soft-dirty
@@ -180,6 +181,8 @@ $(OUTPUT)/gup_longterm: LDLIBS += $(IOURING_EXTRA_LIBS)
 $(OUTPUT)/mlock-random-test $(OUTPUT)/memfd_secret: LDLIBS += -lcap
 
 $(OUTPUT)/ksm_tests: LDLIBS += -lnuma
+
+$(OUTPUT)/uksm_tests: LDLIBS += -lnuma
 
 $(OUTPUT)/migration: LDLIBS += -lnuma
 
