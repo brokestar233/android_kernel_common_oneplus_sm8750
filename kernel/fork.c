@@ -540,6 +540,10 @@ struct vm_area_struct *vm_area_dup(struct vm_area_struct *orig)
 
 void __vm_area_free(struct vm_area_struct *vma)
 {
+#ifdef CONFIG_UKSM
+	BUG_ON(vma->uksm_vma_slot != NULL);
+#endif
+
 	vma_numab_state_free(vma);
 	free_anon_vma_name(vma);
 	vma_lock_free(vma);
@@ -781,6 +785,7 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 		 */
 		vma_iter_bulk_store(&vmi, tmp);
 
+		uksm_add_vma_new(tmp, "dup_mmap");
 		mm->map_count++;
 		if (!(tmp->vm_flags & VM_WIPEONFORK))
 			retval = copy_page_range(tmp, mpnt);
@@ -1334,6 +1339,12 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm_init_uprobes_state(mm);
 	hugetlb_count_init(mm);
 
+#ifdef CONFIG_KSM
+	mm->ksm = kzalloc(sizeof(struct ksm), GFP_KERNEL);
+	if (!mm->ksm)
+		goto fail_ksm;
+#endif
+
 	if (current->mm) {
 		mm->flags = mmf_init_flags(current->mm->flags);
 		mm->def_flags = current->mm->def_flags & VM_INIT_DEF_MASK;
@@ -1366,6 +1377,10 @@ fail_cid:
 fail_nocontext:
 	mm_free_pgd(mm);
 fail_nopgd:
+#ifdef CONFIG_KSM
+	kfree(mm->ksm);
+fail_ksm:
+#endif
 	free_mm(mm);
 	return NULL;
 }

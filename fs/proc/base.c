@@ -3298,7 +3298,7 @@ static int proc_pid_ksm_merging_pages(struct seq_file *m, struct pid_namespace *
 
 	mm = get_task_mm(task);
 	if (mm) {
-		seq_printf(m, "%lu\n", mm->ksm_merging_pages);
+		seq_printf(m, "%lu\n", mm->ksm->ksm_merging_pages);
 		mmput(mm);
 	}
 
@@ -3311,9 +3311,9 @@ static int proc_pid_ksm_stat(struct seq_file *m, struct pid_namespace *ns,
 
 	mm = get_task_mm(task);
 	if (mm) {
-		seq_printf(m, "ksm_rmap_items %lu\n", mm->ksm_rmap_items);
+		seq_printf(m, "ksm_rmap_items %lu\n", mm->ksm->ksm_rmap_items);
 		seq_printf(m, "ksm_zero_pages %ld\n", mm_ksm_zero_pages(mm));
-		seq_printf(m, "ksm_merging_pages %lu\n", mm->ksm_merging_pages);
+		seq_printf(m, "ksm_merging_pages %lu\n", mm->ksm->ksm_merging_pages);
 		seq_printf(m, "ksm_process_profit %ld\n", ksm_process_profit(mm));
 		mmput(mm);
 	}
