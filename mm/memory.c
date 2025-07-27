@@ -172,6 +172,25 @@ EXPORT_SYMBOL(zero_pfn);
 
 unsigned long highest_memmap_pfn __read_mostly;
 
+#ifdef CONFIG_UKSM
+unsigned long uksm_zero_pfn __read_mostly;
+EXPORT_SYMBOL_GPL(uksm_zero_pfn);
+struct page *empty_uksm_zero_page;
+
+static int __init setup_uksm_zero_page(void)
+{
+	empty_uksm_zero_page = alloc_pages(__GFP_ZERO & ~__GFP_MOVABLE, 0);
+	if (!empty_uksm_zero_page)
+		panic("Oh boy, that early out of memory?");
+
+	SetPageReserved(empty_uksm_zero_page);
+	uksm_zero_pfn = page_to_pfn(empty_uksm_zero_page);
+
+	return 0;
+}
+core_initcall(setup_uksm_zero_page);
+#endif
+
 /*
  * CONFIG_MMU architectures set up ZERO_PAGE in their paging_init()
  */
@@ -187,6 +206,43 @@ void mm_trace_rss_stat(struct mm_struct *mm, int member)
 	trace_rss_stat(mm, member);
 }
 EXPORT_SYMBOL_GPL(mm_trace_rss_stat);
+
+#if defined(SPLIT_RSS_COUNTING)
+
+void sync_mm_rss(struct mm_struct *mm)
+{
+	int i;
+
+	for (i = 0; i < NR_MM_COUNTERS; i++) {
+		if (current->rss_stat.count[i]) {
+			add_mm_counter(mm, i, current->rss_stat.count[i]);
+			current->rss_stat.count[i] = 0;
+		}
+	}
+	current->rss_stat.events = 0;
+}
+
+static void add_mm_counter_fast(struct mm_struct *mm, int member, int val)
+{
+	struct task_struct *task = current;
+
+	if (likely(task->mm == mm))
+		task->rss_stat.count[member] += val;
+	else
+		add_mm_counter(mm, member, val);
+}
+#define inc_mm_counter_fast(mm, member) add_mm_counter_fast(mm, member, 1)
+#define dec_mm_counter_fast(mm, member) add_mm_counter_fast(mm, member, -1)
+
+/* sync counter once per 64 page faults */
+#define TASK_RSS_EVENTS_THRESH	(64)
+
+#else /* SPLIT_RSS_COUNTING */
+
+#define inc_mm_counter_fast(mm, member) inc_mm_counter(mm, member)
+#define dec_mm_counter_fast(mm, member) dec_mm_counter(mm, member)
+
+#endif /* SPLIT_RSS_COUNTING */
 
 /*
  * Note: this doesn't free the actual pages themselves. That
@@ -984,8 +1040,10 @@ copy_present_ptes(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 	int err, nr;
 
 	page = vm_normal_page(src_vma, addr, pte);
-	if (unlikely(!page))
+	if (unlikely(!page)) {
+		uksm_map_zero_page(pte);
 		goto copy_pte;
+	}
 
 	folio = page_folio(page);
 
@@ -1042,6 +1100,7 @@ copy_present_ptes(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 	} else {
 		folio_dup_file_rmap_pte(folio, page);
 		rss[mm_counter_file(folio)]++;
+		uksm_bugon_zeropage(pte);
 	}
 
 copy_pte:
@@ -1549,6 +1608,7 @@ static inline int zap_present_ptes(struct mmu_gather *tlb,
 			zap_install_uffd_wp_if_needed(vma, addr, pte, 1,
 						      details, ptent);
 		ksm_might_unmap_zero_page(mm, ptent);
+		uksm_unmap_zero_page(ptent);
 		return 1;
 	}
 
@@ -3005,6 +3065,7 @@ static inline int __wp_page_copy_user(struct page *dst, struct page *src,
 			memory_failure_queue(page_to_pfn(src), 0);
 			return -EHWPOISON;
 		}
+		uksm_cow_page(vma, src);
 		return 0;
 	}
 
@@ -3333,6 +3394,8 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 			return err == -EHWPOISON ? VM_FAULT_HWPOISON : 0;
 		}
 		kmsan_copy_page_meta(&new_folio->page, vmf->page);
+	} else {
+		uksm_cow_pte(vma, vmf->orig_pte);
 	}
 
 	__folio_mark_uptodate(new_folio);
@@ -3352,8 +3415,10 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 				dec_mm_counter(mm, mm_counter_file(old_folio));
 				inc_mm_counter(mm, MM_ANONPAGES);
 			}
+			uksm_bugon_zeropage(vmf->orig_pte);
 		} else {
 			ksm_might_unmap_zero_page(mm, vmf->orig_pte);
+			uksm_unmap_zero_page(vmf->orig_pte);
 			inc_mm_counter(mm, MM_ANONPAGES);
 		}
 		flush_cache_page(vma, vmf->address, pte_pfn(vmf->orig_pte));
