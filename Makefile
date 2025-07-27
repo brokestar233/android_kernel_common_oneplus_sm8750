@@ -852,6 +852,10 @@ endif
 KBUILD_RUSTFLAGS += -Cdebug-assertions=$(if $(CONFIG_RUST_DEBUG_ASSERTIONS),y,n)
 KBUILD_RUSTFLAGS += -Coverflow-checks=$(if $(CONFIG_RUST_OVERFLOW_CHECKS),y,n)
 
+ifdef CONFIG_ORYON_1
+KBUILD_CFLAGS += -mcpu=oryon-1
+endif
+
 ifdef CONFIG_LLVM_POLLY
 KBUILD_CFLAGS	+= -fvectorize -funroll-loops -mllvm -polly \
 		   -mllvm -polly-run-inliner \
