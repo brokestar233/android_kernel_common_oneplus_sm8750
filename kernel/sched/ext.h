@@ -1,3 +1,5 @@
+#ifndef __SCX_EXT_H
+#define __SCX_EXT_H
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * BPF extensible scheduler class: Documentation/scheduler/sched-ext.rst
@@ -15,6 +17,9 @@
  * kfunc, or a global kfunc in an LTO build.
  */
 #define __bpf_kfunc __used noinline
+extern atomic_t scx_exit_type;
+extern atomic_t scx_active_tasks;
+extern u64 scx_total_dispatches;
 
 enum scx_wake_flags {
 	/* expose select WF_* flags as enums */
@@ -255,3 +260,4 @@ static inline void scx_cgroup_cancel_attach(struct cgroup_taskset *tset) {}
 static inline void scx_group_set_weight(struct task_group *tg, unsigned long cgrp_weight) {}
 #endif	/* CONFIG_EXT_GROUP_SCHED */
 #endif	/* CONFIG_CGROUP_SCHED */
+#endif /* __SCX_EXT_H */

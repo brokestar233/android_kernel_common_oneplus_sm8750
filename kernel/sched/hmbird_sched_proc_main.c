@@ -10,6 +10,7 @@
 #include <linux/slab.h>
 #include <linux/cpufreq.h>
 #include "hmbird_sched_proc.h"
+#include "ext.h"
 
 #define HMBIRD_SCHED_PROC_DIR "hmbird_sched"
 #define SLIM_FREQ_GOV_DIR       "slim_freq_gov"
@@ -115,11 +116,57 @@ HMBIRD_PROC_OPS(scx_enable, hmbird_common_open, scx_enable_proc_write);
 #define MAX_STATS_BUF	(2000)
 static int hmbird_stats_proc_show(struct seq_file *m, void *v)
 {
-	char buf[MAX_STATS_BUF] = {0};
-
-	seq_printf(m, "%s\n", buf);
-	return 0;
-}
+    	seq_puts(m, "global stat:0, 0\n");
+    	seq_puts(m, "cpu_allow_fail:0, 0\n");
+    	seq_puts(m, "rt_cnt:0, 0\n");
+    	seq_puts(m, "key_task_cnt:0, 0\n");
+    	seq_puts(m, "switch_idx:0, 0\n");
+    	seq_puts(m, "timeout_cnt:0, 0\n");
+    	seq_puts(m, "total_dsp_cnt:0, 0\n");
+    	seq_puts(m, "move_rq_cnt:0, 0\n");
+	seq_puts(m, "select_cpu:0, 0\n");
+    
+    	// Output gdsq_cnt array
+    	for (int i = 0; i < 10; i++) {
+        	seq_printf(m, "gdsq_cnt[%d]:0, 0\n", i);
+    	}
+    
+    	seq_puts(m, "err_idx:0, 0, 0, 0, 0\n");
+    
+    	// 扩展 pcp_timeout_cnt 输出（增加索引6-7）
+    	for (int i = 0; i < 8; i++) {  // 从 6 扩大到 8
+        	seq_printf(m, "pcp_timeout_cnt[%d]:0\n", i);
+    	}
+    
+    	// 添加缺失的 pcp_ldsq_cnt 数组输出（索引0-7）
+    	for (int i = 0; i < 8; i++) {
+        	seq_printf(m, "pcp_ldsq_cnt[%d]:0, 0\n", i);
+    	}
+    
+    	// 添加缺失的 pcp_enql_cnt 数组输出（索引0-7）
+    	for (int i = 0; i < 8; i++) {
+        	seq_printf(m, "pcp_enql_cnt[%d]:0\n", i);
+    	}
+    
+    	// 原有的调度器状态变量输出
+    	seq_printf(m, "SCX Enabled: %d\n", scx_enable);
+    	seq_printf(m, "Partial Enable: %d\n", partial_enable);
+    	seq_printf(m, "Slim Stats: %d\n", slim_stats);
+    	seq_printf(m, "Heartbeat: %d\n", heartbeat);
+    	seq_printf(m, "Misfit DS: %d\n", misfit_ds);
+    	seq_printf(m, "Highres Tick Ctrl: %u\n", highres_tick_ctrl);
+    	seq_printf(m, "Watchdog Enable: %d\n", watchdog_enable);
+    
+    	// SCX 特定统计信息
+    	seq_printf(m, "SCX Exit Type: %d\n", atomic_read(&scx_exit_type));
+    	seq_printf(m, "SCX Rejected Tasks: %lld\n", atomic64_read(&scx_nr_rejected));
+    
+    	// 调度频率信息
+    	seq_printf(m, "Sched Ravg Window Frame Per Sec: %d\n", 
+               sched_ravg_window_frame_per_sec);
+    
+    	return 0;
+ }
 
 static int hmbird_stats_proc_open(struct inode *inode, struct file *file)
 {

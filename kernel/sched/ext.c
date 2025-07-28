@@ -96,7 +96,7 @@ static DEFINE_STATIC_KEY_FALSE(scx_builtin_idle_enabled);
 struct static_key_false scx_has_op[SCX_NR_ONLINE_OPS] =
 	{ [0 ... SCX_NR_ONLINE_OPS-1] = STATIC_KEY_FALSE_INIT };
 
-static atomic_t scx_exit_type = ATOMIC_INIT(SCX_EXIT_DONE);
+atomic_t scx_exit_type = ATOMIC_INIT(SCX_EXIT_DONE);
 static struct scx_exit_info scx_exit_info;
 
 static atomic64_t scx_nr_rejected = ATOMIC64_INIT(0);
@@ -908,8 +908,12 @@ static void watchdog_unwatch_task(struct task_struct *p, bool reset_timeout)
 		p->scx->flags |= SCX_TASK_WATCHDOG_RESET;
 }
 
+atomic_t scx_active_tasks = ATOMIC_INIT(0);
+u64 scx_total_dispatches;
+
 static void enqueue_task_scx(struct rq *rq, struct task_struct *p, int enq_flags)
 {
+	atomic_inc(&scx_active_tasks);
 	int sticky_cpu = p->scx->sticky_cpu;
 
 	enq_flags |= rq->scx->extra_enq_flags;
@@ -993,6 +997,7 @@ static void ops_dequeue(struct task_struct *p, u64 deq_flags)
 
 static void dequeue_task_scx(struct rq *rq, struct task_struct *p, int deq_flags)
 {
+	atomic_dec(&scx_active_tasks);
 	struct scx_rq *scx_rq = rq->scx;
 
 	if (!(p->scx->flags & SCX_TASK_QUEUED)) {
