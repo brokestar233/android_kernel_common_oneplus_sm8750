@@ -224,8 +224,13 @@ static struct sradix_tree_node *slot_tree_node_alloc(void)
 {
 	struct slot_tree_node *p;
 
-	p = kmem_cache_zalloc(slot_tree_node_cachep, GFP_KERNEL |
-			      __GFP_NORETRY | __GFP_NOWARN);
+	p = kmem_cache_zalloc(slot_tree_node_cachep, 
+						 GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN);
+
+	if (!p) {
+		p = kmem_cache_zalloc(slot_tree_node_cachep, GFP_KERNEL);
+	}
+
 	if (!p)
 		return NULL;
 
