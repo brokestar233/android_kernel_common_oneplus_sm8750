@@ -3698,8 +3698,19 @@ static int advance_current_scan(struct scan_rung *rung)
 
 static inline void rung_rm_slot(struct vma_slot *slot)
 {
-	struct scan_rung *rung = slot->rung;
+	struct scan_rung *rung;
 	struct sradix_tree_root *root;
+
+	if (!slot) {
+		pr_err("UKSM: rung_rm_slot: slot is NULL\n");
+		return;
+	}
+
+	rung = slot->rung;
+	if (!rung) {
+		pr_err("UKSM: rung_rm_slot: slot->rung is NULL for slot %p\n", slot);
+		return;
+	}
 
 	if (rung->current_scan == slot)
 		advance_current_scan(rung);
