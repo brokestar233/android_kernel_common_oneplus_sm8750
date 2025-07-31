@@ -43,15 +43,60 @@ void free_block_bdev(struct zram *zram, unsigned long blk_idx)
 static void complete_wb_request(struct zram_wb_request *req)
 {
 	struct zram *zram = req->zram;
+	struct zram_pp_slot *pps = req->pps;
+	struct zram_pp_ctl *ctl = req->ppctl;
+	unsigned long index = pps->index;
 	unsigned long blk_idx = req->blk_idx;
+	struct bio *bio = req->bio;
 
+	if (bio->bi_status)
+		goto out_err;
+
+	atomic64_inc(&zram->stats.bd_writes);
+	zram_slot_lock(zram, index);
+
+	/*
+	 * We release slot lock during writeback so slot can change
+	 * under us: slot_free() or slot_free() and reallocation
+	 * (zram_write_page()). In both cases slot loses
+	 * ZRAM_PP_SLOT flag. No concurrent post-processing can set
+	 * ZRAM_PP_SLOT on such slots until current post-processing
+	 * finishes.
+	 */
+	if (!zram_test_flag(zram, index, ZRAM_PP_SLOT)) {
+		zram_slot_unlock(zram, index);
+		goto out_err;
+	}
+
+	zram_free_page(zram, index);
+	zram_set_flag(zram, index, ZRAM_WB);
+	zram_set_handle(zram, index, blk_idx);
+	atomic64_inc(&zram->stats.pages_stored);
+	spin_lock(&zram->wb_limit_lock);
+	if (zram->wb_limit_enable && zram->bd_wb_limit > 0)
+		zram->bd_wb_limit -=  1UL << (PAGE_SHIFT - 12);
+	spin_unlock(&zram->wb_limit_lock);
+	zram_slot_unlock(zram, index);
+	goto end;
+
+out_err:
 	free_block_bdev(zram, blk_idx);
+end:
+	free_pp_slot(zram, pps);
 	free_wb_request(req);
+
+	if (atomic_dec_and_test(&ctl->num_pp_slots))
+		complete(&ctl->all_done);
 }
 
-void enqueue_wb_request(struct zram_wb_request_list *req_list,
-			struct zram_wb_request *req)
+static void enqueue_wb_request(struct zram_wb_request_list *req_list,
+			       struct zram_wb_request *req)
 {
+	/*
+	 * The enqueue path comes from softirq context:
+	 * blk_done_softirq -> bio_endio -> zram_writeback_end_io
+	 * Use spin_lock_bh for locking.
+	 */
 	spin_lock_bh(&req_list->lock);
 	list_add_tail(&req->node, &req_list->head);
 	req_list->count++;
@@ -83,6 +128,7 @@ static void destroy_wb_request_list(struct zram_wb_request_list *req_list)
 	while (!list_empty(&req_list->head)) {
 		req = dequeue_wb_request(req_list);
 		free_block_bdev(req->zram, req->blk_idx);
+		free_pp_slot(req->zram, req->pps);
 		free_wb_request(req);
 	}
 }
@@ -115,6 +161,59 @@ static int wb_thread_func(void *data)
 		}
 	}
 	return 0;
+}
+
+static void zram_writeback_end_io(struct bio *bio)
+{
+	struct zram_wb_request *req =
+		(struct zram_wb_request *)bio->bi_private;
+
+	enqueue_wb_request(&wb_req_list, req);
+	wake_up(&wb_wq);
+}
+
+struct zram_wb_request *alloc_wb_request(struct zram *zram,
+					 struct zram_pp_slot *pps,
+					 struct zram_pp_ctl *ppctl,
+					 unsigned long blk_idx)
+{
+	struct zram_wb_request *req;
+	struct page *page;
+	struct bio *bio;
+	int err = 0;
+
+	page = alloc_page(GFP_NOIO | __GFP_NOWARN);
+	if (!page)
+		return ERR_PTR(-ENOMEM);
+
+	bio = bio_alloc(zram->bdev, 1, REQ_OP_WRITE, GFP_NOIO | __GFP_NOWARN);
+	if (!bio) {
+		err = -ENOMEM;
+		goto out_free_page;
+	}
+
+	req = kmalloc(sizeof(struct zram_wb_request), GFP_NOIO | __GFP_NOWARN);
+	if (!req) {
+		err = -ENOMEM;
+		goto out_free_bio;
+	}
+	req->zram = zram;
+	req->pps = pps;
+	req->ppctl = ppctl;
+	req->blk_idx = blk_idx;
+	req->bio = bio;
+
+	bio->bi_iter.bi_sector = blk_idx * (PAGE_SIZE >> 9);
+	__bio_add_page(bio, page, PAGE_SIZE, 0);
+	bio->bi_private = req;
+	bio->bi_end_io = zram_writeback_end_io;
+	return req;
+
+out_free_bio:
+	bio_put(bio);
+out_free_page:
+	__free_page(page);
+	return ERR_PTR(err);
 }
 
 void free_wb_request(struct zram_wb_request *req)
