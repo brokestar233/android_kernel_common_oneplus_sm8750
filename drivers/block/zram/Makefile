@@ -3,4 +3,6 @@ zram-y	:=	zcomp.o zram_drv.o
 
 obj-$(CONFIG_ZRAM)	+=	zram.o
 
+zram-$(CONFIG_ZRAM_WRITEBACK)		+= zram_wb.o
+
 zram-$(CONFIG_OPLUS_FEATURE_ZRAM_OPT)	+=	zram_opt.o
