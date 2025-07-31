@@ -161,6 +161,13 @@ struct zram {
 #endif
 };
 
+void zram_slot_lock(struct zram *zram, u32 index);
+void zram_slot_unlock(struct zram *zram, u32 index);
+void zram_set_handle(struct zram *zram, u32 index, unsigned long handle);
+bool zram_test_flag(struct zram *zram, u32 index, enum zram_pageflags flag);
+void zram_set_flag(struct zram *zram, u32 index, enum zram_pageflags flag);
+void zram_free_page(struct zram *zram, size_t index);
+
 #if defined CONFIG_ZRAM_WRITEBACK || defined CONFIG_ZRAM_MULTI_COMP
 struct zram_pp_slot {
 	unsigned long		index;
@@ -176,7 +183,11 @@ struct zram_pp_slot {
 
 struct zram_pp_ctl {
 	struct list_head	pp_buckets[NUM_PP_BUCKETS];
+	struct completion	all_done;
+	atomic_t		num_pp_slots;
 };
+
+void free_pp_slot(struct zram *zram, struct zram_pp_slot *pps);
 #endif
 
 #endif
