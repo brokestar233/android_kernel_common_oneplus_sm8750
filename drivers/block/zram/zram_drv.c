@@ -3558,6 +3558,9 @@ static int __init zram_init(void)
 		num_devices--;
 	}
 
+	if (setup_zram_writeback())
+		goto out_error;
+
 #ifdef CONFIG_ZRAM_WRITEBACK
 	monitor_thread = kthread_run(monitor_func, NULL, "zram_monitor");
 #endif
@@ -3591,6 +3594,7 @@ static void __exit zram_exit(void)
 	unregister_sysctl_table(zram_sysctl_table_header);
 #endif //CONFIG_ZRAM_MULTI_COMP
 
+	destroy_zram_writeback();
 	destroy_devices();
 }
 

@@ -6,12 +6,34 @@
 #include <linux/bio.h>
 #include "zram_drv.h"
 
+struct zram_wb_request {
+	struct zram *zram;
+	unsigned long blk_idx;
+	struct zram_pp_slot *pps;
+	struct zram_pp_ctl *ppctl;
+	struct bio *bio;
+	struct list_head node;
+};
+
+struct zram_wb_request_list {
+	struct list_head head;
+	int count;
+	spinlock_t lock;
+};
+
 #if IS_ENABLED(CONFIG_ZRAM_WRITEBACK)
 unsigned long alloc_block_bdev(struct zram *zram);
 void free_block_bdev(struct zram *zram, unsigned long blk_idx);
+int setup_zram_writeback(void);
+void destroy_zram_writeback(void);
+void free_wb_request(struct zram_wb_request *req);
+void enqueue_wb_request(struct zram_wb_request_list *req_list,
+			struct zram_wb_request *req);
 #else
 inline unsigned long alloc_block_bdev(struct zram *zram) { return 0; }
 inline void free_block_bdev(struct zram *zram, unsigned long blk_idx) {};
+inline int setup_zram_writeback(void) { return 0; }
+inline void destroy_zram_writeback(void) {}
 #endif
 
 #endif /* _ZRAM_WRITEBACK_H_ */
