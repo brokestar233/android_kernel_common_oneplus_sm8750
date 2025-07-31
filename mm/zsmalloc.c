@@ -74,6 +74,16 @@
  */
 #define ZS_ALIGN		8
 
+/*
+ * A single 'zspage' is composed of up to 2^N discontiguous 0-order (single)
+ * pages. ZS_MAX_ZSPAGE_ORDER defines upper limit on N.
+ */
+#ifdef CONFIG_CRYPTO_DELTA
+#define ZS_MAX_ZSPAGE_ORDER 3
+#else
+#define ZS_MAX_ZSPAGE_ORDER 2
+#endif
+
 #define ZS_HANDLE_SIZE (sizeof(unsigned long))
 
 /*
@@ -122,7 +132,11 @@
 
 #define MAX(a, b) ((a) >= (b) ? (a) : (b))
 
+#ifdef CONFIG_CRYPTO_DELTA
+#define ZS_MAX_PAGES_PER_ZSPAGE (_AC(1, UL) << ZS_MAX_ZSPAGE_ORDER)
+#else
 #define ZS_MAX_PAGES_PER_ZSPAGE	(_AC(CONFIG_ZSMALLOC_CHAIN_SIZE, UL))
+#endif
 
 /* ZS_MIN_ALLOC_SIZE must be multiple of ZS_ALIGN */
 #define ZS_MIN_ALLOC_SIZE \

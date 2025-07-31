@@ -19,7 +19,15 @@
 #include <linux/zsmalloc.h>
 #include <linux/crypto.h>
 
+#ifdef CONFIG_CRYPTO_DELTA
+#include <linux/idr.h>
+#include <linux/radix-tree.h>
+#include <linux/sched.h>
+#include <linux/workqueue.h>
+#include "sddc/zcomp_ext.h"
+#else
 #include "zcomp.h"
+#endif
 
 #define SECTORS_PER_PAGE_SHIFT	(PAGE_SHIFT - SECTOR_SHIFT)
 #define SECTORS_PER_PAGE	(1 << SECTORS_PER_PAGE_SHIFT)
@@ -40,6 +48,16 @@
  */
 #define ZRAM_FLAG_SHIFT (PAGE_SHIFT + 1)
 
+
+/*
+ * The ZRAM_TABLE_PROXY_SHIFT defines the size of proxy part of the zram table (
+ * for referencing pages are used as reference ones for delta-compression or deduplication).
+ * It is defined as part of disksize.
+ */
+#ifdef CONFIG_CRYPTO_DELTA
+#define ZRAM_TABLE_PROXY_SHIFT 3
+#endif
+
 /* Only 2 bits are allowed for comp priority index */
 #define ZRAM_COMP_PRIORITY_MASK	0x3
 
@@ -58,6 +76,14 @@ enum zram_pageflags {
 	ZRAM_COMP_PRIORITY_BIT2, /* Second bit of comp priority index */
 
 	__NR_ZRAM_PAGEFLAGS,
+
+#ifdef CONFIG_CRYPTO_DELTA
+#ifndef __GENKSYMS__
+	ZRAM_SDDC_UNIQUE,
+	ZRAM_SDDC_DELTA,
+	ZRAM_SDDC_DUPLICATE,
+#endif
+#endif
 };
 
 /*-- Data structures */
@@ -67,12 +93,23 @@ struct zram_table_entry {
 	union {
 		unsigned long handle;
 		unsigned long element;
+#ifdef CONFIG_CRYPTO_DELTA
+#ifndef __GENKSYMS__
+		unsigned long dup_page_id;
+#endif
+#endif
 	};
 	unsigned long flags;
 #ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
 	ktime_t ac_time;
 #endif
 };
+
+#ifdef CONFIG_CRYPTO_DELTA
+struct zram_table_entry_ref_counter {
+	atomic_t ref_count; /* duplicates and similars */
+};
+#endif
 
 struct zram_stats {
 	atomic64_t compr_data_size;	/* compressed size of pages stored */
@@ -91,6 +128,14 @@ struct zram_stats {
 	atomic64_t bd_reads;		/* no. of reads from backing device */
 	atomic64_t bd_writes;		/* no. of writes from backing device */
 #endif
+#ifdef CONFIG_CRYPTO_DELTA
+#ifndef __GENKSYMS__
+	atomic64_t num_unique; /* no. of pages encoded as unique */
+	atomic64_t num_duplicate; /* no. of duplicated pages */
+	atomic64_t num_delta; /* no. of pages encoded as delta */
+	atomic64_t max_proxy_pages; /* maximum no. of proxy pages */
+#endif
+#endif
 };
 
 #ifdef CONFIG_ZRAM_MULTI_COMP
@@ -103,10 +148,29 @@ struct zram_stats {
 #define ZRAM_MAX_COMPS	1U
 #endif
 
+#ifdef CONFIG_CRYPTO_DELTA
+struct zram_sddc_recompress_node {
+	struct hlist_bl_node    node;
+	u32                     index;
+};
+
+struct zram_sddc_recompress {
+	struct hlist_bl_head    head;
+	struct hlist_bl_node   *last;
+	unsigned long           count;
+};
+#endif
+
 struct zram {
 	struct zram_table_entry *table;
 	struct zs_pool *mem_pool;
+#ifdef CONFIG_CRYPTO_DELTA
+	struct zcomp_ext *comp;
+	struct zram_table_entry_ref_counter *ref_counter;
+	u32 prio;
+#else
 	struct zcomp *comps[ZRAM_MAX_COMPS];
+#endif
 	struct gendisk *disk;
 	/* Prevent concurrent execution of device init */
 	struct rw_semaphore init_lock;
@@ -114,6 +178,13 @@ struct zram {
 	 * the number of pages zram can consume for storing compressed data
 	 */
 	unsigned long limit_pages;
+
+#ifdef CONFIG_CRYPTO_DELTA
+	struct ida proxy_ida;
+	unsigned int page_proxy_id_min;
+	unsigned int page_proxy_id_max;
+	atomic64_t alloced_pages_proxy;
+#endif
 
 	struct zram_stats stats;
 	/*
@@ -136,8 +207,21 @@ struct zram {
 	unsigned long *bitmap;
 	unsigned long nr_pages;
 #endif
+#ifdef CONFIG_CRYPTO_DELTA
+	struct zram_sddc_recompress *recompress_pended;
+	struct work_struct sddc_work;
+	bool async_enable;
+#endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
 };
+
+#ifdef CONFIG_CRYPTO_DELTA
+int32_t zram_alloc_proxy(struct zram *zram);
+void zram_free_proxy(struct zram *zram, uint32_t id);
+void dec_and_test_proxy(struct zram *zram, uint32_t ref_index);
+size_t get_huge_class_size(void);
+#endif
+
 #endif

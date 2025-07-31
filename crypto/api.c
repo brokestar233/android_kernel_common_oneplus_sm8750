@@ -693,5 +693,21 @@ void crypto_req_done(void *data, int err)
 }
 EXPORT_SYMBOL_GPL(crypto_req_done);
 
+#ifdef CONFIG_CRYPTO_DELTA
+int crypto_alg_prop_check(const char *name, u32 type, u32 mask, u32 flag)
+{
+	int ret = 0;
+	struct crypto_alg *alg = crypto_alg_mod_lookup(name, type, mask);
+
+	if (!IS_ERR(alg)) {
+		if (alg->cra_flags & flag)
+			ret = 1;
+		crypto_mod_put(alg);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(crypto_alg_prop_check);
+#endif
+
 MODULE_DESCRIPTION("Cryptographic core API");
 MODULE_LICENSE("GPL");

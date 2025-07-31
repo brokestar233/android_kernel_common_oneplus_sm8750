@@ -17,6 +17,13 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
+#ifdef CONFIG_CRYPTO_DELTA
+/*
+ * Use some big value to not intersect with vanilla code.
+ */
+#define CRYPTO_ALG_EXT_PROP_DELTA	0x01000000
+#endif
+
 /*
  * Algorithm masks and types.
  */
@@ -257,6 +264,16 @@ struct compress_alg {
 			    unsigned int slen, u8 *dst, unsigned int *dlen);
 	int (*coa_decompress)(struct crypto_tfm *tfm, const u8 *src,
 			      unsigned int slen, u8 *dst, unsigned int *dlen);
+#ifdef CONFIG_CRYPTO_DELTA
+#ifndef __GENKSYMS__
+	int (*coa_compress_delta)(struct crypto_tfm *tfm, const u8 *src,
+			const u8 *src0, unsigned int slen, u8 *dst,
+			unsigned int *dlen, unsigned int out_max);
+	int (*coa_decompress_delta)(struct crypto_tfm *tfm, const u8 *src,
+			unsigned int slen, const u8 *dst0, u8 *dst,
+			unsigned int *dlen);
+#endif
+#endif
 };
 
 #define cra_cipher	cra_u.cipher
@@ -412,6 +429,9 @@ static inline void crypto_init_wait(struct crypto_wait *wait)
  * Algorithm query interface.
  */
 int crypto_has_alg(const char *name, u32 type, u32 mask);
+#ifdef CONFIG_CRYPTO_DELTA
+int crypto_alg_prop_check(const char *name, u32 type, u32 mask, u32 flag);
+#endif
 
 /*
  * Transforms: user-instantiated objects which encapsulate algorithms
@@ -527,6 +547,16 @@ static inline int crypto_has_comp(const char *alg_name, u32 type, u32 mask)
 	return crypto_has_alg(alg_name, type, mask);
 }
 
+#ifdef CONFIG_CRYPTO_DELTA
+static inline int crypto_has_delta_comp(const char *alg_name, u32 type, u32 mask)
+{
+	type &= ~CRYPTO_ALG_TYPE_MASK;
+	type |= CRYPTO_ALG_TYPE_COMPRESS;
+	mask |= CRYPTO_ALG_TYPE_MASK;
+	return crypto_alg_prop_check(alg_name, type, mask, CRYPTO_ALG_EXT_PROP_DELTA);
+}
+#endif
+
 static inline const char *crypto_comp_name(struct crypto_comp *tfm)
 {
 	return crypto_tfm_alg_name(crypto_comp_tfm(tfm));
@@ -539,6 +569,16 @@ int crypto_comp_compress(struct crypto_comp *tfm,
 int crypto_comp_decompress(struct crypto_comp *tfm,
 			   const u8 *src, unsigned int slen,
 			   u8 *dst, unsigned int *dlen);
+
+#ifdef CONFIG_CRYPTO_DELTA
+int crypto_comp_compress_delta(struct crypto_comp *tfm,
+			   const u8 *src0, const u8 *src, unsigned int slen,
+			   u8 *dst, unsigned int *dlen, unsigned int out_max);
+
+int crypto_comp_decompress_delta(struct crypto_comp *tfm, const u8 *src,
+			   unsigned int slen, const u8 *dst0, u8 *dst,
+			   unsigned int *dlen);
+#endif
 
 #endif	/* _LINUX_CRYPTO_H */
 

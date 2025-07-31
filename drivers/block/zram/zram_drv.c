@@ -38,6 +38,11 @@
 
 #include "zram_drv.h"
 
+#ifdef CONFIG_CRYPTO_DELTA
+#include "sddc/sddc.h"
+#include "trace/events/block.h"
+#endif
+
 #define CHECK_INTERVAL (10 * HZ) // 每10秒检查一次
 #define ZRAM_THRESHOLD 60 // zram占用率阈值60%
 #define MEM_THRESHOLD 75 // 内存占用率阈值75%
@@ -58,6 +63,18 @@ static unsigned int num_devices = 1;
  * uncompressed in memory.
  */
 static size_t huge_class_size;
+size_t get_huge_class_size(void)
+{
+	return huge_class_size;
+}
+
+#ifdef CONFIG_CRYPTO_DELTA
+static bool use_hw_crc32;
+#endif
+
+#ifdef CONFIG_CRYPTO_DELTA
+static struct kmem_cache *zram_sddc_recompress_cachep;
+#endif
 
 static const struct block_device_operations zram_devops;
 
@@ -160,6 +177,98 @@ static inline bool is_partial_io(struct bio_vec *bvec)
 static inline bool is_partial_io(struct bio_vec *bvec)
 {
 	return false;
+}
+#endif
+
+#ifdef CONFIG_CRYPTO_DELTA
+
+#define SDDC_RECOMPRESS_LIST_MAX 38400
+#define SDDC_RECOMPRESS_FREQUENCY 500
+
+static int zram_sddc_recompress_init(struct zram *zram)
+{
+	struct zram_sddc_recompress *recompress_pended = NULL;
+
+	if (zram->recompress_pended) {
+		WARN(1, "zram_sddc_recompress struct already initialized\n");
+		return -EEXIST;
+	}
+
+	recompress_pended = kzalloc(sizeof(struct zram_sddc_recompress), GFP_KERNEL);
+	if (!recompress_pended)
+		return -ENOMEM;
+
+	recompress_pended->last = NULL;
+	recompress_pended->count = 0;
+	zram->recompress_pended = recompress_pended;
+
+	return 0;
+}
+
+static void zram_sddc_recompress_clear(struct zram *zram)
+{
+	if (!zram->recompress_pended)
+		return;
+
+	kfree(zram->recompress_pended);
+	zram->recompress_pended = NULL;
+}
+
+int zram_sddc_recompress_push(struct zram *zram, u32 index)
+{
+	struct zram_sddc_recompress_node *node = NULL;
+
+	node = kmem_cache_alloc(zram_sddc_recompress_cachep, GFP_ATOMIC);
+	if (!node)
+		return -ENOMEM;
+
+	INIT_HLIST_BL_NODE(&node->node);
+	node->index = index;
+
+	hlist_bl_lock(&zram->recompress_pended->head);
+
+	if (zram->recompress_pended->count >= SDDC_RECOMPRESS_LIST_MAX) {
+		kmem_cache_free(zram_sddc_recompress_cachep, node);
+		hlist_bl_unlock(&zram->recompress_pended->head);
+		return -ENOMEM;
+	}
+
+	if (!zram->recompress_pended->last) {
+		hlist_bl_add_head(&node->node, &zram->recompress_pended->head);
+	} else {
+		zram->recompress_pended->last = &node->node;
+		hlist_bl_add_behind(&node->node, zram->recompress_pended->last);
+	}
+	zram->recompress_pended->count++;
+
+	hlist_bl_unlock(&zram->recompress_pended->head);
+
+	return 0;
+}
+
+static int zram_sddc_recompress_pop(struct zram *zram, u32 *index)
+{
+	struct zram_sddc_recompress_node *node = NULL;
+	struct hlist_bl_node *hlist_node = NULL;
+
+	hlist_bl_lock(&zram->recompress_pended->head);
+
+	hlist_node = hlist_bl_first(&zram->recompress_pended->head);
+	if (!hlist_node) {
+		hlist_bl_unlock(&zram->recompress_pended->head);
+		return -ENOENT;
+	}
+
+	node = hlist_bl_entry(hlist_node, typeof(*node), node);
+	*index = node->index;
+	hlist_bl_del_init(&node->node);
+	if (!(--zram->recompress_pended->count))
+		zram->recompress_pended->last = NULL;
+
+	hlist_bl_unlock(&zram->recompress_pended->head);
+	kmem_cache_free(zram_sddc_recompress_cachep, node);
+
+	return 0;
 }
 #endif
 
@@ -702,6 +811,11 @@ static ssize_t writeback_store(struct device *dev,
 		if (!zram_allocated(zram, index))
 			goto next;
 
+#ifdef CONFIG_CRYPTO_DELTA
+		if (zram_test_flag(zram, index, ZRAM_SDDC_DUPLICATE))
+			goto next;
+#endif
+
 		if (zram_test_flag(zram, index, ZRAM_WB) ||
 				zram_test_flag(zram, index, ZRAM_SAME) ||
 				zram_test_flag(zram, index, ZRAM_UNDER_WB))
@@ -1002,7 +1116,11 @@ static ssize_t __comp_algorithm_show(struct zram *zram, u32 prio, char *buf)
 	ssize_t sz;
 
 	down_read(&zram->init_lock);
+#ifdef CONFIG_CRYPTO_DELTA
+	sz = zcomp_ext_available_show(zram->comp_algs[prio], buf);
+#else
 	sz = zcomp_available_show(zram->comp_algs[prio], buf);
+#endif
 	up_read(&zram->init_lock);
 
 	return sz;
@@ -1025,10 +1143,17 @@ static int __comp_algorithm_store(struct zram *zram, u32 prio, const char *buf)
 	if (sz > 0 && compressor[sz - 1] == '\n')
 		compressor[sz - 1] = 0x00;
 
+#ifdef CONFIG_CRYPTO_DELTA
+	if (!zcomp_ext_available_algorithm(compressor)) {
+		kfree(compressor);
+		return -EINVAL;
+	}
+#else
 	if (!zcomp_available_algorithm(compressor)) {
 		kfree(compressor);
 		return -EINVAL;
 	}
+#endif
 
 	down_write(&zram->init_lock);
 	if (init_done(zram)) {
@@ -1160,6 +1285,60 @@ static ssize_t io_stat_show(struct device *dev,
 	return ret;
 }
 
+#ifdef CONFIG_CRYPTO_DELTA
+static ssize_t page_stat_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct zram *zram = dev_to_zram(dev);
+	ssize_t ret;
+
+	down_read(&zram->init_lock);
+	ret = scnprintf(buf, PAGE_SIZE,
+			"%8llu %8llu %8llu %8llu %8llu %8llu %8llu\n",
+			(u64)atomic64_read(&zram->stats.same_pages),
+			(u64)atomic64_read(&zram->stats.huge_pages),
+			(u64)atomic64_read(&zram->stats.num_unique),
+			(u64)atomic64_read(&zram->stats.num_duplicate),
+			(u64)atomic64_read(&zram->stats.num_delta),
+			(u64)atomic64_read(&zram->alloced_pages_proxy),
+			(u64)atomic64_read(&zram->stats.max_proxy_pages));
+	up_read(&zram->init_lock);
+
+	return ret;
+}
+
+static ssize_t async_enable_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t len)
+{
+	u64 val;
+	struct zram *zram = dev_to_zram(dev);
+	ssize_t ret = -EINVAL;
+
+	if (kstrtoull(buf, 10, &val))
+		return ret;
+
+	down_read(&zram->init_lock);
+	zram->async_enable = val;
+	up_read(&zram->init_lock);
+	ret = len;
+
+	return ret;
+}
+
+static ssize_t async_enable_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	bool val;
+	struct zram *zram = dev_to_zram(dev);
+
+	down_read(&zram->init_lock);
+	val = zram->async_enable;
+	up_read(&zram->init_lock);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", val);
+}
+#endif
+
 static ssize_t mm_stat_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1236,10 +1415,184 @@ static ssize_t debug_stat_show(struct device *dev,
 
 static DEVICE_ATTR_RO(io_stat);
 static DEVICE_ATTR_RO(mm_stat);
+#ifdef CONFIG_CRYPTO_DELTA
+static DEVICE_ATTR_RO(page_stat);
+static DEVICE_ATTR_RW(async_enable);
+#endif
 #ifdef CONFIG_ZRAM_WRITEBACK
 static DEVICE_ATTR_RO(bd_stat);
 #endif
 static DEVICE_ATTR_RO(debug_stat);
+
+#ifdef CONFIG_CRYPTO_DELTA
+static struct workqueue_struct *sddc_workqueue;
+
+static unsigned long get_current_handle_locked(struct zram *zram, u32 index,
+				size_t size)
+{
+	unsigned long handle = 0;
+
+	if (sddc_is_under_wb(index) || !size ||
+		zram_test_flag(zram, index, ZRAM_SAME) ||
+		zram_test_flag(zram, index, ZRAM_SDDC_DELTA) ||
+		zram_test_flag(zram, index, ZRAM_SDDC_DUPLICATE))
+		return handle;
+
+	handle = zram_get_handle(zram, index);
+
+	return handle;
+}
+
+static unsigned long alloc_new_handle_locked(struct zram *zram, u32 comp_len)
+{
+	unsigned long handle;
+
+	handle = zs_malloc(zram->mem_pool, comp_len,
+			__GFP_KSWAPD_RECLAIM |
+			__GFP_NOWARN |
+			__GFP_HIGHMEM |
+			__GFP_MOVABLE);
+
+	return handle;
+}
+
+static void update_flags_locked(struct zram *zram, u32 index,
+				unsigned long handle, u32 comp_len,
+				size_t size_diff)
+{
+	if (zram_test_flag(zram, index, ZRAM_HUGE)) {
+		zram_clear_flag(zram, index, ZRAM_HUGE);
+		atomic64_dec(&zram->stats.huge_pages);
+	}
+	if (zram_test_flag(zram, index, ZRAM_SDDC_UNIQUE)) {
+		zram_clear_flag(zram, index, ZRAM_SDDC_UNIQUE);
+		atomic64_dec(&zram->stats.num_unique);
+	}
+	zram_set_flag(zram, index, ZRAM_SDDC_DELTA);
+	zram_set_handle(zram, index, handle);
+	zram_set_obj_size(zram, index, comp_len);
+
+	atomic64_inc(&zram->stats.num_delta);
+	atomic64_sub(size_diff, &zram->stats.compr_data_size);
+}
+
+static void do_recompression(struct work_struct *work)
+{
+	struct zram *zram = container_of(work, struct zram, sddc_work);
+	struct zcomp_ext_strm *zstrm = NULL;
+	unsigned long handle = 0;
+	unsigned long handle_new = 0;
+	unsigned int comp_len = 0;
+	size_t size = 0;
+	u32 index;
+	void *mem = NULL;
+	void *encoded = NULL;
+	int i;
+	for (i = 0; !zram_sddc_recompress_pop(zram, &index); i++) {
+		zram_slot_lock(zram, index);
+		size = zram_get_obj_size(zram, index);
+		handle = get_current_handle_locked(zram, index, size);
+		if (!handle) {
+			zram_slot_unlock(zram, index);
+			continue;
+		}
+
+		zstrm = zcomp_ext_stream_get(zram->comp);
+		encoded = sddc_get_encoded(zstrm);
+		mem = zs_map_object(zram->mem_pool, handle, ZS_MM_RO);
+		memcpy(encoded, mem, size);
+		zs_unmap_object(zram->mem_pool, handle);
+
+		sddc_try_encode_delta(zstrm, encoded, size, index, &comp_len);
+		if (sddc_get_encode_status(zstrm) & ENCODE_STATUS_DUPLICATE) {
+			if (zram_test_flag(zram, index, ZRAM_SDDC_UNIQUE)) {
+				zram_clear_flag(zram, index, ZRAM_SDDC_UNIQUE);
+				atomic64_dec(&zram->stats.num_unique);
+			} else if (zram_test_flag(zram, index, ZRAM_HUGE)) {
+				zram_clear_flag(zram, index, ZRAM_HUGE);
+				atomic64_dec(&zram->stats.huge_pages);
+			}
+
+			zram_set_handle(zram, index, 0);
+			zram_set_obj_size(zram, index, 0);
+			zram_set_flag(zram, index, ZRAM_SDDC_DUPLICATE);
+			zram->table[index].dup_page_id = sddc_get_proxy_id(zstrm);
+			zs_free(zram->mem_pool, handle);
+			atomic64_sub(size, &zram->stats.compr_data_size);
+			atomic64_inc(&zram->stats.num_duplicate);
+			zcomp_ext_stream_put(zram->comp);
+			zram_slot_unlock(zram, index);
+			continue;
+		}
+		if (!(sddc_get_encode_status(zstrm) & ENCODE_STATUS_DELTA)) {
+			zcomp_ext_stream_put(zram->comp);
+			zram_slot_unlock(zram, index);
+			continue;
+		}
+
+		handle_new = alloc_new_handle_locked(zram, comp_len);
+		if (!handle_new) {
+			dec_and_test_proxy(zram, sddc_get_proxy_id(zstrm));
+			zcomp_ext_stream_put(zram->comp);
+			zram_slot_unlock(zram, index);
+			continue;
+		}
+
+		zs_free(zram->mem_pool, handle);
+		/* Copy recompressed page into zsmalloc */
+		mem = zs_map_object(zram->mem_pool, handle_new, ZS_MM_WO);
+		memcpy(mem, encoded, comp_len);
+		zs_unmap_object(zram->mem_pool, handle_new);
+		zcomp_ext_stream_put(zram->comp);
+
+		update_flags_locked(zram, index, handle_new, comp_len, size - comp_len);
+
+		zram_slot_unlock(zram, index);
+	}
+}
+
+int32_t zram_alloc_proxy(struct zram *zram)
+{
+	int32_t ret;
+	long long val;
+
+	ret = ida_simple_get(&zram->proxy_ida, zram->page_proxy_id_min,
+					zram->page_proxy_id_max, GFP_ATOMIC);
+	if (ret >= 0) {
+		val = atomic64_inc_return(&zram->alloced_pages_proxy);
+		if (val > atomic64_read(&zram->stats.max_proxy_pages))
+			atomic64_set(&zram->stats.max_proxy_pages, val);
+	}
+
+	return ret;
+}
+
+void zram_free_proxy(struct zram *zram, uint32_t id)
+{
+	atomic64_dec(&zram->alloced_pages_proxy);
+	ida_simple_remove(&zram->proxy_ida, id);
+}
+
+void dec_and_test_proxy(struct zram *zram, uint32_t ref_index)
+{
+	uint32_t ref_counter_index = ref_index % zram->page_proxy_id_min;
+
+	zram_slot_lock(zram, ref_index);
+	if (atomic_dec_and_test(&zram->ref_counter[ref_counter_index].ref_count)) {
+		zram_free_page(zram, ref_index);
+		zram_slot_unlock(zram, ref_index);
+		zram_free_proxy(zram, ref_index);
+	} else {
+		zram_slot_unlock(zram, ref_index);
+	}
+}
+
+static void handle_invalid_page_handle(struct zram *zram, size_t index)
+{
+	pr_warn("zram_free_page delta page !handle(index = %zu)\n", index);
+	zram_set_obj_size(zram, index, 0);
+}
+#endif
 
 static void zram_meta_free(struct zram *zram, u64 disksize)
 {
@@ -1249,6 +1602,15 @@ static void zram_meta_free(struct zram *zram, u64 disksize)
 	if (!zram->table)
 		return;
 
+#ifdef CONFIG_CRYPTO_DELTA
+	// first need to stop async jobs
+	if (zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP)) {
+		cancel_work_sync(&zram->sddc_work);
+		destroy_workqueue(sddc_workqueue);
+		zram_sddc_recompress_clear(zram);
+	}
+#endif
+
 	/* Free all pages that are still in this zram device */
 	for (index = 0; index < num_pages; index++)
 		zram_free_page(zram, index);
@@ -1256,21 +1618,73 @@ static void zram_meta_free(struct zram *zram, u64 disksize)
 	zs_destroy_pool(zram->mem_pool);
 	vfree(zram->table);
 	zram->table = NULL;
+#ifdef CONFIG_CRYPTO_DELTA
+	if (zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP)) {
+		ida_destroy(&zram->proxy_ida);
+		vfree(zram->ref_counter);
+		zram->ref_counter = NULL;
+	}
+#endif
 }
 
 static bool zram_meta_alloc(struct zram *zram, u64 disksize)
 {
 	size_t num_pages;
 
+#ifdef CONFIG_CRYPTO_DELTA
+	if (zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP)) {
+		num_pages = (disksize + (disksize >> ZRAM_TABLE_PROXY_SHIFT)) >> PAGE_SHIFT;
+		zram->page_proxy_id_min = (disksize >> PAGE_SHIFT);
+		zram->page_proxy_id_max = zram->page_proxy_id_min +
+			(zram->page_proxy_id_min >> ZRAM_TABLE_PROXY_SHIFT);
+		atomic64_set(&zram->alloced_pages_proxy, 0);
+		ida_init(&zram->proxy_ida);
+		zram->ref_counter = vzalloc(array_size((zram->page_proxy_id_max - zram->page_proxy_id_min),
+						sizeof(*zram->ref_counter)));
+		if (!zram->ref_counter)
+			return false;
+		// 1 - max one cpu core can be used (i.e. one job will be execute in each moment), can be tune later
+		sddc_workqueue = alloc_workqueue("zram_sddc_recompress", WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+		if (!sddc_workqueue) {
+			vfree(zram->ref_counter);
+			zram->ref_counter = NULL;
+			return false;
+		}
+	} else {
+		num_pages = disksize >> PAGE_SHIFT;
+	}
+#else
 	num_pages = disksize >> PAGE_SHIFT;
+#endif
+
 	zram->table = vzalloc(array_size(num_pages, sizeof(*zram->table)));
-	if (!zram->table)
+	if (!zram->table) {
+#ifdef CONFIG_CRYPTO_DELTA
+		if (zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP)) {
+			vfree(zram->ref_counter);
+			zram->ref_counter = NULL;
+			destroy_workqueue(sddc_workqueue);
+		}
+#endif
 		return false;
+	}
+
+#ifdef CONFIG_CRYPTO_DELTA
+	if (zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP))
+		INIT_WORK(&zram->sddc_work, do_recompression);
+#endif
 
 	zram->mem_pool = zs_create_pool(zram->disk->disk_name);
 	if (!zram->mem_pool) {
 		vfree(zram->table);
 		zram->table = NULL;
+#ifdef CONFIG_CRYPTO_DELTA
+		if (zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP)) {
+			vfree(zram->ref_counter);
+			zram->ref_counter = NULL;
+			destroy_workqueue(sddc_workqueue);
+		}
+#endif
 		return false;
 	}
 
@@ -1288,6 +1702,11 @@ static void zram_free_page(struct zram *zram, size_t index)
 {
 	unsigned long handle;
 
+#ifdef CONFIG_CRYPTO_DELTA
+	void *src = NULL;
+	uint32_t ref_index;
+#endif
+
 #ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
 	zram->table[index].ac_time = 0;
 #endif
@@ -1298,6 +1717,32 @@ static void zram_free_page(struct zram *zram, size_t index)
 		zram_clear_flag(zram, index, ZRAM_HUGE);
 		atomic64_dec(&zram->stats.huge_pages);
 	}
+
+#ifdef CONFIG_CRYPTO_DELTA
+	if (zram_test_flag(zram, index, ZRAM_SDDC_UNIQUE)) {
+		zram_clear_flag(zram, index, ZRAM_SDDC_UNIQUE);
+		atomic64_dec(&zram->stats.num_unique);
+	} else if (zram_test_flag(zram, index, ZRAM_SDDC_DELTA)) {
+		zram_clear_flag(zram, index, ZRAM_SDDC_DELTA);
+		atomic64_dec(&zram->stats.num_delta);
+		handle = zram_get_handle(zram, index);
+		if (!handle) {
+			handle_invalid_page_handle(zram, index);
+			return;
+		}
+
+		src = zs_map_object(zram->mem_pool, handle, ZS_MM_RO);
+		ref_index = *(uint32_t*)src;
+		zs_unmap_object(zram->mem_pool, handle);
+		dec_and_test_proxy(zram, ref_index);
+	} else if (zram_test_flag(zram, index, ZRAM_SDDC_DUPLICATE)) {
+		zram_clear_flag(zram, index, ZRAM_SDDC_DUPLICATE);
+		ref_index = zram->table[index].dup_page_id;
+		dec_and_test_proxy(zram, ref_index);
+		atomic64_dec(&zram->stats.num_duplicate);
+		goto out;
+	}
+#endif
 
 	if (zram_test_flag(zram, index, ZRAM_INCOMPRESSIBLE))
 		zram_clear_flag(zram, index, ZRAM_INCOMPRESSIBLE);
@@ -1329,7 +1774,13 @@ static void zram_free_page(struct zram *zram, size_t index)
 	atomic64_sub(zram_get_obj_size(zram, index),
 			&zram->stats.compr_data_size);
 out:
+#ifdef CONFIG_CRYPTO_DELTA
+	if (!zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP) ||
+		(index < zram->page_proxy_id_min))
+		atomic64_dec(&zram->stats.pages_stored);
+#else
 	atomic64_dec(&zram->stats.pages_stored);
+#endif
 	zram_set_handle(zram, index, 0);
 	zram_set_obj_size(zram, index, 0);
 	WARN_ON_ONCE(zram->table[index].flags &
@@ -1343,11 +1794,15 @@ out:
 static int zram_read_from_zspool(struct zram *zram, struct page *page,
 				 u32 index)
 {
-	struct zcomp_strm *zstrm;
 	unsigned long handle;
+#ifdef CONFIG_CRYPTO_DELTA
+	struct zcomp_ext_strm *zstrm = NULL;
+#else
+	struct zcomp_strm *zstrm;
 	unsigned int size;
 	void *src, *dst;
 	u32 prio;
+#endif
 	int ret;
 
 	handle = zram_get_handle(zram, index);
@@ -1361,7 +1816,11 @@ static int zram_read_from_zspool(struct zram *zram, struct page *page,
 		kunmap_atomic(mem);
 		return 0;
 	}
-
+#ifdef CONFIG_CRYPTO_DELTA
+	zstrm = zcomp_ext_stream_get(zram->comp);
+	ret = sddc_decode(zstrm, page, index, NULL);
+	zcomp_ext_stream_put(zram->comp);
+#else
 	size = zram_get_obj_size(zram, index);
 
 	if (size != PAGE_SIZE) {
@@ -1382,6 +1841,8 @@ static int zram_read_from_zspool(struct zram *zram, struct page *page,
 		zcomp_stream_put(zram->comps[prio]);
 	}
 	zs_unmap_object(zram->mem_pool, handle);
+#endif
+
 	return ret;
 }
 
@@ -1447,7 +1908,12 @@ static int zram_write_page(struct zram *zram, struct page *page, u32 index)
 	unsigned long handle = -ENOMEM;
 	unsigned int comp_len = 0;
 	void *src, *dst, *mem;
+#ifdef CONFIG_CRYPTO_DELTA
+	u32 proxy_index = 0;
+	struct zcomp_ext_strm *zstrm = NULL;
+#else
 	struct zcomp_strm *zstrm;
+#endif
 	unsigned long element = 0;
 	enum zram_pageflags flags = 0;
 
@@ -1462,20 +1928,58 @@ static int zram_write_page(struct zram *zram, struct page *page, u32 index)
 	kunmap_atomic(mem);
 
 compress_again:
+#ifdef CONFIG_CRYPTO_DELTA
+	zstrm = zcomp_ext_stream_get(zram->comp);
+	ret = sddc_encode(zstrm, page, index, &comp_len,
+					zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP));
+#else
 	zstrm = zcomp_stream_get(zram->comps[ZRAM_PRIMARY_COMP]);
 	src = kmap_atomic(page);
 	ret = zcomp_compress(zstrm, src, &comp_len);
-	kunmap_atomic(src);
+#endif
 
 	if (unlikely(ret)) {
+#ifdef CONFIG_CRYPTO_DELTA
+		if (sddc_get_encode_status(zstrm) & ENCODE_STATUS_DUPLICATE) {
+			proxy_index = sddc_get_proxy_id(zstrm);
+			dec_and_test_proxy(zram, proxy_index);
+		}
+		zcomp_ext_stream_put(zram->comp);
+#else
 		zcomp_stream_put(zram->comps[ZRAM_PRIMARY_COMP]);
+		kunmap_atomic(src);
+#endif
 		pr_err("Compression failed! err=%d\n", ret);
 		zs_free(zram->mem_pool, handle);
 		return ret;
 	}
 
+#ifdef CONFIG_CRYPTO_DELTA
+	if (sddc_get_encode_status(zstrm) & ENCODE_STATUS_DUPLICATE) {
+		if (handle)
+			zs_free(zram->mem_pool, handle);
+		flags = ZRAM_SDDC_DUPLICATE;
+		proxy_index = sddc_get_proxy_id(zstrm);
+		zcomp_ext_stream_put(zram->comp);
+		goto out;
+	}
+
+	if (sddc_get_encode_status(zstrm) & ENCODE_STATUS_ENCODED)
+		flags = ZRAM_SDDC_UNIQUE;
+
+	if (!comp_len || comp_len >= huge_class_size) {
+#else
 	if (comp_len >= huge_class_size)
+#endif
 		comp_len = PAGE_SIZE;
+#ifdef CONFIG_CRYPTO_DELTA
+		flags = 0;
+	}
+#endif
+#ifndef CONFIG_CRYPTO_DELTA
+	kunmap_atomic(src);
+#endif
+
 	/*
 	 * handle allocation has 2 paths:
 	 * a) fast path is executed with preemption disabled (for
@@ -1497,7 +2001,13 @@ compress_again:
 				__GFP_MOVABLE |
 				__GFP_CMA);
 	if (IS_ERR_VALUE(handle)) {
+#ifdef CONFIG_CRYPTO_DELTA
+		if (sddc_get_encode_status(zstrm) & ENCODE_STATUS_DUPLICATE)
+			dec_and_test_proxy(zram, proxy_index);
+		zcomp_ext_stream_put(zram->comp);
+#else
 		zcomp_stream_put(zram->comps[ZRAM_PRIMARY_COMP]);
+#endif
 		atomic64_inc(&zram->stats.writestall);
 		handle = zs_malloc(zram->mem_pool, comp_len,
 				GFP_NOIO | __GFP_HIGHMEM |
@@ -1514,28 +2024,46 @@ compress_again:
 		 * zstrm buffer back. It is necessary that the dereferencing
 		 * of the zstrm variable below occurs correctly.
 		 */
+#ifdef CONFIG_CRYPTO_DELTA
+		zstrm = zcomp_ext_stream_get(zram->comp);
+#else
 		zstrm = zcomp_stream_get(zram->comps[ZRAM_PRIMARY_COMP]);
+#endif
 	}
 
 	alloced_pages = zs_get_total_pages(zram->mem_pool);
 	update_used_max(zram, alloced_pages);
 
 	if (zram->limit_pages && alloced_pages > zram->limit_pages) {
+#ifdef CONFIG_CRYPTO_DELTA
+		if (sddc_get_encode_status(zstrm) & ENCODE_STATUS_DUPLICATE)
+			dec_and_test_proxy(zram, proxy_index);
+		zcomp_ext_stream_put(zram->comp);
+#else
 		zcomp_stream_put(zram->comps[ZRAM_PRIMARY_COMP]);
+#endif
 		zs_free(zram->mem_pool, handle);
 		return -ENOMEM;
 	}
 
 	dst = zs_map_object(zram->mem_pool, handle, ZS_MM_WO);
 
+#ifdef CONFIG_CRYPTO_DELTA
+	src = sddc_get_encoded(zstrm);
+#else
 	src = zstrm->buffer;
+#endif
 	if (comp_len == PAGE_SIZE)
 		src = kmap_atomic(page);
 	memcpy(dst, src, comp_len);
 	if (comp_len == PAGE_SIZE)
 		kunmap_atomic(src);
 
+#ifdef CONFIG_CRYPTO_DELTA
+	zcomp_ext_stream_put(zram->comp);
+#else
 	zcomp_stream_put(zram->comps[ZRAM_PRIMARY_COMP]);
+#endif
 	zs_unmap_object(zram->mem_pool, handle);
 	atomic64_add(comp_len, &zram->stats.compr_data_size);
 out:
@@ -1546,6 +2074,27 @@ out:
 	zram_slot_lock(zram, index);
 	zram_free_page(zram, index);
 
+#ifdef CONFIG_CRYPTO_DELTA
+	if (flags)
+		zram_set_flag(zram, index, flags);
+
+	if (flags == ZRAM_SAME) {
+		zram_set_element(zram, index, element);
+	} else if (flags == ZRAM_SDDC_DUPLICATE) {
+		zram->table[index].dup_page_id = proxy_index;
+		atomic64_inc(&zram->stats.num_duplicate);
+	} else {
+		if (comp_len == PAGE_SIZE) {
+			zram_set_flag(zram, index, ZRAM_HUGE);
+			atomic64_inc(&zram->stats.huge_pages);
+		} else if (flags == ZRAM_SDDC_UNIQUE) {
+			atomic64_inc(&zram->stats.num_unique);
+		}
+		zram_set_obj_size(zram, index, comp_len);
+		if (zram->async_enable && sddc_size_check(comp_len))
+			zram_sddc_recompress_push(zram, index);
+	}
+#else
 	if (comp_len == PAGE_SIZE) {
 		zram_set_flag(zram, index, ZRAM_HUGE);
 		atomic64_inc(&zram->stats.huge_pages);
@@ -1559,6 +2108,7 @@ out:
 		zram_set_handle(zram, index, handle);
 		zram_set_obj_size(zram, index, comp_len);
 	}
+#endif
 	zram_slot_unlock(zram, index);
 
 	/* Update stats */
@@ -1578,6 +2128,13 @@ static int zram_bvec_write_partial(struct zram *zram, struct bio_vec *bvec,
 	if (!page)
 		return -ENOMEM;
 
+#ifdef CONFIG_CRYPTO_DELTA
+	if (zram->async_enable && zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP)) {
+		if (atomic64_read(&zram->stats.pages_stored) %
+				SDDC_RECOMPRESS_FREQUENCY == 0)
+			queue_work(sddc_workqueue, &zram->sddc_work);
+	}
+#endif
 	ret = zram_read_page(zram, page, index, bio);
 	if (!ret) {
 		memcpy_from_bvec(page_address(page) + offset, bvec);
@@ -2009,6 +2566,7 @@ static void zram_slot_free_notify(struct block_device *bdev,
 	zram_slot_unlock(zram, index);
 }
 
+#ifndef CONFIG_CRYPTO_DELTA
 static void zram_destroy_comps(struct zram *zram)
 {
 	u32 prio;
@@ -2030,6 +2588,7 @@ static void zram_destroy_comps(struct zram *zram)
 		zram->comp_algs[prio] = NULL;
 	}
 }
+#endif
 
 static void zram_reset_device(struct zram *zram)
 {
@@ -2037,13 +2596,22 @@ static void zram_reset_device(struct zram *zram)
 
 	zram->limit_pages = 0;
 
+#ifdef CONFIG_CRYPTO_DELTA
+	struct zcomp_ext *comp = NULL;
+	comp = zram->comp;
+#endif
+
 	set_capacity_and_notify(zram->disk, 0);
 	part_stat_set_all(zram->disk->part0, 0);
 
 	/* I/O operation under all of CPU are done so let's free */
 	zram_meta_free(zram, zram->disksize);
 	zram->disksize = 0;
+#ifdef CONFIG_CRYPTO_DELTA
+	sddc_destroy(comp);
+#else
 	zram_destroy_comps(zram);
+#endif
 	memset(&zram->stats, 0, sizeof(zram->stats));
 	reset_bdev(zram);
 
@@ -2055,7 +2623,11 @@ static ssize_t disksize_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t len)
 {
 	u64 disksize;
+#ifdef CONFIG_CRYPTO_DELTA
+	struct zcomp_ext *comp = NULL;
+#else
 	struct zcomp *comp;
+#endif
 	struct zram *zram = dev_to_zram(dev);
 	int err;
 	u32 prio;
@@ -2073,35 +2645,74 @@ static ssize_t disksize_store(struct device *dev,
 	}
 
 	disksize = PAGE_ALIGN(disksize);
+#ifndef CONFIG_CRYPTO_DELTA
 	if (!zram_meta_alloc(zram, disksize)) {
 		err = -ENOMEM;
 		goto out_unlock;
 	}
+#endif
 
 	for (prio = 0; prio < ZRAM_MAX_COMPS; prio++) {
 		if (!zram->comp_algs[prio])
 			continue;
 
+#ifdef CONFIG_CRYPTO_DELTA
+		comp = sddc_create(zram->comp_algs[prio], zram, use_hw_crc32);
+#else
 		comp = zcomp_create(zram->comp_algs[prio]);
+#endif
 		if (IS_ERR(comp)) {
 			pr_err("Cannot initialise %s compressing backend\n",
 			       zram->comp_algs[prio]);
 			err = PTR_ERR(comp);
+#ifdef CONFIG_CRYPTO_DELTA
+			goto out_unlock;
+#else
 			goto out_free_comps;
+#endif
 		}
-
+#ifdef CONFIG_CRYPTO_DELTA
+		zram->comp = comp;
+#else
 		zram->comps[prio] = comp;
+#endif
+#ifdef CONFIG_CRYPTO_DELTA
+	if (!zram_meta_alloc(zram, disksize)) {
+		err = -ENOMEM;
+		goto out_free_comp;
+	}
+#endif
 		zram->num_active_comps++;
 	}
+#ifdef CONFIG_CRYPTO_DELTA
+	if (zcomp_ext_check_prop(zram->comp, ZCOMP_EXT_DELTA_COMP)) {
+		err = zram_sddc_recompress_init(zram);
+		if (err) {
+			goto out_free_comps;
+		}
+	}
+#endif
 	zram->disksize = disksize;
 	set_capacity_and_notify(zram->disk, zram->disksize >> SECTOR_SHIFT);
 	up_write(&zram->init_lock);
 
 	return len;
 
+/*
+ * CONFIG_CRYPTO_DELTA change the sequence of alloc
+ * After : sddc_create->zram_meta_alloc
+ * Before: zram_meta_alloc->zcomp_create
+ */
+#ifdef CONFIG_CRYPTO_DELTA
+out_free_comps:
+	zram_meta_free(zram, disksize);
+out_free_comp:
+	sddc_destroy(comp);
+#else
 out_free_comps:
 	zram_destroy_comps(zram);
 	zram_meta_free(zram, disksize);
+#endif
 out_unlock:
 	up_write(&zram->init_lock);
 	return err;
@@ -2204,6 +2815,10 @@ static struct attribute *zram_disk_attrs[] = {
 #endif
 	&dev_attr_io_stat.attr,
 	&dev_attr_mm_stat.attr,
+#ifdef CONFIG_CRYPTO_DELTA
+	&dev_attr_page_stat.attr,
+	&dev_attr_async_enable.attr,
+#endif
 #ifdef CONFIG_ZRAM_WRITEBACK
 	&dev_attr_bd_stat.attr,
 #endif
@@ -2273,18 +2888,32 @@ static int zram_add(void)
 	for (u32 prio = 0; prio < ZRAM_MAX_COMPS; prio++) {
 		if (!zram->comp_algs[prio])
 			continue;
-
+#ifdef CONFIG_CRYPTO_DELTA
+		struct zcomp_ext *comp = sddc_create(zram->comp_algs[prio], zram, use_hw_crc32);
+#else
 		struct zcomp *comp = zcomp_create(zram->comp_algs[prio]);
+#endif
 		if (IS_ERR(comp)) {
 			pr_err("Cannot initialise %s compressing backend\n",
 				zram->comp_algs[prio]);
-			zram_destroy_comps(zram); // 清理已创建的压缩器
+#ifdef CONFIG_CRYPTO_DELTA
+			sddc_destroy(comp);
+#else
+			zram_destroy_comps(zram);
+#endif
 			zram_meta_free(zram, default_disksize); // 释放元数据
 			up_write(&zram->init_lock);
 			ret = PTR_ERR(comp);
 			goto out_cleanup_disk;
 		}
+#ifdef CONFIG_CRYPTO_DELTA
+		zram->comp = comp;
+#else
 		zram->comps[prio] = comp;
+#endif
+#ifdef CONFIG_CRYPTO_DELTA
+	zram->async_enable = false;
+#endif
 		zram->num_active_comps++;
 	}
 
@@ -2560,8 +3189,13 @@ static int __init zram_init(void)
 
 	BUILD_BUG_ON(__NR_ZRAM_PAGEFLAGS > BITS_PER_LONG);
 
+#ifdef CONFIG_CRYPTO_DELTA
+	ret = cpuhp_setup_state_multi(CPUHP_ZCOMP_PREPARE, "block/zram:prepare",
+				    zcomp_ext_cpu_up_prepare, zcomp_ext_cpu_dead);
+#else
 	ret = cpuhp_setup_state_multi(CPUHP_ZCOMP_PREPARE, "block/zram:prepare",
 				      zcomp_cpu_up_prepare, zcomp_cpu_dead);
+#endif
 	if (ret < 0)
 		return ret;
 
@@ -2589,6 +3223,17 @@ static int __init zram_init(void)
 			goto out_error;
 		num_devices--;
 	}
+#ifdef CONFIG_CRYPTO_DELTA
+	zram_sddc_recompress_cachep = kmem_cache_create(
+				"zram_sddc_recompress",
+				sizeof(struct zram_sddc_recompress_node),
+				0, 0, NULL);
+	if (!zram_sddc_recompress_cachep) {
+		pr_err("Unable to create kmem cache for sddc recompress waiting list\n");
+		ret = -ENOMEM;
+		goto out_error;
+	}
+#endif
 	monitor_thread = kthread_run(monitor_func, NULL, "zram_monitor");
 	return 0;
 
@@ -2603,6 +3248,9 @@ static void __exit zram_exit(void)
         kthread_stop(monitor_thread);
         monitor_thread = NULL;
     }
+#ifdef CONFIG_CRYPTO_DELTA
+	kmem_cache_destroy(zram_sddc_recompress_cachep);
+#endif
 	destroy_devices();
 }
 

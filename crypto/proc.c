@@ -76,7 +76,14 @@ static int c_show(struct seq_file *m, void *p)
 					alg->cra_cipher.cia_max_keysize);
 		break;
 	case CRYPTO_ALG_TYPE_COMPRESS:
+#ifdef CONFIG_CRYPTO_DELTA
+		if (alg->cra_flags & CRYPTO_ALG_EXT_PROP_DELTA)
+			seq_printf(m, "type         : delta compression\n");
+		else
+			seq_printf(m, "type         : compression\n");
+#else
 		seq_printf(m, "type         : compression\n");
+#endif
 		break;
 	default:
 		seq_printf(m, "type         : unknown\n");

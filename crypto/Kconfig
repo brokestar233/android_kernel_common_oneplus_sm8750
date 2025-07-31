@@ -1308,6 +1308,17 @@ config CRYPTO_ZSTD
 
 endmenu
 
+menu "Delta compression"
+
+config CRYPTO_DELTA
+	tristate "Delta compression support"
+	select CRYPTO_ALGAPI
+	select CRYPTO_ACOMP2
+	help
+	  This option enabled delta compression support.
+
+endmenu
+
 menu "Random number generation"
 
 config CRYPTO_ANSI_CPRNG
