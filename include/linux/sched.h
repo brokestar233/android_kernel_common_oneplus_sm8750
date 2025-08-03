@@ -70,6 +70,7 @@ struct seq_file;
 struct sighand_struct;
 struct signal_struct;
 struct task_delay_info;
+struct task_dma_buf_info;
 struct task_group;
 struct user_event_mm;
 
@@ -1009,6 +1010,7 @@ struct task_struct {
 	int __user			*clear_child_tid;
 
 	/* PF_KTHREAD | PF_IO_WORKER */
+	/* Otherwise used as task_dma_buf_info pointer */
 	void				*worker_private;
 
 	u64				utime;
@@ -1755,7 +1757,7 @@ extern struct pid *cad_pid;
 #define PF_USED_MATH		0x00002000	/* If unset the fpu must be initialized before use */
 #define PF_USER_WORKER		0x00004000	/* Kernel thread cloned from userspace thread */
 #define PF_NOFREEZE		0x00008000	/* This thread should not be frozen */
-#define PF__HOLE__00010000	0x00010000
+#define PF_KCOMPACTD		0x00010000	/* I am kcompactd */
 #define PF_KSWAPD		0x00020000	/* I am kswapd */
 #define PF_MEMALLOC_NOFS	0x00040000	/* All allocation requests will inherit GFP_NOFS */
 #define PF_MEMALLOC_NOIO	0x00080000	/* All allocation requests will inherit GFP_NOIO */

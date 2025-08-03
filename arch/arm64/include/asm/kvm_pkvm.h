@@ -593,7 +593,7 @@ static inline unsigned long host_s2_pgtable_pages(void)
  * Maximum number of consitutents allowed in a descriptor. This number is
  * arbitrary, see comment below on SG_MAX_SEGMENTS in hyp_ffa_proxy_pages().
  */
-#define KVM_FFA_MAX_NR_CONSTITUENTS	4096
+#define KVM_FFA_MAX_NR_CONSTITUENTS	12288
 
 static inline unsigned long hyp_ffa_proxy_pages(void)
 {
@@ -658,4 +658,7 @@ int __pkvm_topup_hyp_alloc(unsigned long nr_pages);
 int pkvm_call_hyp_nvhe_ppage(struct kvm_pinned_page *ppage,
 			     int (*call_hyp_nvhe)(u64, u64, u8, void*),
 			     void *args, bool unmap);
+
+int pkvm_guest_stage2_pa(pkvm_handle_t handle, u64 ipa, phys_addr_t *phys);
+
 #endif	/* __ARM64_KVM_PKVM_H__ */
