@@ -23,8 +23,10 @@ struct task_struct;
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
-#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+#if defined(CONFIG_ARM64_SW_TTBR0_PAN) || (!defined(CONFIG_ARM64_SW_TTBR0_PAN) && defined(__GENKSYMS__))
 	u64			ttbr0;		/* saved TTBR0_EL1 */
+#else
+	u64			unused;		/* HACK: KABI preservation, DO NOT USE! */
 #endif
 	union {
 		u64		preempt_count;	/* 0 => preemptible, <0 => bug */
