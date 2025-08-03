@@ -5519,7 +5519,7 @@ static inline int cal_positive_negative_costs(void)
 	addr1 = kmap_atomic(p1);
 	addr2 = kmap_atomic(p2);
 	memset(addr1, get_random_u32(), PAGE_SIZE);
-	memcpy(addr2, addr1, PAGE_SIZE);
+	copy_page(addr2, addr1);
 
 	/* make sure that the two pages differ in last byte */
 	addr2[PAGE_SIZE-1] = ~addr2[PAGE_SIZE-1];
