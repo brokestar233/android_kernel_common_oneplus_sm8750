@@ -840,7 +840,7 @@ static int save_image_lzo(struct swap_map_handle *handle,
 			for (off = 0;
 			     off < LZO_HEADER + data[thr].cmp_len;
 			     off += PAGE_SIZE) {
-				memcpy(page, data[thr].cmp + off, PAGE_SIZE);
+				copy_page(page, data[thr].cmp + off);
 
 				ret = swap_write_page(handle, page, &hb);
 				if (ret)
