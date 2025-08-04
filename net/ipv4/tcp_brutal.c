@@ -34,6 +34,9 @@
 
 #define TCP_BRUTAL_PARAMS 23301
 
+static u64 default_rate = INIT_PACING_RATE;
+static u32 default_cwnd_gain = INIT_CWND_GAIN;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
 static u64 tcp_sock_get_sec(const struct tcp_sock *tp)
 {
@@ -153,8 +156,8 @@ static void brutal_init(struct sock *sk)
 
     tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 
-    brutal->rate = INIT_PACING_RATE;
-    brutal->cwnd_gain = INIT_CWND_GAIN;
+    brutal->rate = default_rate;
+    brutal->cwnd_gain = default_cwnd_gain;
 
     memset(brutal->slots, 0, sizeof(brutal->slots));
 
@@ -307,8 +310,57 @@ static void __exit brutal_unregister(void)
     tcp_unregister_congestion_control(&tcp_brutal_ops);
 }
 
+static int set_default_rate(const char *val, const struct kernel_param *kp)
+{
+    u64 tmp;
+    int ret = kstrtou64(val, 0, &tmp);
+    if (ret)
+        return ret;
+    if (tmp < MIN_PACING_RATE)
+        return -EINVAL;
+    *((u64 *)kp->arg) = tmp;
+    return 0;
+}
+
+static int get_default_rate(char *buffer, const struct kernel_param *kp)
+{
+    return sprintf(buffer, "%llu", *((u64 *)kp->arg));
+}
+
+static int set_default_cwnd_gain(const char *val, const struct kernel_param *kp)
+{
+    unsigned long tmp;
+    int ret = kstrtoul(val, 0, &tmp);
+    if (ret)
+        return ret;
+    if (tmp < MIN_CWND_GAIN || tmp > MAX_CWND_GAIN)
+        return -EINVAL;
+    *((u32 *)kp->arg) = (u32)tmp;
+    return 0;
+}
+
+static int get_default_cwnd_gain(char *buffer, const struct kernel_param *kp)
+{
+    return sprintf(buffer, "%u", *((u32 *)kp->arg));
+}
+
+static const struct kernel_param_ops default_rate_ops = {
+    .set = set_default_rate,
+    .get = get_default_rate,
+};
+
+static const struct kernel_param_ops default_cwnd_gain_ops = {
+    .set = set_default_cwnd_gain,
+    .get = get_default_cwnd_gain,
+};
+
 module_init(brutal_register);
 module_exit(brutal_unregister);
+
+module_param_cb(default_rate, &default_rate_ops, &default_rate, 0644);
+module_param_cb(default_cwnd_gain, &default_cwnd_gain_ops, &default_cwnd_gain, 0644);
+MODULE_PARM_DESC(default_rate, "Default pacing rate (u64). Range: 62500 ~ UINT64_MAX");
+MODULE_PARM_DESC(default_cwnd_gain, "Default congestion window gain (u32). Range: 5 ~ 80");
 
 MODULE_AUTHOR("Aperture Internet Laboratory");
 MODULE_LICENSE("GPL");
