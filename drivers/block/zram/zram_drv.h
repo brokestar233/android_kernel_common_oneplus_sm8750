@@ -139,5 +139,10 @@ struct zram {
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
+#ifdef CONFIG_ZRAM_AUTO_SIZE
+	unsigned int historical_mem_pressure;
+	unsigned int historical_zram_pressure;
+	spinlock_t pressure_lock; 
+#endif
 };
 #endif
