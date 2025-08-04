@@ -122,3 +122,9 @@ config OPLUS_FEATURE_ZRAM_OPT
 	default y
 	help
 	  define this config to add oplus zram optimization feature
+
+config ZRAM_AUTO_SIZE
+	tristate "zram auto size"
+	default y
+	help
+	  define this config to add zram auto size
