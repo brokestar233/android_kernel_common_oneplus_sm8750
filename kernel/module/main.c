@@ -2401,6 +2401,8 @@ static char *custom_module_blacklist[] = {
 #if IS_BUILTIN(CONFIG_TCP_CONG_BBR)
     "oplus_network_tuning",
 #endif
+#ifdef CONFIG_STAR_BLACK_LIST
+#endif
 };
 
 static bool blacklisted(const char *module_name)
