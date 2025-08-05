@@ -23,7 +23,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.3.1"
+#define ADIOS_VERSION "2.4.0"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -141,6 +141,7 @@ struct adios_data {
 	struct timer_list update_timer;
 
 	atomic64_t total_pred_lat;
+	u64 last_completed_time;
 
 	struct kmem_cache *rq_data_pool;
 	struct kmem_cache *dl_group_pool;
@@ -515,10 +516,7 @@ static void add_to_dl_tree(
 	struct adios_rq_data *rd = get_rq_data(rq);
 	struct dl_group *dlg;
 
-	rd->block_size = blk_rq_bytes(rq);
 	u8 optype = adios_optype(rq);
-	rd->pred_lat =
-		latency_model_predict(&ad->latency_model[optype], rd->block_size);
 	rd->deadline =
 		rq->start_time_ns + ad->latency_target[optype] + rd->pred_lat;
 
@@ -659,11 +657,18 @@ static bool adios_bio_merge(struct request_queue *q, struct bio *bio,
 // Insert a request into the scheduler
 static void insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 				  blk_insert_t insert_flags, struct list_head *free) {
-	bool dl_idx = adios_optype_not_read(rq);
 	struct request_queue *q = hctx->queue;
 	struct adios_data *ad = q->elevator->elevator_data;
+	struct adios_rq_data *rd = get_rq_data(rq);
+	bool dl_idx = adios_optype_not_read(rq);
+	u8 optype = adios_optype(rq);
+
+	rd->block_size = blk_rq_bytes(rq);
+	rd->pred_lat =
+		latency_model_predict(&ad->latency_model[optype], rd->block_size);
 
 	if (insert_flags & BLK_MQ_INSERT_AT_HEAD) {
+		atomic64_add(rd->pred_lat, &ad->total_pred_lat);
 		scoped_guard(spinlock_irqsave, &ad->pq_lock)
 			list_add_tail(&rq->queuelist, &ad->prio_queue);
 		return;
@@ -710,7 +715,7 @@ static void adios_insert_requests(struct blk_mq_hw_ctx *hctx,
 // Prepare a request before it is inserted into the scheduler
 static void adios_prepare_request(struct request *rq) {
 	struct adios_data *ad = rq->q->elevator->elevator_data;
-	struct adios_rq_data *rd;
+	struct adios_rq_data *rd = get_rq_data(rq);
 
 	rq->elv.priv[0] = NULL;
 
@@ -733,13 +738,14 @@ static struct adios_rq_data *get_dl_first_rd(struct adios_data *ad, bool idx) {
 }
 
 // Fill the batch queues with requests from the deadline-sorted red-black tree
-static bool fill_batch_queues(struct adios_data *ad, u64 current_lat) {
+static bool fill_batch_queues(struct adios_data *ad, u64 tpl) {
 	struct adios_rq_data *rd;
 	struct request *rq;
 	u32 optype_count[ADIOS_OPTYPES] = {0};
 	u32 count = 0;
 	u8 optype;
 	bool page = !ad->bq_page, dl_idx, bias_idx, reduce_bias;
+	u64 added_lat = 0;
 
 	// Reset batch queue counts for the back page
 	memset(&ad->batch_count[page], 0, sizeof(ad->batch_count[page]));
@@ -771,7 +777,7 @@ static bool fill_batch_queues(struct adios_data *ad, u64 current_lat) {
 			// Check batch size and total predicted latency
 			if (count && (!ad->latency_model[optype].base ||
 					ad->batch_count[page][optype] >= ad->batch_limit[optype] ||
-					(current_lat + rd->pred_lat) > ad->global_latency_window))
+					(tpl + added_lat + rd->pred_lat) > ad->global_latency_window))
 				break;
 
 			if (reduce_bias) {
@@ -788,14 +794,14 @@ static bool fill_batch_queues(struct adios_data *ad, u64 current_lat) {
 
 			// Add request to the corresponding batch queue
 			list_add_tail(&rq->queuelist, &ad->batch_queue[page][optype]);
-			atomic64_add(rd->pred_lat, &ad->total_pred_lat);
-			current_lat += rd->pred_lat;
+			added_lat += rd->pred_lat;
 			ad->batch_count[page][optype]++;
 			optype_count[optype]++;
 			count++;
 		}
 
 	if (count) {
+		atomic64_add(added_lat, &ad->total_pred_lat);
 		ad->more_bq_ready = true;
 		for (u8 optype = 0; optype < ADIOS_OPTYPES; optype++)
 			if (ad->batch_actual_max_size[optype] < optype_count[optype])
@@ -815,12 +821,11 @@ static void flip_bq_page(struct adios_data *ad) {
 // Dispatch a request from the batch queues
 static struct request *dispatch_from_bq(struct adios_data *ad) {
 	struct request *rq = NULL;
-	u64 tpl;
 
 	guard(spinlock_irqsave)(&ad->bq_lock);
 
-	tpl = atomic64_read(&ad->total_pred_lat);
-
+	u64 tpl = atomic64_read(&ad->total_pred_lat);
+	
 	if (!ad->more_bq_ready && (!tpl || tpl < div_u64(
 			ad->global_latency_window * ad->bq_refill_below_ratio, 100)))
 		fill_batch_queues(ad, tpl);
@@ -885,11 +890,18 @@ static void adios_completed_request(struct request *rq, u64 now) {
 	struct adios_data *ad = rq->q->elevator->elevator_data;
 	struct adios_rq_data *rd = get_rq_data(rq);
 
-	atomic64_sub(rd->pred_lat, &ad->total_pred_lat);
+	u64 tpl_after = atomic64_sub_return(rd->pred_lat, &ad->total_pred_lat);
 
 	if (!rq->io_start_time_ns || !rd->block_size)
 		return;
-	u64 latency = now - rq->io_start_time_ns;
+
+	u64 lct = ad->last_completed_time ?: rq->io_start_time_ns;
+	if (unlikely(now < lct))
+		return;
+
+	u64 latency = now - lct;
+	ad->last_completed_time = (tpl_after) ? now : 0;
+
 	u8 optype = adios_optype(rq);
 	latency_model_input(ad, &ad->latency_model[optype],
 		rd->block_size, latency, rd->pred_lat);
