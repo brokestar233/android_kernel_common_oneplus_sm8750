@@ -667,7 +667,6 @@ config TCP_CONG_BBR
 	tristate "BBR TCP"
 	default n
 	help
-
 	  BBR (Bottleneck Bandwidth and RTT) TCP congestion control is a
 	  model-based congestion control algorithm that aims to maximize
 	  network utilization, keep queues and retransmit rates low, and to be
@@ -680,6 +679,11 @@ config TCP_CONG_BBR
 	  deep buffers, bufferbloat, policers, or AQM schemes that do not
 	  provide a delay signal. It requires pacing, using either TCP internal
 	  pacing or the fq ("Fair Queue") pacing packet scheduler.
+
+config TCP_CONG_BRUTAL
+	tristate "TCP Brutal"
+	default y
+	help
 
 choice
 	prompt "Default TCP congestion control"
