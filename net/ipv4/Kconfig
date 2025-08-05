@@ -678,6 +678,11 @@ config TCP_CONG_BBR
 	  AQM schemes that do not provide a delay signal. It requires the fq
 	  ("Fair Queue") pacing packet scheduler.
 
+config TCP_CONG_BRUTAL
+	tristate "TCP Brutal"
+	default y
+	help
+
 choice
 	prompt "Default TCP congestion control"
 	default DEFAULT_CUBIC
