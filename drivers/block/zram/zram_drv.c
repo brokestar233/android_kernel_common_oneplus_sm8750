@@ -2064,7 +2064,6 @@ static void zram_reset_device(struct zram *zram)
 	up_write(&zram->init_lock);
 }
 
-#ifdef CONFIG_ZRAM_AUTO_SIZE
 static inline u64 _round_up(u64 num, u64 multiple) {
     if (multiple == 0) return num;
     u64 remainder = num % multiple;
@@ -2072,6 +2071,7 @@ static inline u64 _round_up(u64 num, u64 multiple) {
     return num + multiple - remainder;
 }
 
+#ifdef CONFIG_ZRAM_AUTO_SIZE
 /**
  * @brief 使用intfp库的log格式实现"先慢后快"增长曲线的压力因子计算函数。
  * @param mem_pressure 当前内存压力值（0-100）。
@@ -2469,7 +2469,8 @@ static int zram_add(void)
 {
 	struct zram *zram;
 	int ret, device_id;
-	u64 default_disksize = 17179869184ULL; // 16GB in bytes
+	unsigned long total_mem = (u64)totalram_pages() << PAGE_SHIFT; // 总物理内存
+	u64 default_disksize = _round_up(total_mem, 1ULL << 30);
 
 	zram = kzalloc(sizeof(struct zram), GFP_KERNEL);
 	if (!zram)
