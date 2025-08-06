@@ -23,7 +23,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.4.0"
+#define ADIOS_VERSION "2.4.1"
 
 // Define operation types supported by ADIOS
 enum adios_op_type {
@@ -891,17 +891,13 @@ static void adios_completed_request(struct request *rq, u64 now) {
 	struct adios_rq_data *rd = get_rq_data(rq);
 
 	u64 tpl_after = atomic64_sub_return(rd->pred_lat, &ad->total_pred_lat);
-
-	if (!rq->io_start_time_ns || !rd->block_size)
-		return;
-
 	u64 lct = ad->last_completed_time ?: rq->io_start_time_ns;
-	if (unlikely(now < lct))
+	ad->last_completed_time = (tpl_after) ? now : 0;
+
+	if (!rq->io_start_time_ns || !rd->block_size || unlikely(now < lct))
 		return;
 
 	u64 latency = now - lct;
-	ad->last_completed_time = (tpl_after) ? now : 0;
-
 	u8 optype = adios_optype(rq);
 	latency_model_input(ad, &ad->latency_model[optype],
 		rd->block_size, latency, rd->pred_lat);
