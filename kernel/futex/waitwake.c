@@ -3,6 +3,9 @@
 #include <linux/sched/task.h>
 #include <linux/sched/signal.h>
 #include <linux/freezer.h>
+#ifdef CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif // CONFIG_SCHED_BORE
 
 #include "futex.h"
 #include <trace/hooks/futex.h>
@@ -660,9 +663,22 @@ retry:
 	if (ret)
 		goto out;
 
+#ifdef CONFIG_SCHED_BORE
+	int old_nice = task_nice(current);
+	int boosted_nice = max(-20, old_nice - sched_futex_boost);
+	if (old_nice != boosted_nice)
+		set_user_nice(current, max(-20, boosted_nice));
+#endif // CONFIG_SCHED_BORE
+
 	trace_android_vh_futex_wait_queue_start(uaddr, flags, bitset);
 	/* futex_queue and wait for wakeup, timeout, or a signal. */
 	futex_wait_queue(hb, &q, to);
+
+#ifdef CONFIG_SCHED_BORE
+	if ((old_nice != boosted_nice) &&
+			task_nice(current) == boosted_nice)
+		set_user_nice(current, old_nice);
+#endif // CONFIG_SCHED_BORE
 
 	/* If we were woken (and unqueued), we succeeded, whatever. */
 	ret = 0;
