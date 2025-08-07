@@ -2583,7 +2583,7 @@ static void do_jobctl_trap(void)
  * Must be called with @current->sighand->siglock held,
  * which is always released before returning.
  */
-static void do_freezer_trap(void)
+noinline static void do_freezer_trap(void)
 	__releases(&current->sighand->siglock)
 {
 	/*
