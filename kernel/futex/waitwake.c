@@ -664,9 +664,9 @@ retry:
 		goto out;
 
 #ifdef CONFIG_SCHED_BORE
-	u8 orig_bore = sched_bore;
+	bool boost = likely(sched_bore && sched_burst_futex_boost);
 	current->se.bore_stats->is_waiting_for_lock = true;
-	if (likely(orig_bore))
+	if (boost)
 		set_load_weight_rq_lock(current, true);
 #endif // CONFIG_SCHED_BORE
 
@@ -676,7 +676,7 @@ retry:
 
 #ifdef CONFIG_SCHED_BORE
 	current->se.bore_stats->is_waiting_for_lock = false;
-	if (likely(orig_bore))
+	if (boost)
 		set_load_weight_rq_lock(current, true);
 #endif // CONFIG_SCHED_BORE
 
