@@ -11,15 +11,16 @@
 u8   __read_mostly sched_bore                   = 1;
 u8   __read_mostly sched_burst_exclude_kthreads = 1;
 u8   __read_mostly sched_burst_smoothness       = 40;
-u8   __read_mostly sched_burst_fork_atavistic   = 2;
+u8   __read_mostly sched_burst_fork_atavistic   = 1;
 u8   __read_mostly sched_burst_parity_threshold = 2;
 u8   __read_mostly sched_burst_penalty_offset   = 24;
-u8   __read_mostly sched_futex_boost            = 5;
+u8   __read_mostly sched_burst_futex_boost      = 15;
 uint __read_mostly sched_burst_penalty_scale    = 3180;
 uint __read_mostly sched_burst_cache_stop_count = 64;
 uint __read_mostly sched_burst_cache_lifetime   = 75000000;
 uint __read_mostly sched_deadline_boost_mask    = ENQUEUE_INITIAL
                                                 | ENQUEUE_WAKEUP;
+static int __maybe_unused maxval_prio    =   39;
 static int __maybe_unused maxval_6_bits  =   63;
 static int __maybe_unused maxval_8_bits  =  255;
 static int __maybe_unused maxval_12_bits = 4095;
@@ -60,10 +61,20 @@ static void reweight_task_by_prio(struct task_struct *p, int prio) {
 }
 
 inline u8 effective_prio_bore(struct task_struct *p) {
-	u8 prio = p->static_prio - MAX_RT_PRIO;
-	if (likely(sched_bore))
+	int prio = p->static_prio - MAX_RT_PRIO;
+	if (likely(sched_bore)) {
 		prio += p->se.bore_stats->burst_score;
-	return min(39, prio);
+		if (p->se.bore_stats->is_waiting_for_lock)
+			prio -= sched_burst_futex_boost;
+	}
+	return (u8)clamp(prio, 0, maxval_prio);
+}
+
+void set_load_weight_rq_lock(struct task_struct *p, bool update_load) {
+	struct rq_flags rf;
+	struct rq *rq = task_rq_lock(p, &rf);
+	set_load_weight(p, update_load);
+	task_rq_unlock(rq, p, &rf);
 }
 
 void update_burst_score(struct sched_entity *se) {
@@ -390,11 +401,13 @@ static struct ctl_table sched_bore_sysctls[] = {
 		.extra2		= &maxval_6_bits,
 	},
 	{
-		.procname	= "sched_futex_boost",
-		.data		= &sched_futex_boost,
+		.procname	= "sched_burst_futex_boost",
+		.data		= &sched_burst_futex_boost,
 		.maxlen		= sizeof(u8),
 		.mode		= 0644,
 		.proc_handler = proc_dou8vec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &maxval_prio,
 	},
 	{
 		.procname	= "sched_burst_penalty_scale",

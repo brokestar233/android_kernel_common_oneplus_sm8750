@@ -664,10 +664,10 @@ retry:
 		goto out;
 
 #ifdef CONFIG_SCHED_BORE
-	int old_nice = task_nice(current);
-	int boosted_nice = max(-20, old_nice - sched_futex_boost);
-	if (old_nice != boosted_nice)
-		set_user_nice(current, max(-20, boosted_nice));
+	u8 orig_bore = sched_bore;
+	current->se.bore_stats->is_waiting_for_lock = true;
+	if (likely(orig_bore))
+		set_load_weight_rq_lock(current, true);
 #endif // CONFIG_SCHED_BORE
 
 	trace_android_vh_futex_wait_queue_start(uaddr, flags, bitset);
@@ -675,9 +675,9 @@ retry:
 	futex_wait_queue(hb, &q, to);
 
 #ifdef CONFIG_SCHED_BORE
-	if ((old_nice != boosted_nice) &&
-			task_nice(current) == boosted_nice)
-		set_user_nice(current, old_nice);
+	current->se.bore_stats->is_waiting_for_lock = false;
+	if (likely(orig_bore))
+		set_load_weight_rq_lock(current, true);
 #endif // CONFIG_SCHED_BORE
 
 	/* If we were woken (and unqueued), we succeeded, whatever. */
