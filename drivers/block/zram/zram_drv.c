@@ -51,9 +51,9 @@
 
 #include "zram_drv.h"
 
-#define CHECK_INTERVAL (10 * HZ) // 每10秒检查一次
-#define ZRAM_THRESHOLD 60 // zram占用率阈值60%
-#define MEM_THRESHOLD 75 // 内存占用率阈值75%
+#define CHECK_INTERVAL (30 * HZ) // 每30秒检查一次
+#define ZRAM_THRESHOLD 30 // zram占用率阈值30%
+#define MEM_THRESHOLD 80 // 内存占用率阈值80%
 
 static struct task_struct *monitor_thread;
 
