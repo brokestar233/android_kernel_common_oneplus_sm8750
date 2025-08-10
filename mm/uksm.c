@@ -5781,6 +5781,22 @@ static int __init uksm_init(void)
 		goto out_free;
 	}
 
+	/* Set uksmd thread CPU affinity to CPUs 0-5 and priority to 19 */
+	{
+		cpumask_var_t cpus_mask;
+		if (alloc_cpumask_var(&cpus_mask, GFP_KERNEL)) {
+			cpumask_clear(cpus_mask);
+			cpumask_set_cpu(0, cpus_mask);
+			cpumask_set_cpu(1, cpus_mask);
+			cpumask_set_cpu(2, cpus_mask);
+			cpumask_set_cpu(3, cpus_mask);
+			cpumask_set_cpu(4, cpus_mask);
+			cpumask_set_cpu(5, cpus_mask);
+			set_cpus_allowed_ptr(uksm_thread, cpus_mask);
+			free_cpumask_var(cpus_mask);
+		}
+	}
+
 #ifdef CONFIG_SYSFS
 	err = sysfs_create_group(mm_kobj, &uksm_attr_group);
 	if (err) {
