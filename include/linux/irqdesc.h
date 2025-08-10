@@ -69,9 +69,6 @@ struct irq_desc {
 	unsigned int		irqs_unhandled;
 	atomic_t		threads_handled;
 	int			threads_handled_last;
-#ifdef CONFIG_IRQ_SBALANCE
-	unsigned int		last_cpu;
-#endif
 	raw_spinlock_t		lock;
 	struct cpumask		*percpu_enabled;
 	const struct cpumask	*percpu_affinity;
@@ -108,6 +105,11 @@ struct irq_desc {
 	const char		*name;
 #ifdef CONFIG_HARDIRQS_SW_RESEND
 	struct hlist_node	resend_node;
+#endif
+#ifdef CONFIG_IRQ_SBALANCE
+#ifndef __GENKSYMS__
+	unsigned int		last_cpu;
+#endif
 #endif
 	ANDROID_VENDOR_DATA(1);
 } ____cacheline_internodealigned_in_smp;
