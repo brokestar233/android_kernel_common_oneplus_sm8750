@@ -40,6 +40,12 @@ if [ -d "$common_dir" ]; then
     done
 fi
 
+# 在common配置的最后添加特殊行
+build_date=$(date +"%Y-%m-%d %H:%M:%S")
+commit_id=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+config_map["common"]+="\"a /soc/author/version BUILD_DATE:$build_date COMMIT:$commit_id\","
+((config_counts["common"]++))
+
 # 处理数字命名的机型代号文件夹
 config_base_dir="$srctree/../drivers/of/overwriter/overwrite_configs"
 for model_dir in "$config_base_dir"/[0-9]*; do
