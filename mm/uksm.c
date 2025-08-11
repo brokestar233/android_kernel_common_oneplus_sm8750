@@ -80,6 +80,9 @@
 #include <asm/tlbflush.h>
 #include "internal.h"
 
+bool found = false;
+u64 addr = 0;
+
 #ifdef CONFIG_X86
 #undef memcmp
 
@@ -4855,9 +4858,36 @@ rm_slot:
 	return;
 }
 
+bool check_game_pid(void) {
+    bool result = true;
+	pid_t *var_ptr;
+	pid_t game_pid;
+
+	if (!found) {
+		addr = kallsyms_lookup_name("game_pid");
+		if (addr) {
+			found = true;
+		} else {
+			printk(KERN_ERR "Error looking up game_pid\n");
+		}
+	}
+
+	if (found && addr) {
+		var_ptr = (pid_t *)addr;
+		game_pid = *var_ptr;
+
+    	if (game_pid != -1) {
+			printk(KERN_INFO "game_pid is not -1, returning false\n");
+        	result = false;
+    	}
+	}
+
+    return result;
+}
+
 static int ksmd_should_run(void)
 {
-	return uksm_run & UKSM_RUN_MERGE;
+	return uksm_run & UKSM_RUN_MERGE & check_game_pid();
 }
 
 static int uksm_scan_thread(void *nothing)
