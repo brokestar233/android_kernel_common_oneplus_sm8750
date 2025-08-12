@@ -2759,6 +2759,8 @@ static int ufshcd_compose_devman_upiu(struct ufs_hba *hba,
  */
 static int ufshcd_comp_scsi_upiu(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 {
+	struct request *rq = scsi_cmd_to_rq(lrbp->cmd);
+	unsigned int ioprio_class = IOPRIO_PRIO_CLASS(req_get_ioprio(rq));
 	u8 upiu_flags;
 	int ret = 0;
 
@@ -2769,6 +2771,8 @@ static int ufshcd_comp_scsi_upiu(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 
 	if (likely(lrbp->cmd)) {
 		ufshcd_prepare_req_desc_hdr(lrbp, &upiu_flags, lrbp->cmd->sc_data_direction, 0);
+		if (ioprio_class == IOPRIO_CLASS_RT)
+			upiu_flags |= UPIU_CMD_FLAGS_CP;
 		ufshcd_prepare_utp_scsi_cmd_upiu(lrbp, upiu_flags);
 		if (hba->android_quirks & UFSHCD_ANDROID_QUIRK_SET_IID_TO_ONE)
 			lrbp->ucd_req_ptr->header.iid = 1;
@@ -3050,8 +3054,13 @@ ufshcd_dev_cmd_completion(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 	case UPIU_TRANSACTION_QUERY_RSP: {
 		u8 response = lrbp->ucd_rsp_ptr->header.response;
 
-		if (response == 0)
+		if (response == 0) {
 			err = ufshcd_copy_query_response(hba, lrbp);
+		} else {
+			err = -EINVAL;
+			dev_err(hba->dev, "%s: unexpected response in Query RSP: %x\n",
+					__func__, response);
+		}
 		break;
 	}
 	case UPIU_TRANSACTION_REJECT_UPIU:
@@ -6514,9 +6523,14 @@ static void ufshcd_err_handler(struct work_struct *work)
 		up(&hba->host_sem);
 		return;
 	}
+	spin_unlock_irqrestore(hba->host->host_lock, flags);
+
+	ufshcd_err_handling_prepare(hba);
+
+	spin_lock_irqsave(hba->host->host_lock, flags);
 	ufshcd_set_eh_in_progress(hba);
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
-	ufshcd_err_handling_prepare(hba);
+
 	/* Complete requests that have door-bell cleared by h/w */
 	ufshcd_complete_requests(hba, false);
 	spin_lock_irqsave(hba->host->host_lock, flags);
@@ -6969,6 +6983,11 @@ static irqreturn_t ufshcd_intr(int irq, void *__hba)
 		ufshcd_writel(hba, intr_status, REG_INTERRUPT_STATUS);
 		if (enabled_intr_status)
 			retval |= ufshcd_sl_intr(hba, enabled_intr_status);
+
+		if (hba->android_quirks &
+			    UFSHCD_ANDROID_QUIRK_NO_IS_READ_ON_H8 &&
+		    intr_status & UIC_HIBERNATE_ENTER)
+			break;
 
 		intr_status = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
 	}
