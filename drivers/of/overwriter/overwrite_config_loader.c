@@ -966,6 +966,7 @@ static int __init patch_device_tree(const char *input)
 static int __init overwrite_config_init(void)
 {
     char *device_name = get_property_from_cmdline("oplusboot.prjname");
+    char *enable = get_property_from_cmdline("overwrite.enable");
     
     const struct overwrite_config_group *common_group = NULL;
     const struct overwrite_config_group *device_group = NULL;
@@ -992,6 +993,11 @@ static int __init overwrite_config_init(void)
         pr_info("No common configs found.\n");
     }
 
+    if (enable && strcmp(enable, "0") == 0) {
+        pr_info("Overwrite configs disabled.\n");
+        goto out;
+    }
+
     // 应用设备特有配置（如果存在）
     if (device_group) {
         pr_info("Applying device-specific configs for %s...\n", device_name);
@@ -1002,7 +1008,8 @@ static int __init overwrite_config_init(void)
     } else {
         pr_info("No device-specific configs found for %s.\n", device_name ? device_name : "none");
     }
-    
+
+out:
     kfree(device_name); // 释放获取到的设备名内存
     return 0;
 }
