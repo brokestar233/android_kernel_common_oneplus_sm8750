@@ -8142,6 +8142,15 @@ static ZSTD_compressionParameters ZSTD_getCParams_internal(int compressionLevel,
 
     {   ZSTD_compressionParameters cp = ZSTD_defaultCParameters[tableID][row];
         DEBUGLOG(5, "ZSTD_getCParams_internal selected tableID: %u row: %u strat: %u", tableID, row, (U32)cp.strategy);
+#ifdef DSLAB_OPTIMIZE_COMPRESS
+        // 自动根据L1DCache的大小设置hashlog和chainlog的值
+        if (cp.hashLog > DSLAB_L1DCACHE_LOG - 4){
+            cp.hashLog = DSLAB_L1DCACHE_LOG - 4;
+        }
+        if (cp.chainLog >= cp.hashLog){
+            cp.chainLog = cp.hashLog - 1;
+        }
+#endif
         /* acceleration factor */
         if (compressionLevel < 0) {
             int const clampedCompressionLevel = MAX(ZSTD_minCLevel(), compressionLevel);
