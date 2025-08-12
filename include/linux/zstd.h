@@ -688,4 +688,7 @@ size_t zstd_compress_sequences_and_literals(zstd_cctx *cctx, void* dst, size_t d
 					    const void* literals, size_t lit_size, size_t lit_capacity,
 					    size_t decompressed_size);
 
+#define DSLAB_OPTIMIZE_COMPRESS
+#define DSLAB_L1DCACHE_LOG 16 /* 64KB L1d cache */
+
 #endif  /* LINUX_ZSTD_H */
