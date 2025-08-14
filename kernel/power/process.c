@@ -25,7 +25,7 @@
 /*
  * Timeout for stopping processes
  */
-unsigned int __read_mostly freeze_timeout_msecs = MSEC_PER_SEC;
+unsigned int __read_mostly freeze_timeout_msecs = 500; // 0.5s for Android
 
 static int try_to_freeze_tasks(bool user_only)
 {
@@ -38,7 +38,7 @@ static int try_to_freeze_tasks(bool user_only)
 	ktime_t start, end, elapsed;
 	unsigned int elapsed_msecs;
 	bool wakeup = false;
-	int sleep_usecs = USEC_PER_MSEC;
+	int sleep_usecs = USEC_PER_MSEC / 2; // Start with 0.5ms
 
 	pr_info("Freezing %s\n", what);
 
@@ -79,7 +79,7 @@ static int try_to_freeze_tasks(bool user_only)
 		 * 1 ms sleep followed by exponential backoff until 8 ms.
 		 */
 		usleep_range(sleep_usecs / 2, sleep_usecs);
-		if (sleep_usecs < 8 * USEC_PER_MSEC)
+		if (sleep_usecs < 2 * USEC_PER_MSEC) // Cap at 2ms
 			sleep_usecs *= 2;
 	}
 
