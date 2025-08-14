@@ -3879,23 +3879,14 @@ static void reweight_eevdf(struct sched_entity *se, u64 avruntime,
 	se->deadline = avruntime + vslice;
 }
 
-
-#ifdef CONFIG_SCHED_BORE
 void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
-			    unsigned long weight, bool no_update_curr)
-#else // !CONFIG_SCHED_BORE
-static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
-			    unsigned long weight)
-#endif // CONFIG_SCHED_BORE
+ 			    unsigned long weight)
 {
 	bool curr = cfs_rq->curr == se;
 	u64 avruntime;
 
 	if (se->on_rq) {
 		/* commit outstanding execution time */
-#ifdef CONFIG_SCHED_BORE
-		if (!no_update_curr)
-#endif // CONFIG_SCHED_BORE
 		update_curr(cfs_rq);
 		avruntime = avg_vruntime(cfs_rq);
 		if (!curr)
@@ -3949,11 +3940,7 @@ void reweight_task(struct task_struct *p, int prio)
 	struct load_weight *load = &se->load;
 	unsigned long weight = scale_load(sched_prio_to_weight[prio]);
 
-#ifdef CONFIG_SCHED_BORE
-	reweight_entity(cfs_rq, se, weight, false);
-#else // !CONFIG_SCHED_BORE
 	reweight_entity(cfs_rq, se, weight);
-#endif // CONFIG_SCHED_BORE
 	load->inv_weight = sched_prio_to_wmult[prio];
 }
 EXPORT_SYMBOL_GPL(reweight_task);
@@ -4091,11 +4078,7 @@ static void update_cfs_group(struct sched_entity *se)
 	shares = calc_group_shares(gcfs_rq);
 #endif
 	if (unlikely(se->load.weight != shares))
-#ifdef CONFIG_SCHED_BORE
-		reweight_entity(cfs_rq_of(se), se, shares, false);
-#else // !CONFIG_SCHED_BORE
 		reweight_entity(cfs_rq_of(se), se, shares);
-#endif // CONFIG_SCHED_BORE
 }
 
 #else /* CONFIG_FAIR_GROUP_SCHED */
