@@ -230,16 +230,6 @@ struct mem_cgroup {
 	/* Range enforcement for interrupt charges */
 	struct work_struct high_work;
 
-#if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_ZSWAP)
-	unsigned long zswap_max;
-
-	/*
-	 * Prevent pages from this memcg from being written back from zswap to
-	 * swap, and from being swapped out on zswap store failures.
-	 */
-	bool zswap_writeback;
-#endif
-
 	unsigned long soft_limit;
 
 	/* vmpressure notifications */
@@ -343,8 +333,18 @@ struct mem_cgroup {
 #endif
 
 	// These must be before the flexible array member nodeinfo below
+#if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_ZSWAP)
+	ANDROID_BACKPORT_USE(1, unsigned long zswap_max);
+
+	/*
+	 * Prevent pages from this memcg from being written back from zswap to
+	 * swap, and from being swapped out on zswap store failures.
+	 */
+	ANDROID_BACKPORT_USE(2, bool zswap_writeback);
+#else
 	ANDROID_BACKPORT_RESERVE(1);
 	ANDROID_BACKPORT_RESERVE(2);
+#endif
 	ANDROID_OEM_DATA_ARRAY(1, 2);
 
 	struct mem_cgroup_per_node *nodeinfo[];
@@ -1886,6 +1886,21 @@ static inline void count_objcg_event(struct obj_cgroup *objcg,
 	rcu_read_unlock();
 }
 
+static inline void count_objcg_events(struct obj_cgroup *objcg,
+				      enum vm_event_item idx,
+				      unsigned long count)
+{
+	struct mem_cgroup *memcg;
+
+	if (!memcg_kmem_online())
+		return;
+
+	rcu_read_lock();
+	memcg = obj_cgroup_memcg(objcg);
+	count_memcg_events(memcg, idx, count);
+	rcu_read_unlock();
+}
+
 #else
 static inline bool mem_cgroup_kmem_disabled(void)
 {
@@ -1944,6 +1959,12 @@ static inline struct mem_cgroup *mem_cgroup_from_slab_obj(void *p)
 
 static inline void count_objcg_event(struct obj_cgroup *objcg,
 				     enum vm_event_item idx)
+{
+}
+
+static inline void count_objcg_events(struct obj_cgroup *objcg,
+				      enum vm_event_item idx,
+				      unsigned long count)
 {
 }
 

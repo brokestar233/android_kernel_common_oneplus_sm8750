@@ -107,6 +107,12 @@ config ZSWAP_COMPRESSOR_DEFAULT_LZ4HC
 	help
 	  Use the LZ4HC algorithm as the default compression algorithm.
 
+config ZSWAP_COMPRESSOR_DEFAULT_LZ4KD
+	bool "LZ4KD"
+	select CRYPTO_LZ4KD
+	help
+	  Use the LZ4HC algorithm as the default compression algorithm.
+
 config ZSWAP_COMPRESSOR_DEFAULT_ZSTD
 	bool "zstd"
 	select CRYPTO_ZSTD
@@ -122,6 +128,7 @@ config ZSWAP_COMPRESSOR_DEFAULT
        default "842" if ZSWAP_COMPRESSOR_DEFAULT_842
        default "lz4" if ZSWAP_COMPRESSOR_DEFAULT_LZ4
        default "lz4hc" if ZSWAP_COMPRESSOR_DEFAULT_LZ4HC
+	   default "lz4kd" if ZSWAP_COMPRESSOR_DEFAULT_LZ4KD
        default "zstd" if ZSWAP_COMPRESSOR_DEFAULT_ZSTD
        default ""
 
