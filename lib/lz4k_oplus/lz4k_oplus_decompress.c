@@ -1,4 +1,4 @@
-#include "lz4k.h"
+#include "lz4k_oplus.h"
 #define MASK_3B 0X00FFFFFF
 
 static const BYTE *get_size(
@@ -235,7 +235,7 @@ static int decompress(
 	return source_at == source_end ? (int)(dest_at - dest) : -1;
 }
 
-int lz4k_decompress(
+int lz4k_oplus_decompress(
 	const void *source,
 	void *const dest,
 	unsigned source_max,
@@ -248,7 +248,7 @@ int lz4k_decompress(
 	return decompress((const BYTE*)source, (BYTE*)dest, source_end, dest_end,
 			NR_4KB_LOG2, BLOCK_4KB_LOG2);
 }
-EXPORT_SYMBOL(lz4k_decompress);
+EXPORT_SYMBOL(lz4k_oplus_decompress);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("LZ4K decompressr");
