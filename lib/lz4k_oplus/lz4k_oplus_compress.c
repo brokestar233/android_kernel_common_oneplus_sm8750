@@ -1,4 +1,4 @@
-#include "lz4k.h"
+#include "lz4k_oplus.h"
 
 #define NR_COPY_LOG2 4
 #define NR_COPY_MIN (1 << NR_COPY_LOG2)
@@ -267,7 +267,7 @@ static int compress_64k(
 	}
 }
 
-int lz4k_compress(
+int lz4k_oplus_compress(
 	void *const state,
 	const void *const source,
 	void *dest,
@@ -279,7 +279,7 @@ int lz4k_compress(
 	return compress_64k((U16*)state, (const BYTE*)source,
 			(const BYTE*)source + source_max, (BYTE*)dest, (BYTE*)dest + dest_max);
 }
-EXPORT_SYMBOL(lz4k_compress);
+EXPORT_SYMBOL(lz4k_oplus_compress);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("LZ4K compressr");

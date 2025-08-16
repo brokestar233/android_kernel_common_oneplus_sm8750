@@ -110,7 +110,7 @@ inline static U32 hash64_6b(const uint8_t *r, U32 shift)
 
 
 /**
- * lz4k_compress() - Compress data from source to dest
+ * lz4k_oplus_compress() - Compress data from source to dest
  * @state: address of the working memory.
  * @source: source address of the original data
  * @dest: output buffer address of the compressed data
@@ -129,7 +129,7 @@ inline static U32 hash64_6b(const uint8_t *r, U32 shift)
  * Return: Number of bytes written into buffer 'dest'
  *	(necessarily <= dest_max) or -1 if compression fails
  */
-int lz4k_compress(
+int lz4k_oplus_compress(
 	void *const state,
 	const void *const source,
 	void *dest,
@@ -155,7 +155,7 @@ int lz4k_compress(
  *	(4KB)
  *	or a negative result in case of error
  */
-int lz4k_decompress(
+int lz4k_oplus_decompress(
 	const void *const source,
 	void *const dest,
 	unsigned source_max,
