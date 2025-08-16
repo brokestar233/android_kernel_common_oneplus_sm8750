@@ -1048,16 +1048,11 @@ static int zswap_writeback_entry(struct zswap_entry *entry,
 	struct folio *folio;
 	struct page *page;
 	bool folio_was_allocated;
-	struct swap_info_struct *si;
 	struct writeback_control wbc = {
 		.sync_mode = WB_SYNC_NONE,
 	};
 
 	/* try to allocate swap cache page */
-	si = get_swap_device(swpentry);
-	if (!si)
-		return -EEXIST;
-
 	page = __read_swap_cache_async(swpentry, GFP_KERNEL, NULL, 0,
 				       &folio_was_allocated);
 
@@ -1065,8 +1060,6 @@ static int zswap_writeback_entry(struct zswap_entry *entry,
 		return -ENOMEM;
 
 	folio = page_folio(page);
-
-	put_swap_device(si);
 
 	if (!folio)
 		return -ENOMEM;
