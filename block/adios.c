@@ -23,7 +23,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "2.5.0-rc2"
+#define ADIOS_VERSION "2.5.0"
 
 /* Request Types:
  *
@@ -85,6 +85,8 @@ enum adios_op_type {
 static u64 default_global_latency_window = 32000000ULL;
 // Ratio below which batch queues should be refilled
 static u8  default_bq_refill_below_ratio = 25;
+// FAT compatibility workaround
+static u8  default_place_deadline_pred_lat = 0;
 
 // Dynamic thresholds for shrinkage
 static u32 default_lm_shrink_at_kreqs  =  5000;
@@ -175,6 +177,7 @@ struct adios_data {
 	u32 batch_actual_max_total;
 	u32 async_depth;
 	u8  bq_refill_below_ratio;
+	u8  place_deadline_pred_lat;
 
 	bool bq_page;
 	bool more_bq_ready;
@@ -571,8 +574,11 @@ static void add_to_dl_tree(
 
 	/* Tier-3: Aynchronous Requests
 	 * - Can be reordered and delayed freely */
-	if (!(rq->cmd_flags & REQ_SYNC))
-		rd->deadline += ad->latency_target[adios_optype(rq)] + rd->pred_lat;
+	if (!(rq->cmd_flags & REQ_SYNC)) {
+		rd->deadline += ad->latency_target[adios_optype(rq)];
+		if (ad->place_deadline_pred_lat)
+			rd->deadline += rd->pred_lat;
+	}
 
 	while (*link) {
 		dlg = rb_entry(*link, struct dl_group, node);
@@ -1059,6 +1065,7 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 
 	ad->global_latency_window = default_global_latency_window;
 	ad->bq_refill_below_ratio = default_bq_refill_below_ratio;
+	ad->place_deadline_pred_lat = default_place_deadline_pred_lat;
 
 	for (int i = 0; i < 2; i++)
 		INIT_LIST_HEAD(&ad->prio_queue[i]);
@@ -1205,6 +1212,11 @@ static ssize_t adios_lat_model_##name##_store( \
 	reset_buckets(ad->aggr_buckets); \
 	return count; \
 } \
+static ssize_t adios_lat_target_##name##_show( \
+		struct elevator_queue *e, char *page) { \
+	struct adios_data *ad = e->elevator_data; \
+	return sprintf(page, "%llu\n", ad->latency_target[optype]); \
+} \
 static ssize_t adios_lat_target_##name##_store( \
 		struct elevator_queue *e, const char *page, size_t count) { \
 	struct adios_data *ad = e->elevator_data; \
@@ -1217,10 +1229,10 @@ static ssize_t adios_lat_target_##name##_store( \
 	ad->latency_target[optype] = nsec; \
 	return count; \
 } \
-static ssize_t adios_lat_target_##name##_show( \
+static ssize_t adios_batch_limit_##name##_show( \
 		struct elevator_queue *e, char *page) { \
 	struct adios_data *ad = e->elevator_data; \
-	return sprintf(page, "%llu\n", ad->latency_target[optype]); \
+	return sprintf(page, "%u\n", ad->batch_limit[optype]); \
 } \
 static ssize_t adios_batch_limit_##name##_store( \
 		struct elevator_queue *e, const char *page, size_t count) { \
@@ -1232,11 +1244,6 @@ static ssize_t adios_batch_limit_##name##_store( \
 	struct adios_data *ad = e->elevator_data; \
 	ad->batch_limit[optype] = max_batch; \
 	return count; \
-} \
-static ssize_t adios_batch_limit_##name##_show( \
-		struct elevator_queue *e, char *page) { \
-	struct adios_data *ad = e->elevator_data; \
-	return sprintf(page, "%u\n", ad->batch_limit[optype]); \
 }
 
 SYSFS_OPTYPE_DECL(read, ADIOS_READ);
@@ -1259,6 +1266,13 @@ static ssize_t adios_batch_actual_max_show(
 		total_count, discard_count, read_count, write_count);
 }
 
+// Show the global latency window
+static ssize_t adios_global_latency_window_show(
+		struct elevator_queue *e, char *page) {
+	struct adios_data *ad = e->elevator_data;
+	return sprintf(page, "%llu\n", ad->global_latency_window);
+}
+
 // Set the global latency window
 static ssize_t adios_global_latency_window_store(
 		struct elevator_queue *e, const char *page, size_t count) {
@@ -1273,13 +1287,6 @@ static ssize_t adios_global_latency_window_store(
 	ad->global_latency_window = nsec;
 
 	return count;
-}
-
-// Show the global latency window
-static ssize_t adios_global_latency_window_show(
-		struct elevator_queue *e, char *page) {
-	struct adios_data *ad = e->elevator_data;
-	return sprintf(page, "%llu\n", ad->global_latency_window);
 }
 
 // Show the bq_refill_below_ratio
@@ -1326,6 +1333,42 @@ static ssize_t adios_read_priority_store(
 	guard(spinlock_irqsave)(&ad->lock);
 	ad->dl_prio[0] = prio;
 	ad->dl_bias = 0;
+
+	return count;
+}
+
+/* place_deadline_pred_lat: A sysfs-tunable switch for latency optimization
+ *
+ * This flag controls whether predicted latency (`pred_lat`) is used to
+ * calculate deadlines for asynchronous (Tier 3) requests.
+ *
+ * When enabled (1), this allows small, latency-sensitive I/Os (e.g., from
+ * interactive tasks) to be prioritized over large background transfers.
+ * This aggressive reordering may improve perceived system responsiveness.
+ *
+ * However, this can expose ordering issues in older filesystems like
+ * FAT which may implicitly assume more strict async I/O order dependencies.
+ *
+ * For maximum compatibility, this is disabled by default (0).
+ */
+static ssize_t adios_place_deadline_pred_lat_show(
+		struct elevator_queue *e, char *page) {
+	struct adios_data *ad = e->elevator_data;
+	return sprintf(page, "%d\n", ad->place_deadline_pred_lat);
+}
+
+static ssize_t adios_place_deadline_pred_lat_store(
+		struct elevator_queue *e, const char *page, size_t count) {
+	struct adios_data *ad = e->elevator_data;
+	int val;
+	int ret;
+
+	ret = kstrtoint(page, 10, &val);
+	if (ret || val < 0 || val > 1)
+		return -EINVAL;
+
+	guard(spinlock_irqsave)(&ad->lock);
+	ad->place_deadline_pred_lat = val;
 
 	return count;
 }
@@ -1460,6 +1503,7 @@ static struct elv_fs_entry adios_sched_attrs[] = {
 	AD_ATTR_RO(batch_actual_max),
 	AD_ATTR_RW(bq_refill_below_ratio),
 	AD_ATTR_RW(global_latency_window),
+	AD_ATTR_RW(place_deadline_pred_lat),
 
 	AD_ATTR_RW(batch_limit_read),
 	AD_ATTR_RW(batch_limit_write),
