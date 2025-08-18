@@ -12,8 +12,8 @@ u8   __read_mostly sched_bore                   = 1;
 u8   __read_mostly sched_burst_exclude_kthreads = 1;
 u8   __read_mostly sched_burst_smoothness       = 40;
 u8   __read_mostly sched_burst_fork_atavistic   = 1;
-u8   __read_mostly sched_burst_parity_threshold = 2;
 u8   __read_mostly sched_burst_penalty_offset   = 24;
+u8   __read_mostly sched_burst_futex_boost      = 1;
 uint __read_mostly sched_burst_penalty_scale    = 3180;
 uint __read_mostly sched_burst_cache_stop_count = 64;
 uint __read_mostly sched_burst_cache_lifetime   = 75000000;
@@ -62,10 +62,10 @@ static void reweight_task_by_prio(struct task_struct *p, int prio) {
 }
 
 inline u8 effective_prio_bore(struct task_struct *p) {
-	u8 prio = p->static_prio - MAX_RT_PRIO;
+	int prio = p->static_prio - MAX_RT_PRIO;
 	if (likely(sched_bore))
 		prio += p->se.bore_stats->burst_score;
-	return min(maxval_prio, prio);
+	return (u8)clamp(prio, 0, maxval_prio);
 }
 
 void update_burst_score(struct sched_entity *se) {
@@ -373,15 +373,6 @@ static struct ctl_table sched_bore_sysctls[] = {
 		.extra2		= SYSCTL_THREE,
 	},
 	{
-		.procname	= "sched_burst_parity_threshold",
-		.data		= &sched_burst_parity_threshold,
-		.maxlen		= sizeof(u8),
-		.mode		= 0644,
-		.proc_handler = proc_dou8vec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= &maxval_8_bits,
-	},
-	{
 		.procname	= "sched_burst_penalty_offset",
 		.data		= &sched_burst_penalty_offset,
 		.maxlen		= sizeof(u8),
@@ -389,6 +380,15 @@ static struct ctl_table sched_bore_sysctls[] = {
 		.proc_handler = proc_dou8vec_minmax,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &maxval_6_bits,
+	},
+	{
+		.procname	= "sched_burst_futex_boost",
+		.data		= &sched_burst_futex_boost,
+		.maxlen		= sizeof(u8),
+		.mode		= 0644,
+		.proc_handler = proc_dou8vec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 	{
 		.procname	= "sched_burst_penalty_scale",

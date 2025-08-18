@@ -87,7 +87,7 @@ EXPORT_SYMBOL_GPL(sysctl_sched_latency);
  * Options are:
  *
  *   SCHED_TUNABLESCALING_NONE - unscaled, always *1
- *   SCHED_TUNABLESCALING_LOG - scaled logarithmical, *1+ilog(ncpus)
+ *   SCHED_TUNABLESCALING_LOG - scaled logarithmically, *1+ilog(ncpus)
  *   SCHED_TUNABLESCALING_LINEAR - scaled linear, *ncpus
  *
  * BORE : default SCHED_TUNABLESCALING_NONE = *1 constant
@@ -104,7 +104,7 @@ unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
  *
  * BORE : base_slice = minimum multiple of nsecs_per_tick >= min_base_slice
  * (default min_base_slice = 2000000 constant, units: nanoseconds)
- * EEVDF: default 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds
+ * EEVDF: default 0.70 msec * (1 + ilog(ncpus)), units: nanoseconds
  */
 #ifdef CONFIG_SCHED_BORE
 static const unsigned int nsecs_per_tick       = 1000000000ULL / HZ;
@@ -968,10 +968,13 @@ static struct sched_entity *__pick_eevdf(struct cfs_rq *cfs_rq)
 	 * Once selected, run a task until it either becomes non-eligible or
 	 * until it gets a new slice. See the HACK in set_next_entity().
 	 */
+#if !defined(CONFIG_SCHED_BORE)
 	if (sched_feat(RUN_TO_PARITY) && curr && curr->vlag == curr->deadline)
-#ifdef CONFIG_SCHED_BORE
-		if (!(likely(sched_bore) && likely(sched_burst_parity_threshold) &&
-			sched_burst_parity_threshold < cfs_rq->nr_running))
+#else // CONFIG_SCHED_BORE
+	bool run_to_parity = likely(sched_bore) ?
+		false : sched_feat(RUN_TO_PARITY);
+	if (run_to_parity && curr && curr->vlag == curr->deadline &&
+    	(!curr->bore_stats || !curr->bore_stats->waiting_for_futex || unlikely(!sched_bore)))
 #endif // CONFIG_SCHED_BORE
 		return curr;
 
@@ -5239,11 +5242,10 @@ static inline void update_misfit_status(struct task_struct *p, struct rq *rq) {}
 static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
-	u64 vslice, vruntime = avg_vruntime(cfs_rq);
+	u64 vslice = 0, vruntime = avg_vruntime(cfs_rq);
 	s64 lag = 0;
 
 	se->slice = sysctl_sched_base_slice;
-	vslice = calc_delta_fair(se->slice, se);
 
 	/*
 	 * Due to how V is constructed as the weighted average of entities,
@@ -5253,9 +5255,6 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 *
 	 * EEVDF: placement strategy #1 / #2
 	 */
-#ifdef CONFIG_SCHED_BORE
-	if (se->vlag)
-#endif // CONFIG_SCHED_BORE
 	if (sched_feat(PLACE_LAG) && cfs_rq->nr_running && se->vlag) {
 		struct sched_entity *curr = cfs_rq->curr;
 		unsigned long load;
@@ -5327,6 +5326,11 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	se->vruntime = vruntime - lag;
 
 #ifdef CONFIG_SCHED_BORE
+	if (likely(sched_bore) && sched_burst_futex_boost && se->bore_stats && se->bore_stats->waiting_for_futex)
+		goto vslice_found;
+#endif // !CONFIG_SCHED_BORE
+	vslice = calc_delta_fair(se->slice, se);
+#ifdef CONFIG_SCHED_BORE
 	if (likely(sched_bore))
 		vslice >>= !!(flags & sched_deadline_boost_mask);
 	else
@@ -5339,6 +5343,9 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	if (sched_feat(PLACE_DEADLINE_INITIAL) && (flags & ENQUEUE_INITIAL))
 		vslice /= 2;
 
+#ifdef CONFIG_SCHED_BORE
+vslice_found:
+#endif // CONFIG_SCHED_BORE
 	/*
 	 * EEVDF: vd_i = ve_i + r_i/w_i
 	 */
