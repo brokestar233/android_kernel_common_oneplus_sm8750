@@ -105,6 +105,9 @@
 #include "hmbird/hmbird_shadow_tick.h"
 #include "hmbird.h"
 #endif
+#ifdef CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif /* CONFIG_SCHED_BORE */
 
 #include <trace/hooks/sched.h>
 #include <trace/hooks/cgroup.h>
@@ -1377,7 +1380,11 @@ int tg_nop(struct task_group *tg, void *data)
 
 void set_load_weight(struct task_struct *p, bool update_load)
 {
+#ifdef CONFIG_SCHED_BORE
+	int prio = effective_prio_bore(p);
+#else /* !CONFIG_SCHED_BORE */
 	int prio = p->static_prio - MAX_RT_PRIO;
+#endif /* CONFIG_SCHED_BORE */
 	struct load_weight *load = &p->se.load;
 
 	/*
@@ -10463,6 +10470,10 @@ void __init sched_init(void)
 	BUG_ON(&dl_sched_class != &stop_sched_class + 1);
 #endif
 #endif
+
+#ifdef CONFIG_SCHED_BORE
+	sched_init_bore();
+#endif /* CONFIG_SCHED_BORE */
 
 	wait_bit_init();
 
