@@ -112,6 +112,10 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
+#ifdef CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif /* CONFIG_SCHED_BORE */
+
 #include <trace/events/sched.h>
 
 #define CREATE_TRACE_POINTS
@@ -623,6 +627,14 @@ void free_task(struct task_struct *tsk)
 	scs_release(tsk);
 
 	trace_android_vh_free_task(tsk);
+
+#ifdef CONFIG_SCHED_BORE
+	if (tsk->bore) {
+		kfree(tsk->bore);
+		tsk->bore = NULL;
+	}
+#endif
+
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 	/*
 	 * The task is finally done with both the stack and thread_info,
@@ -2701,6 +2713,17 @@ __latent_entropy struct task_struct *copy_process(
 	 * Need tasklist lock for parent etc handling!
 	 */
 	write_lock_irq(&tasklist_lock);
+#ifdef CONFIG_SCHED_BORE
+	p->bore = kzalloc(sizeof(struct bore_ctx), GFP_KERNEL);
+	if (unlikely(!p->bore)) {
+		pr_err("Failed to allocate memory for bore in task %p\n", p);
+    	put_task_struct(p);
+    	return ERR_PTR(-ENOMEM);
+	}
+
+	if (likely(p->pid))
+		task_fork_bore(p, current, clone_flags, p->start_time);
+#endif /* CONFIG_SCHED_BORE */
 
 	/* CLONE_PARENT re-uses the old parent */
 	if (clone_flags & (CLONE_PARENT|CLONE_THREAD)) {
