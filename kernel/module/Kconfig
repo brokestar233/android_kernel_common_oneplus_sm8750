@@ -412,6 +412,13 @@ config UNUSED_KSYMS_WHITELIST
 	  one per line. The path can be absolute, or relative to the kernel
 	  source or obj tree.
 
+config DEBLOAT_VENDOR_MODULES
+	string "Debloat some modules to reduce bloat"
+	default y
+	help
+	  Add some modules to custom_module_blacklist in kernel/module/main.c
+	  to reduce overhead.
+
 config MODULES_TREE_LOOKUP
 	def_bool y
 	depends on PERF_EVENTS || TRACING || CFI_CLANG
