@@ -25,7 +25,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "3.0.0"
+#define ADIOS_VERSION "3.0.1"
 
 /* Request Types:
  *
@@ -857,17 +857,16 @@ static void insert_request_post_stability(struct blk_mq_hw_ctx *hctx,
 
 	/* Tier-0: BLK_MQ_INSERT_AT_HEAD Requests
 	 * - Needs to be processed ASAP at all costs in any case */
-	insert_pq_flags |= !!(insert_flags & BLK_MQ_INSERT_AT_HEAD);
+	if (insert_flags & BLK_MQ_INSERT_AT_HEAD)
+	{ insert_pq_flags |= 0x2; }
 	/* Tier-1: Integrity-sensitive Requests
 	 * - Needs to be FIFO across all optypes */
-	insert_pq_flags |= ((
-		(compliant(ad, ADIOS_CF_PRIO_FUA) &&
-			!!(rq->cmd_flags & REQ_FUA)) ||
-		(compliant(ad, ADIOS_CF_PRIO_PF) &&
-			!!(rq->cmd_flags & REQ_PREFLUSH))) << 1);
+	if ((compliant(ad, ADIOS_CF_PRIO_FUA) && (rq->cmd_flags & REQ_FUA)) ||
+		(compliant(ad, ADIOS_CF_PRIO_PF ) && (rq->cmd_flags & REQ_PREFLUSH)))
+	{ insert_pq_flags |= 0x1; }
 
 	if (insert_pq_flags) {
-		u8 pq_idx = insert_pq_flags >> 1;
+		u8 pq_idx = !(insert_pq_flags >> 1);
 		if (rd->pred_lat)
 			atomic64_add(rd->pred_lat, &ad->total_pred_lat);
 		scoped_guard(spinlock_irqsave, &ad->pq_lock) {
