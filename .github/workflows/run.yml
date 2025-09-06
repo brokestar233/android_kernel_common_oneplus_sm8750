@@ -17,7 +17,6 @@ jobs:
         repository: whitewhale0612/android_kernel_common_oneplus_sm8750
         ref: v9
         path: kernel_source
-
     - name: Setup zyclang Toolchain
       run: |
          
@@ -29,7 +28,6 @@ jobs:
          # echo "正在克隆构建工具..." &&
          # aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang20-r547379/build-tools.zip -o build-tools.zip &&
          # unzip -q build-tools.zip &&
-           echo "所有源码及工具链初始化完成！"
          #如果需要别的工具可以自行补充！！ 
           
     - name: Install Build Dependencies
