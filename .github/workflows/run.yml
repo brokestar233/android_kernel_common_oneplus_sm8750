@@ -44,7 +44,7 @@ jobs:
       run: |
     
        cd kernel_source
-        curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
+        curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
        cd ~
     # 使用 zyclang 的配置和编译步骤
     - name: Configure Kernel
