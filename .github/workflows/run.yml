@@ -18,7 +18,6 @@ jobs:
         ref: v9
         path: kernel_source
 
-    # 下载并设置 clang-19-20240723
     - name: Setup zyclang Toolchain
       run: |
          
