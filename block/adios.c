@@ -25,7 +25,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "3.1.5"
+#define ADIOS_VERSION "3.1.6"
 
 /* Request Types:
  *
@@ -97,8 +97,7 @@ enum adios_compliance_flags {
 };
 
 // Flags to control compliance with block layer constraints
-static u64 default_compliance_flags =
-	ADIOS_CF_FIXORDER;
+static u64 default_compliance_flags = 0x0;
 
 // Dynamic thresholds for shrinkage
 static u32 default_lm_shrink_at_kreqs  =  5000;
@@ -1325,7 +1324,7 @@ static bool release_barrier_requests(struct adios_data *ad) {
 		struct request *trq, *next;
 		LIST_HEAD(free_list);
 
-		scoped_guard(spinlock_irqsave, &ad->lock)
+		/* ad->lock is already held */
 		list_for_each_entry_safe(trq, next, &local_list, queuelist) {
 			list_del_init(&trq->queuelist);
 			if (merge_or_insert_to_dl_tree(ad, trq, ad->queue, &free_list))
@@ -1361,8 +1360,13 @@ retry:
 	if (eval_adios_state(ad, ADIOS_STATE_BP)) {
 		union adios_in_flight_rqs ifr;
 		ifr.scalar = atomic64_read(&ad->in_flight_rqs.atomic);
-		if (!ifr.count && release_barrier_requests(ad))
-			goto retry;
+		if (!ifr.count) {
+			bool barrier_released = false;
+			scoped_guard(spinlock_irqsave, &ad->lock)
+				barrier_released = release_barrier_requests(ad);
+			if (barrier_released)
+				goto retry;
+		}
 	}
 
 	return NULL;
