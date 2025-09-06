@@ -44,6 +44,7 @@ jobs:
         sudo apt install pahole
         
     - name: sukisu support
+      run: |
     
        cd kernel_source
         curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
