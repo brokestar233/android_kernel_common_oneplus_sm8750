@@ -637,7 +637,7 @@ struct uksm_cpu_preset_s uksm_cpu_preset[5] = {
 			200,
 			50
 		},
-		90
+		45
 	},
 };
 
