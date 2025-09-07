@@ -1577,7 +1577,7 @@ enqueue_task_rt(struct rq *rq, struct task_struct *p, int flags)
 		enqueue_pushable_task(rq, p);
 }
 
-static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
+static bool __dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct sched_rt_entity *rt_se = &p->rt;
 
@@ -1585,6 +1585,13 @@ static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
 	dequeue_rt_entity(rt_se, flags);
 
 	dequeue_pushable_task(rq, p);
+
+	return true;
+}
+
+static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
+{
+	__dequeue_task_rt(rq, p, flags);
 }
 
 /*
@@ -2798,6 +2805,9 @@ static int task_is_throttled_rt(struct task_struct *p, int cpu)
 DEFINE_SCHED_CLASS(rt) = {
 
 	.enqueue_task		= enqueue_task_rt,
+#ifndef __GENKSYMS__
+	.__dequeue_task		= __dequeue_task_rt,
+#endif
 	.dequeue_task		= dequeue_task_rt,
 	.yield_task		= yield_task_rt,
 
