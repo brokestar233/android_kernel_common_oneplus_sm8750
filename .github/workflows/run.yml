@@ -80,6 +80,8 @@ jobs:
           CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
           CLANG_AUTOFDO_PROFILE="../android/gki/aarch64/afdo/kernel.afdo" \
           gki_defconfig
+          CORES=$(nproc)
+          JOBS=$((CORES*2))
         make ARCH=arm64 SUBARCH=arm64 -j$(nproc --all) O=out \
           LLVM=1 \
           LLVM_IAS=1 \
