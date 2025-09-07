@@ -436,13 +436,20 @@ struct task_struct *pick_next_task_idle(struct rq *rq)
  * It is not legal to sleep in the idle task - print a warning
  * message if some code attempts to do it:
  */
-static void
-dequeue_task_idle(struct rq *rq, struct task_struct *p, int flags)
+static bool
+__dequeue_task_idle(struct rq *rq, struct task_struct *p, int flags)
 {
 	raw_spin_rq_unlock_irq(rq);
 	printk(KERN_ERR "bad: scheduling from the idle thread!\n");
 	dump_stack();
 	raw_spin_rq_lock_irq(rq);
+	return true;
+}
+
+static void
+dequeue_task_idle(struct rq *rq, struct task_struct *p, int flags)
+{
+	__dequeue_task_idle(rq, p, flags);
 }
 
 /*
@@ -480,6 +487,9 @@ DEFINE_SCHED_CLASS(idle) = {
 	/* no enqueue/yield_task for idle tasks */
 
 	/* dequeue is not valid, we print a debug message there: */
+#ifndef __GENKSYMS__
+	.__dequeue_task		= __dequeue_task_idle,
+#endif
 	.dequeue_task		= dequeue_task_idle,
 
 	.check_preempt_curr	= check_preempt_curr_idle,
