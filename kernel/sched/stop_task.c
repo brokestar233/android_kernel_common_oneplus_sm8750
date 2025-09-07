@@ -57,10 +57,17 @@ enqueue_task_stop(struct rq *rq, struct task_struct *p, int flags)
 	add_nr_running(rq, 1);
 }
 
+static bool
+__dequeue_task_stop(struct rq *rq, struct task_struct *p, int flags)
+{
+	sub_nr_running(rq, 1);
+	return true;
+}
+
 static void
 dequeue_task_stop(struct rq *rq, struct task_struct *p, int flags)
 {
-	sub_nr_running(rq, 1);
+	__dequeue_task_stop(rq, p, flags);
 }
 
 static void yield_task_stop(struct rq *rq)
@@ -106,6 +113,9 @@ static void update_curr_stop(struct rq *rq)
 DEFINE_SCHED_CLASS(stop) = {
 
 	.enqueue_task		= enqueue_task_stop,
+#ifndef __GENKSYMS__
+	.__dequeue_task		= __dequeue_task_stop,
+#endif
 	.dequeue_task		= dequeue_task_stop,
 	.yield_task		= yield_task_stop,
 

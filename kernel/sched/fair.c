@@ -6892,7 +6892,7 @@ static void set_next_buddy(struct sched_entity *se);
  * decreased. We remove the task from the rbtree and
  * update the fair scheduling stats:
  */
-static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+static bool __dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
@@ -6961,6 +6961,13 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 dequeue_throttle:
 	util_est_update(&rq->cfs, p, task_sleep);
 	hrtick_update(rq);
+
+	return true;
+}
+
+static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+{
+	__dequeue_task_fair(rq, p, flags);
 }
 
 #ifdef CONFIG_SMP
@@ -13322,6 +13329,9 @@ static unsigned int get_rr_interval_fair(struct rq *rq, struct task_struct *task
 DEFINE_SCHED_CLASS(fair) = {
 
 	.enqueue_task		= enqueue_task_fair,
+#ifndef __GENKSYMS__
+	.__dequeue_task		= __dequeue_task_fair,
+#endif
 	.dequeue_task		= dequeue_task_fair,
 	.yield_task		= yield_task_fair,
 	.yield_to_task		= yield_to_task_fair,
