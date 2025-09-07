@@ -2171,14 +2171,14 @@ static void ops_dequeue(struct task_struct *p, u64 deq_flags)
 	}
 }
 
-static void dequeue_task_hmbird(struct rq *rq, struct task_struct *p, int deq_flags)
+static bool __dequeue_task_hmbird(struct rq *rq, struct task_struct *p, int deq_flags)
 {
 	struct hmbird_rq *hmbird_rq = get_hmbird_rq(rq);
 
 	if (!test_bit(ffs(HMBIRD_TASK_QUEUED), (unsigned long *)&get_hmbird_ts(p)->flags)) {
 		hmbird_cond_deferred_err(TASK_WATCHED, watchdog_task_watched(p),
 						"task = %s\n", p->comm);
-		return;
+		return false;
 	}
 
 	ops_dequeue(p, deq_flags);
@@ -2199,6 +2199,13 @@ static void dequeue_task_hmbird(struct rq *rq, struct task_struct *p, int deq_fl
 	hmbird_rq->nr_running--;
 	sub_nr_running(rq, 1);
 	dispatch_dequeue(hmbird_rq, p);
+
+	return true;
+}
+
+static void dequeue_task_hmbird(struct rq *rq, struct task_struct *p, int deq_flags)
+{
+	__dequeue_task_hmbird(rq, p, deq_flags);
 }
 
 static void yield_task_hmbird(struct rq *rq)
@@ -3421,6 +3428,9 @@ int hmbird_tg_online(struct task_group *tg)
  */
 DEFINE_SCHED_CLASS(hmbird) = {
 	.enqueue_task		= enqueue_task_hmbird,
+#ifndef __GENKSYMS__
+	.__dequeue_task		= __dequeue_task_hmbird,
+#endif
 	.dequeue_task		= dequeue_task_hmbird,
 	.yield_task		= yield_task_hmbird,
 	.yield_to_task		= yield_to_task_hmbird,
