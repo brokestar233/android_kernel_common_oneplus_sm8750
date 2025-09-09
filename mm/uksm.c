@@ -637,7 +637,7 @@ struct uksm_cpu_preset_s uksm_cpu_preset[5] = {
 			200,
 			50
 		},
-		90
+		45
 	},
 };
 
@@ -4851,7 +4851,7 @@ rm_slot:
 			uksm_sleep_real = expected_jiffies;
 
 		/* We have a 60 second up bound for responsiveness. */
-		if (jiffies_to_msecs(uksm_sleep_real) > MSEC_PER_SEC * 60)
+		if (jiffies_to_msecs(uksm_sleep_real) > MSEC_PER_SEC * 180)
 			uksm_sleep_real = msecs_to_jiffies(1000);
 	}
 
@@ -5112,7 +5112,7 @@ static ssize_t sleep_millisecs_store(struct kobject *kobj,
 	int err;
 
 	err = kstrtoul(buf, 10, &msecs);
-	if (err || msecs > MSEC_PER_SEC * 60)
+	if (err || msecs > MSEC_PER_SEC * 180)
 		return -EINVAL;
 
 	uksm_sleep_jiffies = msecs_to_jiffies(msecs);
