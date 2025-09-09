@@ -51,9 +51,9 @@
 
 #include "zram_drv.h"
 
-#define CHECK_INTERVAL (180 * HZ) // 每30秒检查一次
-#define ZRAM_THRESHOLD 60 // zram占用率阈值30%
-#define MEM_THRESHOLD 85 // 内存占用率阈值80%
+#define CHECK_INTERVAL (30 * HZ) // 每30秒检查一次
+#define ZRAM_THRESHOLD 30 // zram占用率阈值30%
+#define MEM_THRESHOLD 80 // 内存占用率阈值80%
 
 static struct task_struct *monitor_thread;
 
@@ -2186,7 +2186,7 @@ static ssize_t disksize_store(struct device *dev,
         disksize  = memparse(buf, NULL);
 	}
 #else
-	disksize = 17179869184(buf, NULL);
+	disksize = memparse(buf, NULL);
 #endif
 
 	if (!disksize)

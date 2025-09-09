@@ -878,7 +878,7 @@ config UKSM_CPU_GOVERNOR
 
 config UKSM_SLEEP_MS
 	int "Ultra-KSM default sleep millisecs"
-	range 8 600000
+	range 8 60000
 
 endif
 
