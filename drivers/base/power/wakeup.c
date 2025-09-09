@@ -583,6 +583,13 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 
 	/* Increment the counter of events in progress. */
 	cec = atomic_inc_return(&combined_event_count);
+	/*
+	 * wakeup_source_activate() aborts suspend only if events_check_enabled
+	 * is set (see pm_wakeup_pending()). Similarly, abort suspend during
+	 * fs_sync only if events_check_enabled is set.
+	 */
+	if (events_check_enabled)
+		suspend_abort_fs_sync();
 
 	trace_wakeup_source_activate(ws->name, cec);
 }
