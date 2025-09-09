@@ -1325,7 +1325,7 @@ static struct shrinker *zswap_alloc_shrinker(void)
 
 	shrinker->scan_objects = zswap_shrinker_scan;
 	shrinker->count_objects = zswap_shrinker_count;
-	shrinker->batch = 1024;
+	shrinker->batch = 512;
 	shrinker->seeks = DEFAULT_SEEKS;
 	return shrinker;
 }
