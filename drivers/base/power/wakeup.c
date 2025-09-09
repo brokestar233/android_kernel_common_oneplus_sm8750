@@ -1016,10 +1016,12 @@ EXPORT_SYMBOL_GPL(pm_wakeup_pending);
 
 void pm_system_wakeup(void)
 {
-	if (atomic_inc_return_relaxed(&pm_abort_suspend) == 1) {
-		suspend_abort_fs_sync();
+	int abort_count = atomic_inc_return_relaxed(&pm_abort_suspend);
+
+	suspend_abort_fs_sync();
+
+	if (abort_count == 1)
 		s2idle_wake();
-	}
 }
 EXPORT_SYMBOL_GPL(pm_system_wakeup);
 
