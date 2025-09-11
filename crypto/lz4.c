@@ -23,14 +23,8 @@ static bool lz4_use_dict = true;
 module_param(lz4_use_dict, bool, 0644);
 MODULE_PARM_DESC(lz4_use_dict, "Enable LZ4 dictionary compression (default: true)");
 
-static void *lz4_alloc_ctx(struct crypto_scomp *tfm)
+static void *__lz4_alloc_ctx(struct lz4_ctx *ctx)
 {
-	struct lz4_ctx *ctx;
-
-	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return ERR_PTR(-ENOMEM);
-
 	ctx->lz4_comp_mem = vmalloc(LZ4_MEM_COMPRESS);
 	if (!ctx->lz4_comp_mem) {
 		kfree(ctx);
@@ -55,12 +49,27 @@ static void *lz4_alloc_ctx(struct crypto_scomp *tfm)
 	return ctx;
 }
 
+static void *lz4_alloc_ctx(struct crypto_scomp *tfm)
+{
+	struct lz4_ctx *ctx;
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return ERR_PTR(-ENOMEM);
+
+	ctx = __lz4_alloc_ctx(ctx);
+	if (IS_ERR(ctx))
+		return ERR_PTR(-ENOMEM);
+
+	return ctx;
+}
+
 static int lz4_init(struct crypto_tfm *tfm)
 {
 	struct lz4_ctx *ctx = crypto_tfm_ctx(tfm);
 
-	ctx->lz4_comp_mem = lz4_alloc_ctx(NULL);
-	if (IS_ERR(ctx->lz4_comp_mem))
+	ctx = __lz4_alloc_ctx(ctx);
+	if (IS_ERR(ctx))
 		return -ENOMEM;
 
 	return 0;
@@ -83,7 +92,7 @@ static void lz4_exit(struct crypto_tfm *tfm)
 {
 	struct lz4_ctx *ctx = crypto_tfm_ctx(tfm);
 
-	lz4_free_ctx(NULL, ctx->lz4_comp_mem);
+	lz4_free_ctx(NULL, ctx);
 }
 
 static int __lz4_compress_crypto(const u8 *src, unsigned int slen,
