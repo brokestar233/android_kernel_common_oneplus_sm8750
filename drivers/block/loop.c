@@ -1058,7 +1058,7 @@ static int loop_configure(struct loop_device *lo, blk_mode_t mode,
 
 	if (!lo->workqueue) {
 		lo->workqueue = alloc_workqueue("loop%d",
-						WQ_UNBOUND | WQ_FREEZABLE,
+						WQ_UNBOUND | WQ_FREEZABLE | WQ_HIGHPRI,
 						0, lo->lo_number);
 		if (!lo->workqueue) {
 			error = -ENOMEM;
