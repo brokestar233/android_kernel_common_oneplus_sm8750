@@ -75,15 +75,6 @@ static int lz4_init(struct crypto_tfm *tfm)
 	return 0;
 }
 
-static void __lz4_free_ctx(void *ctx)
-{
-	struct lz4_ctx *zctx = ctx;
-
-	kfree(zctx->decomp_stream);
-	kfree(zctx->comp_stream);
-	vfree(zctx->lz4_comp_mem);
-}
-
 static void lz4_free_ctx(struct crypto_scomp *tfm, void *ctx)
 {
 	struct lz4_ctx *zctx = ctx;
@@ -91,7 +82,9 @@ static void lz4_free_ctx(struct crypto_scomp *tfm, void *ctx)
 	if (!zctx)
 		return;
 
-	__lz4_free_ctx(zctx);
+	kfree(zctx->decomp_stream);
+	kfree(zctx->comp_stream);
+	vfree(zctx->lz4_comp_mem);
 	kfree(zctx);
 }
 
@@ -99,7 +92,7 @@ static void lz4_exit(struct crypto_tfm *tfm)
 {
 	struct lz4_ctx *ctx = crypto_tfm_ctx(tfm);
 
-	__lz4_free_ctx(ctx);
+	lz4_free_ctx(NULL, ctx);
 }
 
 static int __lz4_compress_crypto(const u8 *src, unsigned int slen,
