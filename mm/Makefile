@@ -2,7 +2,7 @@
 #
 # Makefile for the linux memory manager.
 #
-
+ccflags-y += -O3 -ffast-math
 KASAN_SANITIZE_slab_common.o := n
 KASAN_SANITIZE_slab.o := n
 KASAN_SANITIZE_slub.o := n
