@@ -18,6 +18,7 @@
 #include <linux/rwsem.h>
 #include <linux/zsmalloc.h>
 #include <linux/crypto.h>
+#include <linux/list_lru.h>
 
 #include "zcomp.h"
 
@@ -69,7 +70,17 @@ struct zram_table_entry {
 #ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
 	ktime_t ac_time;
 #endif
+#ifdef	CONFIG_ZRAM_WRITEBACK
+	struct list_head lru;
+#endif
 };
+
+#ifdef CONFIG_ZRAM_WRITEBACK
+struct zram_shrink_ctx {
+    struct zram *zram;
+    bool *encountered_in_swapcache;
+};
+#endif
 
 struct zram_stats {
 	atomic64_t compr_data_size;	/* compressed size of pages stored */
@@ -87,6 +98,8 @@ struct zram_stats {
 	atomic64_t bd_count;		/* no. of pages in backing device */
 	atomic64_t bd_reads;		/* no. of reads from backing device */
 	atomic64_t bd_writes;		/* no. of writes from backing device */
+	atomic64_t written_back_pages;
+	atomic64_t reject_reclaim_fail;
 #endif
 };
 
@@ -132,6 +145,9 @@ struct zram {
 	struct block_device *bdev;
 	unsigned long *bitmap;
 	unsigned long nr_pages;
+	struct shrinker *zram_shrinker;
+	/* Global LRU list for zram entries. */
+	struct list_lru zram_list_lru;
 #endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
