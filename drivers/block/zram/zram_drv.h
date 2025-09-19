@@ -72,6 +72,7 @@ struct zram_table_entry {
 #endif
 #ifdef	CONFIG_ZRAM_WRITEBACK
 	struct list_head lru;
+	bool referenced;
 #endif
 };
 
