@@ -2926,7 +2926,7 @@ static int monitor_func(void *data)
 	u64 combined_pressure_factor_percent;
 
 	if (IS_ENABLED(CONFIG_ZRAM_TRACK_ENTRY_ACTIME))
-		cutoff_time = ktime_sub(ktime_get_boottime(), ns_to_ktime((10 * 60) * NSEC_PER_SEC));
+		cutoff_time = ktime_sub(ktime_get_boottime(), ns_to_ktime((5 * 60) * NSEC_PER_SEC));
 
     while (!kthread_should_stop()) {
 		int mem_usage = get_memory_usage();
@@ -2941,7 +2941,7 @@ static int monitor_func(void *data)
 			zram_count++;
 
 			down_read(&zram->init_lock);
-			// 标记超过10分钟不活跃的页面为空闲,进入收缩器队列
+			// 标记超过5分钟不活跃的页面为空闲,进入收缩器队列
 			if (cutoff_time != 0)
 				mark_idle(zram, cutoff_time);
 			up_read(&zram->init_lock);
