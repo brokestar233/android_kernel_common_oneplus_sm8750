@@ -35,6 +35,7 @@
 #include <linux/part_stat.h>
 #include <linux/mm.h>
 #include <linux/kthread.h>
+#include <linux/game_pid.h>
 
 #ifdef CONFIG_ZRAM_AUTO_SIZE
 #include <linux/math64.h>
@@ -51,9 +52,11 @@
 
 #include "zram_drv.h"
 
-#define CHECK_INTERVAL (180 * HZ) // 每30秒检查一次
-#define ZRAM_THRESHOLD 60 // zram占用率阈值30%
-#define MEM_THRESHOLD 85 // 内存占用率阈值80%
+
+#define CHECK_INTERVAL (90 * HZ) // 每90秒检查一次
+#define MEM_THRESHOLD 85
+
+static u64 batch_size = 512;
 
 static struct task_struct *monitor_thread;
 
@@ -77,6 +80,12 @@ static const struct block_device_operations zram_devops;
 static void zram_free_page(struct zram *zram, size_t index);
 static int zram_read_page(struct zram *zram, struct page *page, u32 index,
 			  struct bio *parent);
+static void zram_writeback(struct zram *zram);
+static int zram_writeback_entry(struct zram *zram, struct zram_table_entry *entry);
+
+#ifdef CONFIG_ZRAM_WRITEBACK
+static void zram_init_shrinker(struct zram *zram);
+#endif
 
 #ifdef CONFIG_ZRAM_MULTI_COMP
 u8 __read_mostly sysctl_zram_recomp_immediate = 1;
@@ -206,6 +215,22 @@ static inline bool is_partial_io(struct bio_vec *bvec)
 }
 #endif
 
+#ifdef	CONFIG_ZRAM_WRITEBACK
+static void zram_lru_add(struct zram *zram, struct zram_table_entry *entry)
+{
+    rcu_read_lock();
+    list_lru_add(&zram->zram_list_lru, &entry->lru);
+    rcu_read_unlock();
+}
+
+static void zram_lru_del(struct zram *zram, struct zram_table_entry *entry)
+{
+    rcu_read_lock();
+    list_lru_del(&zram->zram_list_lru, &entry->lru);
+    rcu_read_unlock();
+}
+#endif
+
 static inline void zram_set_priority(struct zram *zram, u32 index, u32 prio)
 {
 	prio &= ZRAM_COMP_PRIORITY_MASK;
@@ -227,6 +252,8 @@ static inline u32 zram_get_priority(struct zram *zram, u32 index)
 
 static void zram_accessed(struct zram *zram, u32 index)
 {
+	/* Remove from LRU list if present */
+	zram_lru_del(zram, &zram->table[index]);
 	zram_clear_flag(zram, index, ZRAM_IDLE);
 #ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
 	zram->table[index].ac_time = ktime_get_boottime();
@@ -328,7 +355,6 @@ static ssize_t mem_used_max_store(struct device *dev,
  */
 static void mark_idle(struct zram *zram, ktime_t cutoff)
 {
-	int is_idle = 1;
 	unsigned long nr_pages = zram->disksize >> PAGE_SHIFT;
 	int index;
 
@@ -353,13 +379,30 @@ static void mark_idle(struct zram *zram, ktime_t cutoff)
 		}
 
 #ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
-		is_idle = !cutoff ||
-			ktime_after(cutoff, zram->table[index].ac_time);
-#endif
-		if (is_idle)
+		if (!cutoff || ktime_after(cutoff, zram->table[index].ac_time)) {
+			if (!zram_test_flag(zram, index, ZRAM_IDLE)) {
+				zram_set_flag(zram, index, ZRAM_IDLE);
+				/* Add to LRU list for shrinker */
+				zram_lru_add(zram, &zram->table[index]);
+			}
+		} else {
+			/* Page was accessed recently, make sure it's not marked as IDLE */
+			if (zram_test_flag(zram, index, ZRAM_IDLE)) {
+				zram_clear_flag(zram, index, ZRAM_IDLE);
+				zram_lru_del(zram, &zram->table[index]);
+			}
+		}
+#else
+		/* When access time tracking is disabled, we only mark pages as IDLE
+		 * if they are not already marked. This prevents re-adding pages
+		 * to the LRU list unnecessarily.
+		 */
+		if (!zram_test_flag(zram, index, ZRAM_IDLE)) {
 			zram_set_flag(zram, index, ZRAM_IDLE);
-		else
-			zram_clear_flag(zram, index, ZRAM_IDLE);
+			/* Add to LRU list for shrinker */
+			zram_lru_add(zram, &zram->table[index]);
+		}
+#endif
 		zram_slot_unlock(zram, index);
 	}
 }
@@ -1285,6 +1328,10 @@ static void zram_meta_free(struct zram *zram, u64 disksize)
 		zram_free_page(zram, index);
 
 	zs_destroy_pool(zram->mem_pool);
+	
+	/* Destroy the per-device idle LRU */
+	list_lru_destroy(&zram->zram_list_lru);
+	
 	vfree(zram->table);
 	zram->table = NULL;
 }
@@ -1292,11 +1339,16 @@ static void zram_meta_free(struct zram *zram, u64 disksize)
 static bool zram_meta_alloc(struct zram *zram, u64 disksize)
 {
 	size_t num_pages;
+	u32 index;
 
 	num_pages = disksize >> PAGE_SHIFT;
 	zram->table = vzalloc(array_size(num_pages, sizeof(*zram->table)));
 	if (!zram->table)
 		return false;
+
+	/* Initialize the LRU list heads for each table entry */
+	for (index = 0; index < num_pages; index++)
+		INIT_LIST_HEAD(&zram->table[index].lru);
 
 	zram->mem_pool = zs_create_pool(zram->disk->disk_name);
 	if (!zram->mem_pool) {
@@ -1307,6 +1359,11 @@ static bool zram_meta_alloc(struct zram *zram, u64 disksize)
 
 	if (!huge_class_size)
 		huge_class_size = zs_huge_class_size(zram->mem_pool);
+	
+	/* Initialize the per-device idle LRU */
+	if (list_lru_init(&zram->zram_list_lru))
+		return false;
+	
 	return true;
 }
 
@@ -1322,8 +1379,11 @@ static void zram_free_page(struct zram *zram, size_t index)
 #ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
 	zram->table[index].ac_time = 0;
 #endif
-	if (zram_test_flag(zram, index, ZRAM_IDLE))
+	/* Remove from LRU list if present */
+	if (zram_test_flag(zram, index, ZRAM_IDLE)) {
+		zram_lru_del(zram, &zram->table[index]);
 		zram_clear_flag(zram, index, ZRAM_IDLE);
+	}
 
 	if (zram_test_flag(zram, index, ZRAM_HUGE)) {
 		zram_clear_flag(zram, index, ZRAM_HUGE);
@@ -1549,7 +1609,7 @@ static int write_incompressible_page(struct zram *zram, struct page *page,
 static int zram_write_page(struct zram *zram, struct page *page, u32 index)
 {
 	int ret = 0;
-		unsigned long handle;
+	unsigned long handle;
 	unsigned int comp_len;
 	void *dst, *mem;
 	struct zcomp_strm *zstrm = NULL;
@@ -2135,13 +2195,7 @@ static inline u64 _round_up(u64 num, u64 multiple) {
 }
 
 #ifdef CONFIG_ZRAM_AUTO_SIZE
-/**
- * @brief 使用intfp库的log格式实现"先慢后快"增长曲线的压力因子计算函数。
- * @param mem_pressure 当前内存压力值（0-100）。
- * @param zram_pressure 当前ZRAM压力值（0-100）。
- * @return u64 最终的压力因子百分比，范围从100到200。
- */
-u64 calculate_pressure_factor_log_slow_to_fast_kernel(u64 mem_pressure, u64 zram_pressure) {
+u64 calculate_pressure_factor_log_slow_to_fast_kernel(u64 mem_pressure, u64 zram_pressure, u64 min_num, u64 max_num) {
     s32 pressure_diff = 0;
     s32 pressure_increase_log;
     s32 base_factor_log;
@@ -2149,15 +2203,15 @@ u64 calculate_pressure_factor_log_slow_to_fast_kernel(u64 mem_pressure, u64 zram
     s32 scaling_factor_log;
     u64 combined_pressure_factor_percent;
 
-    if (mem_pressure > 60) {
-        pressure_diff += (s32)(mem_pressure - 60);
+    if (mem_pressure > 50) {
+        pressure_diff += (s32)(mem_pressure - 50);
     }
-    if (zram_pressure > 50) {
-        pressure_diff += (s32)(zram_pressure - 50);
+    if (zram_pressure > 30) {
+        pressure_diff += (s32)(zram_pressure - 30);
     }
 
     if (pressure_diff <= 0) {
-        return 100ULL;
+        return min_num;
     }
 
     // 1. 将压力差转换为 log 格式
@@ -2177,9 +2231,9 @@ u64 calculate_pressure_factor_log_slow_to_fast_kernel(u64 mem_pressure, u64 zram
     combined_pressure_factor_percent = log32fpmax_to_u64(combined_factor_log);
 
     // 6. 限制结果的范围
-    combined_pressure_factor_percent = min(combined_pressure_factor_percent, 200ULL);
-    if (combined_pressure_factor_percent < 100ULL) {
-        combined_pressure_factor_percent = 100ULL;
+    combined_pressure_factor_percent = min(combined_pressure_factor_percent, max_num);
+    if (combined_pressure_factor_percent < min_num) {
+        combined_pressure_factor_percent = min_num;
     }
 
     return combined_pressure_factor_percent;
@@ -2219,7 +2273,7 @@ static ssize_t disksize_store(struct device *dev,
         combined_pressure_factor_percent = 100ULL; // 默认压力因子为 100% (不增加也不减少)
 
         // 根据压力数据调整因子
-    	combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_pressure, zram_pressure);
+    	combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_pressure, zram_pressure, 100ULL, 200ULL);
 
         // 应用压力因子
         target_size = div64_ul(target_size * combined_pressure_factor_percent, 100ULL);
@@ -2605,6 +2659,13 @@ static int zram_add(void)
 
 	zram->disksize = default_disksize;
 	set_capacity_and_notify(zram->disk, zram->disksize >> SECTOR_SHIFT);
+	#ifdef CONFIG_ZRAM_WRITEBACK
+	zram_init_shrinker(zram);
+	if (!zram->zram_shrinker)
+		goto out_cleanup_disk;
+	if (list_lru_init_memcg(&zram->zram_list_lru, zram->zram_shrinker))
+		goto lru_fail;
+	#endif /* CONFIG_ZRAM_WRITEBACK */
 	up_write(&zram->init_lock);
 
 	/* zram devices sort of resembles non-rotational disks */
@@ -2642,7 +2703,9 @@ static int zram_add(void)
 	zram_debugfs_register(zram);
 	pr_info("Added device: %s with default size %llu bytes\n", zram->disk->disk_name, default_disksize);
 	return device_id;
-
+lru_fail:
+	unregister_shrinker(zram->zram_shrinker);
+	shrinker_free(zram->zram_shrinker);
 out_cleanup_disk:
 	put_disk(zram->disk);
 out_free_idr:
@@ -2694,6 +2757,15 @@ static int zram_remove(struct zram *zram)
 	 * anything allocated with disksize_store()
 	 */
 	zram_reset_device(zram);
+
+	// 释放zram_shrinker和相关资源
+	#ifdef CONFIG_ZRAM_WRITEBACK
+	if (zram->zram_shrinker) {
+        unregister_shrinker(zram->zram_shrinker);
+        shrinker_free(zram->zram_shrinker);
+    }
+    list_lru_destroy(&zram->zram_list_lru);
+	#endif
 
 	put_disk(zram->disk);
 	kfree(zram);
@@ -2785,13 +2857,12 @@ static void destroy_devices(void)
 	cpuhp_remove_multi_state(CPUHP_ZCOMP_PREPARE);
 }
 
-// 触发zram_writeback
+#ifdef CONFIG_ZRAM_WRITEBACK
+// 紧急回写
 static void zram_writeback(struct zram *zram)
 {
 	struct device_attribute attr = {};
-	// char *buf_idle = "all";
 	char *buf_write_back = "idle";
-	// size_t len_idle = strlen(buf_idle) + 1;
 	size_t len_write_back = strlen(buf_write_back) + 1;
 
 	/* Simulate sysfs write to trigger writeback */
@@ -2801,10 +2872,9 @@ static void zram_writeback(struct zram *zram)
 		pr_debug("Writeback skipped: device not initialized or no backing device\n");
 		return;
 	}
-#ifdef CONFIG_ZRAM_WRITEBACK
-	// idle_store(disk_to_dev(zram->disk), &attr, buf_idle, len_idle);
+
+	mark_idle(zram, 0);
 	writeback_store(disk_to_dev(zram->disk), &attr, buf_write_back, len_write_back);
-#endif
 	up_read(&zram->init_lock);
 }
 
@@ -2849,25 +2919,402 @@ static int monitor_func(void *data)
 {
 	struct zram *zram;
 	int id;
+	int zram_count = 0;
+	int exec_count = 0;
+	ktime_t cutoff_time = 0;
+	unsigned long avg_zram_usage = 0;
+	unsigned long total_zram_usage = 0;
+	u64 combined_pressure_factor_percent;
+
+	if (IS_ENABLED(CONFIG_ZRAM_TRACK_ENTRY_ACTIME))
+		cutoff_time = ktime_sub(ktime_get_boottime(), ns_to_ktime((10 * 60) * NSEC_PER_SEC));
+
     while (!kthread_should_stop()) {
+		int mem_usage = get_memory_usage();
+		
+		total_zram_usage = 0;
+		zram_count = 0;
+		
 		mutex_lock(&zram_index_mutex);
 		idr_for_each_entry(&zram_index_idr, zram, id) {
 			unsigned long zram_usage = get_zram_usage(zram);
-			int mem_usage = get_memory_usage();
-			pr_info("zram_usage=%lu%%, mem_usage=%d%%\n",
-               zram_usage, mem_usage);
-        	if (zram_usage > ZRAM_THRESHOLD && mem_usage > MEM_THRESHOLD) {
-            	pr_info("Thresholds exceeded, triggering writeback\n");
+			total_zram_usage += zram_usage;
+			zram_count++;
+
+			// 标记超过10分钟不活跃的页面为空闲,进入收缩器队列
+			if (cutoff_time != 0)
+				mark_idle(zram, cutoff_time);
+			// 作为杀后台前的紧急回写,游戏中不应该触发,防止回写导致的卡顿
+        	if (mem_usage > MEM_THRESHOLD && check_game_pid()) {
+            	pr_info("Thresholds exceeded, triggering writeback!!!\n");
             	zram_writeback(zram);
-        		}
 			}
+		}
 		mutex_unlock(&zram_index_mutex);
+		
+		// 计算平均压力
+		if (zram_count > 0) {
+			avg_zram_usage = total_zram_usage / zram_count;
+		} else {
+			avg_zram_usage = 0;
+		}
+
+		exec_count++;
+		if (exec_count == 10) {
+			combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_usage, avg_zram_usage, 50ULL, 200ULL);
+			batch_size = div64_ul(512 * combined_pressure_factor_percent, 100ULL);
+			pr_info("combined_pressure_factor_percent=%llu, batch_size=%llu\n", combined_pressure_factor_percent, batch_size);
+			exec_count = 0;
+		}
+		
+		pr_info("zram_count=%d, avg_zram_usage=%lu%%, mem_usage=%d%%\n",
+			zram_count, avg_zram_usage, mem_usage);
 
         schedule_timeout_interruptible(CHECK_INTERVAL);
     }
+
     return 0;
 }
 
+static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_one *l,
+                                      spinlock_t *lock, void *arg)
+{
+    struct zram_table_entry *entry = container_of(item, struct zram_table_entry, lru);
+    struct zram_shrink_ctx *ctx = (struct zram_shrink_ctx *)arg;
+    struct zram *zram = ctx->zram;
+    enum lru_status ret = LRU_REMOVED_RETRY;
+    int writeback_result;
+    u32 index;
+
+    /*
+     * Unlike zswap, we don't implement the "second chance" algorithm.
+     * All entries in the LRU are immediately eligible for reclaim.
+     */
+    if (entry->flags & BIT(ZRAM_LOCK)) {
+        return LRU_SKIP;
+    }
+
+    /*
+     * As soon as we drop the LRU lock, the entry can be freed by
+     * a concurrent invalidation. This means the following:
+     *
+     * 1. We don't need to extract any data to the stack as in zswap
+     *    because we process the entry in-place.
+     *
+     * 2. Usually, objects are taken off the LRU for reclaim. In
+     *    this case this isn't possible, because if reclaim fails
+     *    for whatever reason, we have no means of knowing if the
+     *    entry is alive to put it back on the LRU.
+     *
+     *    So rotate it before dropping the lock. If the entry is
+     *    written back or invalidated, the free path will unlink
+     *    it. For failures, rotation is the right thing as well.
+     *
+     *    Temporary failures, where the same entry should be tried
+     *    again immediately, almost never happen for this shrinker.
+     *    We don't do any trylocking; -ENOMEM comes closest,
+     *    but that's extremely rare and doesn't happen spuriously
+     *    either. Don't bother distinguishing this case.
+     */
+    list_move_tail(item, &l->list);
+
+    /*
+     * It's safe to drop the lock here because we return either
+     * LRU_REMOVED_RETRY, LRU_RETRY or LRU_STOP.
+     */
+    spin_unlock(lock);
+
+    /* Find the index of this entry */
+    index = entry - zram->table;
+    
+    /* Try to writeback the entry */
+    writeback_result = zram_writeback_entry(zram, entry);
+
+    if (writeback_result) {
+        atomic64_inc(&zram->stats.reject_reclaim_fail);
+        ret = LRU_RETRY;
+    } else {
+        atomic64_inc(&zram->stats.written_back_pages);
+    }
+
+    spin_lock(lock);
+    return ret;
+}
+
+static int zram_writeback_entry(struct zram *zram, struct zram_table_entry *entry)
+{
+    unsigned long handle;
+    unsigned long flags;
+    u16 size;
+    struct page *page;
+    unsigned long blk_idx;
+    struct bio bio;
+    struct bio_vec bio_vec;
+    int err;
+    u32 index;
+
+    /* 
+     * Check if we have a backing dev.
+     * If not, we can't writeback this entry.
+     */
+    if (!zram->backing_dev) {
+        return -ENODEV;
+    }
+
+    /* Find the index of this entry */
+    index = entry - zram->table;
+
+    zram_slot_lock(zram, index);
+    
+    /* Check if the slot is allocated */
+    if (!zram_allocated(zram, index))
+        goto next_unlock;
+
+    /* If it's already written back, skip */
+    if (zram_test_flag(zram, index, ZRAM_WB))
+        goto next_unlock;
+
+    /* If it's a same page (all bytes are the same), we don't writeback */
+    if (zram_test_flag(zram, index, ZRAM_SAME))
+        goto next_unlock;
+
+    /* If it's under writeback, skip */
+    if (zram_test_flag(zram, index, ZRAM_UNDER_WB))
+        goto next_unlock;
+        
+    /* If it's incompressible, handle it */
+    if (zram_test_flag(zram, index, ZRAM_INCOMPRESSIBLE))
+        goto next_unlock;
+
+    /*
+     * Clearing ZRAM_UNDER_WB is duty of caller.
+     * IOW, zram_free_page never clear it.
+     */
+    zram_set_flag(zram, index, ZRAM_UNDER_WB);
+    /* Need for hugepage writeback racing */
+    zram_set_flag(zram, index, ZRAM_IDLE);
+    zram_slot_unlock(zram, index);
+    
+    handle = entry->handle;
+    flags = entry->flags;
+    size = (flags & (BIT(ZRAM_FLAG_SHIFT) - 1));
+
+    /*
+     * For now, we only writeback pages that are stored in the zsmalloc pool.
+     */
+    if (!(flags & BIT(ZRAM_HUGE)) && handle) {
+        /* Allocate a page to decompress into */
+        page = alloc_page(GFP_KERNEL);
+        if (!page) {
+            zram_slot_lock(zram, index);
+            zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+            zram_clear_flag(zram, index, ZRAM_IDLE);
+            zram_slot_unlock(zram, index);
+            return -ENOMEM;
+        }
+
+        /* Read and decompress the page */
+        if (zram_read_page(zram, page, index, NULL)) {
+            zram_slot_lock(zram, index);
+            zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+            zram_clear_flag(zram, index, ZRAM_IDLE);
+            zram_slot_unlock(zram, index);
+            __free_page(page);
+            return -EIO;
+        }
+
+        /* Check writeback limits */
+        spin_lock(&zram->wb_limit_lock);
+        if (zram->wb_limit_enable && !zram->bd_wb_limit) {
+            spin_unlock(&zram->wb_limit_lock);
+            zram_slot_lock(zram, index);
+            zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+            zram_clear_flag(zram, index, ZRAM_IDLE);
+            zram_slot_unlock(zram, index);
+            __free_page(page);
+            return -EIO;
+        }
+        spin_unlock(&zram->wb_limit_lock);
+
+        /* Allocate a block on the backing device */
+        blk_idx = alloc_block_bdev(zram);
+        if (!blk_idx) {
+            zram_slot_lock(zram, index);
+            zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+            zram_clear_flag(zram, index, ZRAM_IDLE);
+            zram_slot_unlock(zram, index);
+            __free_page(page);
+            return -ENOSPC;
+        }
+
+        /* Prepare and submit the bio for writing to backing device */
+        bio_init(&bio, zram->bdev, &bio_vec, 1, REQ_OP_WRITE | REQ_SYNC);
+        bio.bi_iter.bi_sector = blk_idx * (PAGE_SIZE >> 9);
+        __bio_add_page(&bio, page, PAGE_SIZE, 0);
+
+        err = submit_bio_wait(&bio);
+        __free_page(page);
+
+        if (err) {
+            zram_slot_lock(zram, index);
+            zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+            zram_clear_flag(zram, index, ZRAM_IDLE);
+            zram_slot_unlock(zram, index);
+            free_block_bdev(zram, blk_idx);
+            return -EIO;
+        }
+
+        /* Successfully written back, now free the zsmalloc entry */
+        zram_slot_lock(zram, index);
+        /*
+         * We released zram_slot_lock so need to check if the slot was
+         * changed. If there is freeing for the slot, we can catch it
+         * easily by zram_allocated.
+         * A subtle case is the slot is freed/reallocated/marked as
+         * ZRAM_IDLE again. To close the race, idle_store doesn't
+         * mark ZRAM_IDLE once it found the slot was ZRAM_UNDER_WB.
+         * Thus, we could close the race by checking ZRAM_IDLE bit.
+         */
+        if (!zram_allocated(zram, index) ||
+            !zram_test_flag(zram, index, ZRAM_IDLE)) {
+            zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+            zram_clear_flag(zram, index, ZRAM_IDLE);
+            zram_slot_unlock(zram, index);
+            free_block_bdev(zram, blk_idx);
+            return -EEXIST;
+        }
+
+        zs_free(zram->mem_pool, handle);
+        
+        /* Update entry to mark it as written back */
+        zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+        zram_set_flag(zram, index, ZRAM_WB);
+        zram_set_handle(zram, index, blk_idx);
+        
+        /* Update stats */
+		atomic64_sub(size, &zram->stats.compr_data_size);
+        atomic64_inc(&zram->stats.bd_writes);
+        spin_lock(&zram->wb_limit_lock);
+        if (zram->wb_limit_enable && zram->bd_wb_limit > 0)
+            zram->bd_wb_limit -= 1UL << (PAGE_SHIFT - 12);
+        spin_unlock(&zram->wb_limit_lock);
+        /* Remove the entry from LRU list after writeback */
+        zram_lru_del(zram, entry);
+        zram_clear_flag(zram, index, ZRAM_IDLE);
+        
+        zram_slot_unlock(zram, index);
+        return 0;
+    } else if (flags & BIT(ZRAM_HUGE)) {
+        /* Handle huge pages - currently not supported for writeback */
+        zram_slot_lock(zram, index);
+        zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+        zram_clear_flag(zram, index, ZRAM_IDLE);
+        zram_slot_unlock(zram, index);
+        return 0;
+    } else if (flags & BIT(ZRAM_SAME)) {
+        /* Same pages don't need writeback */
+        zram_slot_lock(zram, index);
+        zram_clear_flag(zram, index, ZRAM_UNDER_WB);
+        zram_clear_flag(zram, index, ZRAM_IDLE);
+        zram_slot_unlock(zram, index);
+        return 0;
+    }
+
+next_unlock:
+    zram_slot_unlock(zram, index);
+    return -EEXIST;
+}
+
+
+static unsigned long zram_shrinker_count(struct shrinker *shrinker, struct shrink_control *sc)
+{
+	struct zram *zram = shrinker->private_data;
+	unsigned long nr_stored, nr_backing, nr_freeable;
+
+	/* Only enable shrinker when writeback is enabled */
+	if (!zram->backing_dev) {
+		return 0;
+	}
+
+	/*
+	 * The shrinker resumes swap writeback, which will enter block
+	 * and may enter fs. XXX: Harmonize with vmscan.c __GFP_FS
+	 * rules (may_enter_fs()), which apply on a per-page basis.
+	 */
+	if (!gfp_has_io_fs(sc->gfp_mask)) {
+		return 0;
+	}
+
+	nr_stored = atomic64_read(&zram->stats.pages_stored);
+	nr_backing = atomic64_read(&zram->stats.compr_data_size) >> PAGE_SHIFT;
+
+	if (!nr_stored)
+		return 0;
+
+	nr_freeable = list_lru_shrink_count(&zram->zram_list_lru, sc);
+	
+	if (!nr_freeable) {
+		return 0;
+	}
+
+	/*
+	 * Scale the number of freeable pages by the memory saving factor.
+	 * This ensures that the better zram compresses memory, the fewer
+	 * pages we will evict to swap (as it will otherwise incur IO for
+	 * relatively small memory saving).
+	 */
+	return mult_frac(nr_freeable, nr_backing, nr_stored);
+}
+
+static unsigned long zram_shrinker_scan(struct shrinker *shrinker, struct shrink_control *sc)
+{
+	struct zram *zram = shrinker->private_data;
+	unsigned long shrink_ret;
+	bool encountered_in_swapcache = false;
+	struct zram_shrink_ctx ctx = {
+		.zram = zram,
+		.encountered_in_swapcache = &encountered_in_swapcache,
+	};
+
+	sc->nr_to_scan = batch_size;
+
+	pr_info("shrinker_scan: starting for zram device %s, nr_to_scan=%lu, gfp_mask=0x%x\n",
+		 zram->disk->disk_name, sc->nr_to_scan, sc->gfp_mask);
+
+	/* Only enable shrinker when writeback is enabled */
+	if (!zram->backing_dev) {
+		sc->nr_scanned = 0;
+		return SHRINK_STOP;
+	}
+
+	shrink_ret = list_lru_shrink_walk(&zram->zram_list_lru, sc, zram_shrink_cb, &ctx);
+
+	if (encountered_in_swapcache) {
+		return SHRINK_STOP;
+	}
+
+	return shrink_ret ? shrink_ret : SHRINK_STOP;
+}
+
+static void zram_init_shrinker(struct zram *zram)
+{
+	struct shrinker *shrinker;
+
+	shrinker = shrinker_alloc(SHRINKER_NUMA_AWARE | SHRINKER_MEMCG_AWARE, "mm-zram");
+	if (!shrinker)
+		return;
+
+	shrinker->count_objects = zram_shrinker_count;
+	shrinker->scan_objects = zram_shrinker_scan;
+	shrinker->batch = 512;
+	shrinker->seeks = DEFAULT_SEEKS;
+	shrinker->private_data = zram;
+	
+	zram->zram_shrinker = shrinker;
+	
+	shrinker_register(zram->zram_shrinker);
+}
+#endif
 
 static int __init zram_init(void)
 {
@@ -2905,7 +3352,9 @@ static int __init zram_init(void)
 		num_devices--;
 	}
 
+#ifdef CONFIG_ZRAM_WRITEBACK
 	monitor_thread = kthread_run(monitor_func, NULL, "zram_monitor");
+#endif
 
 #ifdef CONFIG_ZRAM_MULTI_COMP
 #define ZRAM_IR_VERSION "1.2"
@@ -2925,10 +3374,12 @@ out_error:
 
 static void __exit zram_exit(void)
 {
+#ifdef CONFIG_ZRAM_WRITEBACK
 	if (monitor_thread) {
-        kthread_stop(monitor_thread);
-        monitor_thread = NULL;
-    }
+		kthread_stop(monitor_thread);
+		monitor_thread = NULL;
+	}
+#endif
 
 #ifdef CONFIG_ZRAM_MULTI_COMP
 	unregister_sysctl_table(zram_sysctl_table_header);
