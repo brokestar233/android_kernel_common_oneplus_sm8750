@@ -2940,9 +2940,11 @@ static int monitor_func(void *data)
 			total_zram_usage += zram_usage;
 			zram_count++;
 
+			down_read(&zram->init_lock);
 			// 标记超过10分钟不活跃的页面为空闲,进入收缩器队列
 			if (cutoff_time != 0)
 				mark_idle(zram, cutoff_time);
+			up_read(&zram->init_lock);
 			// 作为杀后台前的紧急回写,游戏中不应该触发,防止回写导致的卡顿
         	if (mem_usage > MEM_THRESHOLD && check_game_pid()) {
             	pr_info("Thresholds exceeded, triggering writeback!!!\n");
