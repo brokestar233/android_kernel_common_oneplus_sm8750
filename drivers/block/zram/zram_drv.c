@@ -2859,7 +2859,7 @@ static void destroy_devices(void)
 
 #ifdef CONFIG_ZRAM_WRITEBACK
 // 紧急回写
-static void zram_writeback(struct zram *zram)
+static void __maybe_unused zram_writeback(struct zram *zram)
 {
 	struct device_attribute attr = {};
 	char *buf_write_back = "idle";
@@ -2881,22 +2881,26 @@ static void zram_writeback(struct zram *zram)
 // 计算zram使用率
 static unsigned long get_zram_usage(struct zram *zram)
 {
-	u64 pages_stored, total_pages, bd_writes;
+	u64 pages_stored, total_pages, bd_count;
 
 	down_read(&zram->init_lock);
 	if (!init_done(zram)) {
 		up_read(&zram->init_lock);
 		return 0;
 	}
+	
 	pages_stored = atomic64_read(&zram->stats.pages_stored);
-	bd_writes = atomic64_read(&zram->stats.bd_writes);
+	bd_count = atomic64_read(&zram->stats.bd_count);
 	total_pages = zram->disksize >> PAGE_SHIFT;
 	up_read(&zram->init_lock);
 
 	if (total_pages == 0)
 		return 0;
 
-	return ((pages_stored - bd_writes) * 100) / total_pages;
+	if (pages_stored <= bd_count)
+		return 0;
+		
+	return ((pages_stored - bd_count) * 100) / total_pages;
 }
 
 // 计算内存占用率
@@ -2947,10 +2951,11 @@ static int monitor_func(void *data)
 				mark_idle(zram, cutoff_time);
 			up_read(&zram->init_lock);
 			// 作为杀后台前的紧急回写,游戏中不应该触发,防止回写导致的卡顿
-        	if (mem_usage > MEM_THRESHOLD && check_game_pid()) {
-            	pr_info("Thresholds exceeded, triggering writeback!!!\n");
-            	zram_writeback(zram);
-			}
+        	//if (mem_usage > MEM_THRESHOLD && check_game_pid()) {
+            //	pr_info("Thresholds exceeded, triggering writeback!!!\n");
+            //	zram_writeback(zram);
+			//}
+			//禁用,因为杀后台是多因素的,这样可能没有收益还导致大量页面被回写导致问题
 		}
 		mutex_unlock(&zram_index_mutex);
 		
