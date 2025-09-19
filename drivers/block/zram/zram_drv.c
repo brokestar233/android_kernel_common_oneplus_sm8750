@@ -55,7 +55,7 @@
 #define CHECK_INTERVAL (30 * HZ) // 每30秒检查一次
 #define MEM_THRESHOLD 80
 
-static u64 batch_size = 512;
+static u64 batch_size = 256;
 
 static struct task_struct *monitor_thread;
 
@@ -2202,11 +2202,11 @@ u64 calculate_pressure_factor_log_slow_to_fast_kernel(u64 mem_pressure, u64 zram
     s32 scaling_factor_log;
     u64 combined_pressure_factor_percent;
 
-    if (mem_pressure > 50) {
-        pressure_diff += (s32)(mem_pressure - 50);
+    if (mem_pressure > 60) {
+        pressure_diff += (s32)(mem_pressure - 60);
     }
-    if (zram_pressure > 30) {
-        pressure_diff += (s32)(zram_pressure - 30);
+    if (zram_pressure > 50) {
+        pressure_diff += (s32)(zram_pressure - 50);
     }
 
     if (pressure_diff <= 0) {
@@ -2962,8 +2962,8 @@ static int monitor_func(void *data)
 
 		exec_count++;
 		if (exec_count == 10) {
-			combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_usage, avg_zram_usage, 50ULL, 200ULL);
-			batch_size = div64_ul(512 * combined_pressure_factor_percent, 100ULL);
+			combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_usage, avg_zram_usage, 50ULL, 150ULL);
+			batch_size = div64_ul(256 * combined_pressure_factor_percent, 100ULL);
 			pr_info("combined_pressure_factor_percent=%llu, batch_size=%llu\n", combined_pressure_factor_percent, batch_size);
 			exec_count = 0;
 		}
@@ -2983,6 +2983,8 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
     struct zram_table_entry *entry = container_of(item, struct zram_table_entry, lru);
     struct zram_shrink_ctx *ctx = (struct zram_shrink_ctx *)arg;
     struct zram *zram = ctx->zram;
+    bool *encountered_in_swapcache = ctx->encountered_in_swapcache;
+    int swapcache_count = 0;
     enum lru_status ret = LRU_REMOVED_RETRY;
     int writeback_result;
     u32 index;
@@ -3037,6 +3039,14 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
     } else {
         atomic64_inc(&zram->stats.written_back_pages);
     }
+
+	if (writeback_result == -EEXIST)
+		swapcache_count++;
+	
+	if (swapcache_count >= 50) {
+		ret = LRU_STOP;
+		*encountered_in_swapcache = true;
+	}
 
     spin_lock(lock);
     return ret;
@@ -3307,7 +3317,7 @@ static void zram_init_shrinker(struct zram *zram)
 
 	shrinker->count_objects = zram_shrinker_count;
 	shrinker->scan_objects = zram_shrinker_scan;
-	shrinker->batch = 512;
+	shrinker->batch = 256;
 	shrinker->seeks = DEFAULT_SEEKS;
 	shrinker->private_data = zram;
 	
