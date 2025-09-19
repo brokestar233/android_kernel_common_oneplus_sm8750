@@ -55,7 +55,7 @@
 #define CHECK_INTERVAL (30 * HZ) // 每30秒检查一次
 #define MEM_THRESHOLD 80
 
-static u64 batch_size = 256;
+static u64 batch_size = 512;
 
 static struct task_struct *monitor_thread;
 
@@ -218,6 +218,7 @@ static inline bool is_partial_io(struct bio_vec *bvec)
 static void zram_lru_add(struct zram *zram, struct zram_table_entry *entry)
 {
     rcu_read_lock();
+	entry->referenced = true;
     list_lru_add(&zram->zram_list_lru, &entry->lru);
     rcu_read_unlock();
 }
@@ -2962,8 +2963,8 @@ static int monitor_func(void *data)
 
 		exec_count++;
 		if (exec_count == 10) {
-			combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_usage, avg_zram_usage, 50ULL, 150ULL);
-			batch_size = div64_ul(256 * combined_pressure_factor_percent, 100ULL);
+			combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_usage, avg_zram_usage, 50ULL, 200ULL);
+			batch_size = div64_ul(512 * combined_pressure_factor_percent, 100ULL);
 			pr_info("combined_pressure_factor_percent=%llu, batch_size=%llu\n", combined_pressure_factor_percent, batch_size);
 			exec_count = 0;
 		}
@@ -2989,10 +2990,16 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
     int writeback_result;
     u32 index;
 
-    /*
-     * Unlike zswap, we don't implement the "second chance" algorithm.
-     * All entries in the LRU are immediately eligible for reclaim.
-     */
+	/*
+	 * Second chance algorithm: if the entry has its referenced bit set, give it
+	 * a second chance. Only clear the referenced bit and rotate it in the
+	 * zram's LRU list.
+	 */
+	if (entry->referenced) {
+		entry->referenced = false;
+		return LRU_ROTATE;
+	}
+
     if (entry->flags & BIT(ZRAM_LOCK)) {
         return LRU_SKIP;
     }
@@ -3317,7 +3324,7 @@ static void zram_init_shrinker(struct zram *zram)
 
 	shrinker->count_objects = zram_shrinker_count;
 	shrinker->scan_objects = zram_shrinker_scan;
-	shrinker->batch = 256;
+	shrinker->batch = 512;
 	shrinker->seeks = DEFAULT_SEEKS;
 	shrinker->private_data = zram;
 	
