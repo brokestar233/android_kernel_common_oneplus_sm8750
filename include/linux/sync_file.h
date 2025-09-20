@@ -34,6 +34,20 @@
  */
 struct sync_file {
 	struct file		*file;
+#ifdef __GENKSYMS__
+	// HACK: CRC ABI fixups
+	/**
+	 * @user_name:
+	 *
+	 * Name of the sync file provided by userspace, for merged fences.
+	 * Otherwise generated through driver callbacks (in which case the
+	 * entire array is 0).
+	 */
+	char			user_name[32];
+#else
+	/* HACK: KABI preservation, DO NOT USE! */
+	char			unused[32];
+#endif
 #ifdef CONFIG_DEBUG_FS
 	struct list_head	sync_file_list;
 #endif
