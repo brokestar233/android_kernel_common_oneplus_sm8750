@@ -2930,11 +2930,11 @@ static int monitor_func(void *data)
 	unsigned long total_zram_usage = 0;
 	u64 combined_pressure_factor_percent;
 
+	if (IS_ENABLED(CONFIG_ZRAM_TRACK_ENTRY_ACTIME))
+		cutoff_time = ktime_sub(ktime_get_boottime(), ns_to_ktime(30 * NSEC_PER_SEC));
+
     while (!kthread_should_stop()) {
 		int mem_usage = get_memory_usage();
-		if (IS_ENABLED(CONFIG_ZRAM_TRACK_ENTRY_ACTIME))
-			cutoff_time = ktime_sub(ktime_get_boottime(), ns_to_ktime(30 * NSEC_PER_SEC));
-		
 		total_zram_usage = 0;
 		zram_count = 0;
 		
