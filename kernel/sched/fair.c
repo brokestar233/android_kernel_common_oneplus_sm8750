@@ -122,7 +122,7 @@ EXPORT_SYMBOL_GPL(sysctl_sched_base_slice);
  */
 unsigned int sysctl_sched_child_runs_first __read_mostly = 1;
 
-const_debug unsigned int sysctl_sched_migration_cost	= 0UL;
+const_debug unsigned int sysctl_sched_migration_cost	= 125000UL;
 
 int sched_thermal_decay_shift;
 static int __init setup_sched_thermal_decay_shift(char *str)
