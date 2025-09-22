@@ -17,7 +17,7 @@ config ZRAM
 
 choice
 	prompt "Default zram compressor"
-	default ZRAM_DEF_COMP_LZ4
+	default ZRAM_DEF_COMP_LZ4K_OPLUS
 	depends on ZRAM
 
 config ZRAM_DEF_COMP_LZO
@@ -71,7 +71,7 @@ config ZRAM_DEF_COMP
 	default "lz4k" if ZRAM_DEF_COMP_LZ4K
 	default "lz4k_oplus" if ZRAM_DEF_COMP_LZ4K_OPLUS
 	default "lz4kd" if ZRAM_DEF_COMP_LZ4KD
-    	default "deflate" if ZRAM_DEF_COMP_DEFLATE
+    default "deflate" if ZRAM_DEF_COMP_DEFLATE
 	default "842" if ZRAM_DEF_COMP_842
 	default "zstd" if ZRAM_DEF_COMP_ZSTD
 
