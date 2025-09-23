@@ -35,7 +35,7 @@
 #include <linux/part_stat.h>
 #include <linux/mm.h>
 #include <linux/kthread.h>
-#include <linux/game_pid.h>
+#include <linux/sysms_finder.h>
 
 #ifdef CONFIG_ZRAM_AUTO_SIZE
 #include <linux/math64.h>
