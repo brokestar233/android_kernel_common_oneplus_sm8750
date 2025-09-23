@@ -78,7 +78,7 @@
 #include <linux/pagewalk.h>
 
 #include <asm/tlbflush.h>
-#include <linux/game_pid.h>
+#include <linux/sysms_finder.h>
 #include "internal.h"
 
 
