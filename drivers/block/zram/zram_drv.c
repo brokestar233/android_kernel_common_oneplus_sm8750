@@ -217,17 +217,13 @@ static inline bool is_partial_io(struct bio_vec *bvec)
 #ifdef	CONFIG_ZRAM_WRITEBACK
 static void zram_lru_add(struct zram *zram, struct zram_table_entry *entry)
 {
-    rcu_read_lock();
 	entry->referenced = true;
     list_lru_add(&zram->zram_list_lru, &entry->lru);
-    rcu_read_unlock();
 }
 
 static void zram_lru_del(struct zram *zram, struct zram_table_entry *entry)
 {
-    rcu_read_lock();
     list_lru_del(&zram->zram_list_lru, &entry->lru);
-    rcu_read_unlock();
 }
 #endif
 
