@@ -1003,6 +1003,7 @@ void __put_task_struct(struct task_struct *tsk)
 	WARN_ON(tsk == current);
 
 	sched_ext_free(tsk);
+	trace_android_vh_put_task(tsk);
 	put_dmabuf_info(tsk);
 	io_uring_free(tsk);
 	cgroup_free(tsk);
