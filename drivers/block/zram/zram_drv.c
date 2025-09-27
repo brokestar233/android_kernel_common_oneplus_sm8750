@@ -36,6 +36,7 @@
 #include <linux/mm.h>
 #include <linux/kthread.h>
 #include <linux/sysms_finder.h>
+#include <linux/suspend.h>
 
 #ifdef CONFIG_ZRAM_AUTO_SIZE
 #include <linux/math64.h>
@@ -3293,6 +3294,15 @@ static unsigned long zram_shrinker_scan(struct shrinker *shrinker, struct shrink
 		.zram = zram,
 		.encountered_in_swapcache = &encountered_in_swapcache,
 	};
+	
+	/* Check if system is in suspend/sleep state (screen locked or similar)
+	 * If so, we disable shrinker to avoid unnecessary I/O during screen off
+	 */
+	if (system_entering_hibernation()) {
+		pr_info("shrinker_scan: system is in suspend/sleep state, disabling shrinker\n");
+		sc->nr_scanned = 0;
+		return SHRINK_STOP;
+	}
 
 	sc->nr_to_scan = batch_size;
 
