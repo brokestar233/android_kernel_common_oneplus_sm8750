@@ -175,3 +175,5 @@ kernel/locking/oplus_locking.c
 kernel/locking/sa_common_struct.h
 *.orig
 *.rej
+*.cover
+*.mbx
