@@ -530,10 +530,6 @@ struct sched_statistics {
 #endif /* CONFIG_SCHEDSTATS */
 } ____cacheline_aligned;
 
-#ifdef CONFIG_SCHED_BORE
-struct sched_bore_stats;
-#endif // CONFIG_SCHED_BORE
-
 struct sched_entity {
 	/* For load-balancing: */
 	struct load_weight		load;
@@ -573,11 +569,8 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
-#ifdef CONFIG_SCHED_BORE
-	ANDROID_KABI_USE(1, struct sched_bore_stats *bore_stats);
-#else // !CONFIG_SCHED_BORE
+
 	ANDROID_KABI_RESERVE(1);
-#endif // CONFIG_SCHED_BORE
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
