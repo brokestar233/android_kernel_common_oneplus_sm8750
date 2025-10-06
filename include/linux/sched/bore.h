@@ -7,7 +7,7 @@
 #define SCHED_BORE_AUTHOR   "Masahito Suzuki"
 #define SCHED_BORE_PROGNAME "BORE CPU Scheduler modification"
 
-#define SCHED_BORE_VERSION  "6.1.1"
+#define SCHED_BORE_VERSION  "6.1.0"
 
 #ifdef CONFIG_SCHED_BORE
 extern u8   __read_mostly sched_bore;
@@ -21,7 +21,6 @@ extern uint __read_mostly sched_burst_cache_stop_count;
 extern uint __read_mostly sched_burst_cache_lifetime;
 extern uint __read_mostly sched_deadline_boost_mask;
 
-extern u8 effective_prio_bore(struct task_struct *p);
 extern void update_burst_score(struct sched_entity *se);
 extern void update_curr_bore(u64 delta_exec, struct sched_entity *se);
 
@@ -37,8 +36,8 @@ extern void sched_clone_bore(
 extern void reset_task_bore(struct task_struct *p);
 extern void sched_bore_init(void);
 
-extern void reweight_entity(
-	struct cfs_rq *cfs_rq, struct sched_entity *se, unsigned long weight);
+extern void reweight_entity(struct cfs_rq *cfs_rq,
+	struct sched_entity *se, unsigned long weight, bool no_update_curr);
 
 struct sched_burst_cache {
 	u32				value;
@@ -53,7 +52,6 @@ struct sched_bore_stats  {
 	u32				burst_penalty;
 	u8				burst_score;
 	u8				burst_count;
-	bool			stop_burst_update;
 	struct sched_burst_cache child_burst;
 	struct sched_burst_cache group_burst;
 };

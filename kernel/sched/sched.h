@@ -1412,7 +1412,6 @@ static inline bool sched_core_enqueued(struct task_struct *p)
 	return !RB_EMPTY_NODE(&p->core_node);
 }
 
-extern void set_load_weight(struct task_struct *p, bool update_load);
 extern void sched_core_enqueue(struct rq *rq, struct task_struct *p);
 extern void sched_core_dequeue(struct rq *rq, struct task_struct *p, int flags);
 
