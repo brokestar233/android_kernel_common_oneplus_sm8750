@@ -539,6 +539,8 @@ struct sched_statistics {
 
 struct sched_entity_ext {
 	unsigned char			custom_slice;
+	unsigned char			sched_delayed;
+	unsigned char			rel_deadline;
 };
 
 struct sched_entity {
@@ -549,11 +551,9 @@ struct sched_entity {
 	u64				min_vruntime;
 
 	struct list_head		group_node;
-	unsigned char			on_rq;
-	unsigned char			sched_delayed;
-	unsigned char			rel_deadline;
-					/* hole */
+	unsigned int			on_rq;
 
+					/* hole */
 	u64				exec_start;
 	u64				sum_exec_runtime;
 	u64				prev_sum_exec_runtime;
