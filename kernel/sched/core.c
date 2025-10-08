@@ -272,7 +272,7 @@ static inline int rb_sched_core_cmp(const void *key, const struct rb_node *node)
 
 void sched_core_enqueue(struct rq *rq, struct task_struct *p)
 {
-	if (p->se.sched_delayed)
+	if (p->se.ext.sched_delayed)
 		return;
 
 	rq->core->core_task_seq++;
@@ -285,7 +285,7 @@ void sched_core_enqueue(struct rq *rq, struct task_struct *p)
 
 void sched_core_dequeue(struct rq *rq, struct task_struct *p, int flags)
 {
-	if (p->se.sched_delayed)
+	if (p->se.ext.sched_delayed)
 		return;
 
 	rq->core->core_task_seq++;
@@ -1764,7 +1764,7 @@ static inline void uclamp_rq_inc(struct rq *rq, struct task_struct *p)
 	if (unlikely(!p->sched_class->uclamp_enabled))
 		return;
 
-	if (p->se.sched_delayed)
+	if (p->se.ext.sched_delayed)
 		return;
 
 	for_each_clamp_id(clamp_id)
@@ -1791,7 +1791,7 @@ static inline void uclamp_rq_dec(struct rq *rq, struct task_struct *p)
 	if (unlikely(!p->sched_class->uclamp_enabled))
 		return;
 
-	if (p->se.sched_delayed)
+	if (p->se.ext.sched_delayed)
 		return;
 
 	for_each_clamp_id(clamp_id)
@@ -2207,7 +2207,7 @@ static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 	trace_android_rvh_after_enqueue_task(rq, p, flags);
 	/*
 	 * Must be after ->enqueue_task() because ENQUEUE_DELAYED can clear
-	 * ->sched_delayed.
+	 * ->ext.sched_delayed.
 	 */
 	uclamp_rq_inc(rq, p);
 
@@ -2255,7 +2255,7 @@ inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 
 	/*
 	 * Must be before ->dequeue_task() because ->dequeue_task() can 'fail'
-	 * and mark the task ->sched_delayed.
+	 * and mark the task ->ext.sched_delayed.
 	 */
 	uclamp_rq_dec(rq, p);
 	trace_android_rvh_dequeue_task(rq, p, flags);
@@ -4084,7 +4084,7 @@ static int ttwu_runnable(struct task_struct *p, int wake_flags)
 	rq = __task_rq_lock(p, &rf);
 	if (task_on_rq_queued(p)) {
 		update_rq_clock(rq);
-		if (p->se.sched_delayed)
+		if (p->se.ext.sched_delayed)
 			enqueue_task(rq, p, ENQUEUE_NOCLOCK | ENQUEUE_DELAYED);
 		if (!task_on_cpu(rq, p)) {
 			/*
@@ -4478,7 +4478,7 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		 *  - we're serialized against set_special_state() by virtue of
 		 *    it disabling IRQs (this allows not taking ->pi_lock).
 		 */
-		SCHED_WARN_ON(p->se.sched_delayed);
+		SCHED_WARN_ON(p->se.ext.sched_delayed);
 		if (!ttwu_state_match(p, state, &success))
 			goto out;
 
@@ -4782,7 +4782,7 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	INIT_LIST_HEAD(&p->se.group_node);
 
 	/* A delayed task cannot be in clone(). */
-	SCHED_WARN_ON(p->se.sched_delayed);
+	SCHED_WARN_ON(p->se.ext.sched_delayed);
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	p->se.cfs_rq			= NULL;

@@ -5318,9 +5318,9 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	se->vruntime = vruntime - lag;
 
-	if (sched_feat(PLACE_REL_DEADLINE) && se->rel_deadline) {
+	if (sched_feat(PLACE_REL_DEADLINE) && se->ext.rel_deadline) {
 		se->deadline += se->vruntime;
-		se->rel_deadline = 0;
+		se->ext.rel_deadline = 0;
 		return;
 	}
 
@@ -5436,7 +5436,7 @@ static __always_inline void return_cfs_rq_runtime(struct cfs_rq *cfs_rq);
 
 static inline void finish_delayed_dequeue_entity(struct sched_entity *se)
 {
-	se->sched_delayed = 0;
+	se->ext.sched_delayed = 0;
 	if (sched_feat(DELAY_ZERO) && se->vlag > 0)
 		se->vlag = 0;
 }
@@ -5449,7 +5449,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	update_curr(cfs_rq);
 
 	if (flags & DEQUEUE_DELAYED) {
-		SCHED_WARN_ON(!se->sched_delayed);
+		SCHED_WARN_ON(!se->ext.sched_delayed);
 	} else {
 		bool delay = sleep;
 		/*
@@ -5459,14 +5459,14 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		if (flags & DEQUEUE_SPECIAL)
 			delay = false;
 
-		SCHED_WARN_ON(delay && se->sched_delayed);
+		SCHED_WARN_ON(delay && se->ext.sched_delayed);
 
 		if (sched_feat(DELAY_DEQUEUE) && delay &&
 		    !entity_eligible(cfs_rq, se)) {
 			if (cfs_rq->next == se)
 				cfs_rq->next = NULL;
 			update_load_avg(cfs_rq, se, 0);
-			se->sched_delayed = 1;
+			se->ext.sched_delayed = 1;
 			return false;
 		}
 	}
@@ -5494,7 +5494,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	update_entity_lag(cfs_rq, se);
 	if (sched_feat(PLACE_REL_DEADLINE) && !sleep) {
 		se->deadline -= se->vruntime;
-		se->rel_deadline = 1;
+		se->ext.rel_deadline = 1;
 	}
 
 	if (se != cfs_rq->curr)
@@ -5587,14 +5587,14 @@ pick_next_entity(struct rq *rq, struct cfs_rq *cfs_rq)
 	if (sched_feat(NEXT_BUDDY) &&
 	    cfs_rq->next && entity_eligible(cfs_rq, cfs_rq->next)) {
 		/* ->next will never be delayed */
-		SCHED_WARN_ON(cfs_rq->next->sched_delayed);
+		SCHED_WARN_ON(cfs_rq->next->ext.sched_delayed);
 		return cfs_rq->next;
 	}
 
 	struct sched_entity *se = pick_eevdf(cfs_rq);
-	if (se->sched_delayed) {
+	if (se->ext.sched_delayed) {
 		dequeue_entities(rq, se, DEQUEUE_SLEEP | DEQUEUE_DELAYED);
-		SCHED_WARN_ON(se->sched_delayed);
+		SCHED_WARN_ON(se->ext.sched_delayed);
 		SCHED_WARN_ON(se->on_rq);
 		return NULL;
 	}
@@ -5932,7 +5932,7 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 		 * entities and keeps things relatively simple.
 		 */
 		flags = DEQUEUE_SLEEP | DEQUEUE_SPECIAL;
-		if (se->sched_delayed)
+		if (se->ext.sched_delayed)
 			flags |= DEQUEUE_DELAYED;
 		dequeue_entity(qcfs_rq, se, flags);
 
@@ -6024,7 +6024,7 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
 
 		/* Handle any unfinished DELAY_DEQUEUE business first. */
-		if (se->sched_delayed) {
+		if (se->ext.sched_delayed) {
 			int flags = DEQUEUE_SLEEP | DEQUEUE_DELAYED;
 
 			dequeue_entity(qcfs_rq, se, flags);
@@ -6871,11 +6871,11 @@ requeue_delayed_entity(struct sched_entity *se)
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
 
 	/*
-	 * se->sched_delayed should imply: se->on_rq == 1.
+	 * se->ext.sched_delayed should imply: se->on_rq == 1.
 	 * Because a delayed entity is one that is still on
 	 * the runqueue competing until elegibility.
 	 */
-	SCHED_WARN_ON(!se->sched_delayed);
+	SCHED_WARN_ON(!se->ext.sched_delayed);
 	SCHED_WARN_ON(!se->on_rq);
 
 	if (sched_feat(DELAY_ZERO)) {
@@ -6893,7 +6893,7 @@ requeue_delayed_entity(struct sched_entity *se)
 	}
 
 	update_load_avg(cfs_rq, se, 0);
-	se->sched_delayed = 0;
+	se->ext.sched_delayed = 0;
 }
 
 /*
@@ -6935,7 +6935,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	for_each_sched_entity(se) {
 		if (se->on_rq) {
-			if (se->sched_delayed)
+			if (se->ext.sched_delayed)
 				requeue_delayed_entity(se);
 			break;
 		}
@@ -8511,12 +8511,12 @@ static void task_dead_fair(struct task_struct *p)
 {
 	struct sched_entity *se = &p->se;
 
-	if (se->sched_delayed) {
+	if (se->ext.sched_delayed) {
 		struct rq_flags rf;
 		struct rq *rq;
 
 		rq = task_rq_lock(p, &rf);
-		if (se->sched_delayed) {
+		if (se->ext.sched_delayed) {
 			update_rq_clock(rq);
 			dequeue_entities(rq, se, DEQUEUE_SLEEP | DEQUEUE_DELAYED);
 		}
@@ -13137,7 +13137,7 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
 	 * Since this is called after changing class, this is a little weird
 	 * and we cannot use DEQUEUE_DELAYED.
 	 */
-	if (p->se.sched_delayed) {
+	if (p->se.ext.sched_delayed) {
 		/* First, dequeue it from its new class' structures */
 		dequeue_task(rq, p, DEQUEUE_NOCLOCK | DEQUEUE_SLEEP);
 		/*
@@ -13146,14 +13146,14 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
 		 * due to the generic dequeue not using DEQUEUE_DELAYED.
 		 */
 		finish_delayed_dequeue_entity(&p->se);
-		p->se.rel_deadline = 0;
+		p->se.ext.rel_deadline = 0;
 		__block_task(rq, p);
 	}
 }
 
 static void switched_to_fair(struct rq *rq, struct task_struct *p)
 {
-	SCHED_WARN_ON(p->se.sched_delayed);
+	SCHED_WARN_ON(p->se.ext.sched_delayed);
 
 	attach_task_cfs_rq(p);
 
@@ -13200,7 +13200,7 @@ static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
 	if (!first)
 		return;
 
-	SCHED_WARN_ON(se->sched_delayed);
+	SCHED_WARN_ON(se->ext.sched_delayed);
 }
 
 void init_cfs_rq(struct cfs_rq *cfs_rq)
@@ -13318,9 +13318,9 @@ void unregister_fair_sched_group(struct task_group *tg)
 		struct rq *rq = cpu_rq(cpu);
 
 		if (se) {
-			if (se->sched_delayed) {
+			if (se->ext.sched_delayed) {
 				guard(rq_lock_irqsave)(rq);
-				if (se->sched_delayed) {
+				if (se->ext.sched_delayed) {
 					update_rq_clock(rq);
 					dequeue_entities(rq, se, DEQUEUE_SLEEP | DEQUEUE_DELAYED);
 				}
