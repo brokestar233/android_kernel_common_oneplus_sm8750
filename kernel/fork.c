@@ -2717,8 +2717,8 @@ __latent_entropy struct task_struct *copy_process(
 	p->bore = kzalloc(sizeof(struct bore_ctx), GFP_KERNEL);
 	if (unlikely(!p->bore)) {
 		pr_err("Failed to allocate memory for bore in task %p\n", p);
-    	put_task_struct(p);
-    	return ERR_PTR(-ENOMEM);
+    	retval = -ENOMEM;
+    	goto bad_fork_alloc_bore;
 	}
 
 	if (likely(p->pid))
@@ -2838,6 +2838,7 @@ __latent_entropy struct task_struct *copy_process(
 bad_fork_cancel_cgroup:
 	sched_core_free(p);
 	spin_unlock(&current->sighand->siglock);
+bad_fork_alloc_bore:
 	write_unlock_irq(&tasklist_lock);
 	cgroup_cancel_fork(p, args);
 bad_fork_cleanup_dmabuf:
