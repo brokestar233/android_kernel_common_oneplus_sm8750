@@ -2397,7 +2397,12 @@ static char *custom_module_blacklist[] = {
 #endif
 #if IS_BUILTIN(CONFIG_ZSMALLOC)
     "oplus_bsp_zsmalloc",
-#endif
+#endif\
+	/* Coresight, Do not disable the coresight core, as it is dependent on msm_kgsl. */
+	"coresight_tpda", "coresight_tgu", 
+	"coresight_trace_noc", "coresight_cti", "coresight_qmi", 
+	"coresight_dummy", "coresight_remote_etm", "coresight_tpdm", "coresight_uetm", 
+	"coresight_stm", "coresight_tmc_sec"
 #ifdef CONFIG_STAR_BLACK_LIST
 #endif
 };
