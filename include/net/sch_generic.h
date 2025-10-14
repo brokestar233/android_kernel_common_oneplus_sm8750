@@ -120,7 +120,13 @@ struct Qdisc {
 	struct Qdisc            *next_sched;
 	struct sk_buff_head	skb_bad_txq;
 
+#ifdef __GENKSYMS__
 	spinlock_t		busylock ____cacheline_aligned_in_smp;
+#else
+	atomic_long_t		defer_count ____cacheline_aligned_in_smp;
+	struct llist_head	defer_list;
+#endif
+
 	spinlock_t		seqlock;
 
 	struct rcu_head		rcu;
