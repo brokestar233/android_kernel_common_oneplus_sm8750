@@ -1227,7 +1227,7 @@ ZSTD_updateFseStateWithDInfo(ZSTD_fseState* DStatePtr, BIT_DStream_t* bitD, U16 
 
 typedef enum { ZSTD_lo_isRegularOffset, ZSTD_lo_isLongOffset=1 } ZSTD_longOffset_e;
 
-/**
+/*
  * ZSTD_decodeSequence():
  * @p longOffsets : tells the decoder to reload more bit while decoding large offsets
  *                  only used in 32-bit mode
@@ -1249,7 +1249,7 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets, c
      * operations that cause performance drop. This can be avoided by using this
      * ZSTD_memcpy hack.
      */
-#  if defined(__GNUC__) && !defined(__clang__)
+#  if !defined(__clang__)
     ZSTD_seqSymbol llDInfoS, mlDInfoS, ofDInfoS;
     ZSTD_seqSymbol* const llDInfo = &llDInfoS;
     ZSTD_seqSymbol* const mlDInfo = &mlDInfoS;
@@ -1598,7 +1598,7 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
                 *
                 *   https://gist.github.com/terrelln/9889fc06a423fd5ca6e99351564473f4
                 */
-#if defined(__GNUC__) && defined(__x86_64__)
+#if defined(__x86_64__)
             __asm__(".p2align 6");
 #  if __GNUC__ >= 7
 	    /* good for gcc-7, gcc-9, and gcc-11 */
@@ -1661,7 +1661,7 @@ ZSTD_decompressSequences_bodySplitLitBuffer( ZSTD_DCtx* dctx,
         if (nbSeq > 0) {
             /* there is remaining lit from extra buffer */
 
-#if defined(__GNUC__) && defined(__x86_64__)
+#if defined(__x86_64__)
             __asm__(".p2align 6");
             __asm__("nop");
 #  if __GNUC__ != 7
@@ -1760,7 +1760,7 @@ ZSTD_decompressSequences_body(ZSTD_DCtx* dctx,
         ZSTD_initFseState(&seqState.stateML, &seqState.DStream, dctx->MLTptr);
         assert(dst != NULL);
 
-#if defined(__GNUC__) && defined(__x86_64__)
+#if defined(__x86_64__)
             __asm__(".p2align 6");
             __asm__("nop");
 #  if __GNUC__ >= 7
@@ -2108,7 +2108,7 @@ ZSTD_decompressSequencesLong(ZSTD_DCtx* dctx,
 #endif /* ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT */
 
 
-/**
+/*
  * @returns The total size of the history referenceable by zstd, including
  * both the prefix and the extDict. At @p op any offset larger than this
  * is invalid.
@@ -2157,7 +2157,7 @@ ZSTD_getOffsetInfo(const ZSTD_seqSymbol* offTable, int nbSeq)
     return info;
 }
 
-/**
+/*
  * @returns The maximum offset we can decode in one read of our bitstream, without
  * reloading more bits in the middle of the offset bits read. Any offsets larger
  * than this must use the long offset decoder.

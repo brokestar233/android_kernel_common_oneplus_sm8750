@@ -434,7 +434,7 @@ U32 ZSTD_insertAndFindFirstIndexHash3 (const ZSTD_MatchState_t* ms,
 /*-*************************************
 *  Binary Tree search
 ***************************************/
-/** ZSTD_insertBt1() : add one or multiple positions to tree.
+/* ZSTD_insertBt1() : add one or multiple positions to tree.
  * @param ip assumed <= iend-8 .
  * @param target The target of ZSTD_updateTree_internal() - we are filling to this position
  * @return : nb of positions added */
@@ -900,7 +900,7 @@ ZSTD_selectBtGetAllMatches(ZSTD_MatchState_t const* ms, ZSTD_dictMode_e const di
     return getAllMatchesFns[(int)dictMode][mls - 3];
 }
 
-/*************************
+/* ***********************
 *  LDM helper functions  *
 *************************/
 
@@ -1383,16 +1383,8 @@ _shortestPath:   /* cur, last_pos, best_mlen, best_off have to be set */
             assert(storeEnd < ZSTD_OPT_SIZE);
             DEBUGLOG(6, "last stretch copied into pos=%u (llen=%u,mlen=%u,ofc=%u)",
                         storeEnd, lastStretch.litlen, lastStretch.mlen, lastStretch.off);
-            if (lastStretch.litlen > 0) {
-                /* last "sequence" is unfinished: just a bunch of literals */
-                opt[storeEnd].litlen = lastStretch.litlen;
-                opt[storeEnd].mlen = 0;
-                storeStart = storeEnd-1;
-                opt[storeStart] = lastStretch;
-            } {
-                opt[storeEnd] = lastStretch;  /* note: litlen will be fixed */
-                storeStart = storeEnd;
-            }
+            opt[storeEnd] = lastStretch;  /* note: litlen will be fixed */
+            storeStart = storeEnd;
             while (1) {
                 ZSTD_optimal_t nextStretch = opt[stretchPos];
                 opt[storeStart].litlen = nextStretch.litlen;

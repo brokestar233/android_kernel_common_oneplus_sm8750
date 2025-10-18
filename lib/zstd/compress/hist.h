@@ -31,7 +31,7 @@
 size_t HIST_count(unsigned* count, unsigned* maxSymbolValuePtr,
                   const void* src, size_t srcSize);
 
-unsigned HIST_isError(size_t code);  /**< tells if a return value is an error code */
+unsigned HIST_isError(size_t code);  /*< tells if a return value is an error code */
 
 
 /* --- advanced histogram functions --- */
@@ -42,7 +42,7 @@ unsigned HIST_isError(size_t code);  /**< tells if a return value is an error co
 #define HIST_WKSP_SIZE_U32 1024
 #endif
 #define HIST_WKSP_SIZE    (HIST_WKSP_SIZE_U32 * sizeof(unsigned))
-/** HIST_count_wksp() :
+/* HIST_count_wksp() :
  *  Same as HIST_count(), but using an externally provided scratch buffer.
  *  Benefit is this function will use very little stack space.
  * `workSpace` is a writable buffer which must be 4-bytes aligned,
@@ -52,14 +52,14 @@ size_t HIST_count_wksp(unsigned* count, unsigned* maxSymbolValuePtr,
                        const void* src, size_t srcSize,
                        void* workSpace, size_t workSpaceSize);
 
-/** HIST_countFast() :
+/* HIST_countFast() :
  *  same as HIST_count(), but blindly trusts that all byte values within src are <= *maxSymbolValuePtr.
  *  This function is unsafe, and will segfault if any value within `src` is `> *maxSymbolValuePtr`
  */
 size_t HIST_countFast(unsigned* count, unsigned* maxSymbolValuePtr,
                       const void* src, size_t srcSize);
 
-/** HIST_countFast_wksp() :
+/* HIST_countFast_wksp() :
  *  Same as HIST_countFast(), but using an externally provided scratch buffer.
  * `workSpace` is a writable buffer which must be 4-bytes aligned,
  * `workSpaceSize` must be >= HIST_WKSP_SIZE

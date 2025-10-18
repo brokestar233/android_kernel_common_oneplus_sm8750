@@ -23,32 +23,17 @@
 
 
 /* =====   ZSTDLIB_API : control library symbols visibility   ===== */
-#ifndef ZSTDLIB_VISIBLE
-   /* Backwards compatibility with old macro name */
-#  ifdef ZSTDLIB_VISIBILITY
-#    define ZSTDLIB_VISIBLE ZSTDLIB_VISIBILITY
-#  elif defined(__GNUC__) && (__GNUC__ >= 4) && !defined(__MINGW32__)
-#    define ZSTDLIB_VISIBLE __attribute__ ((visibility ("default")))
-#  else
-#    define ZSTDLIB_VISIBLE
-#  endif
-#endif
+#define ZSTDLIB_VISIBLE 
 
 #ifndef ZSTDLIB_HIDDEN
-#  if defined(__GNUC__) && (__GNUC__ >= 4) && !defined(__MINGW32__)
+#  if (__GNUC__ >= 4) && !defined(__MINGW32__)
 #    define ZSTDLIB_HIDDEN __attribute__ ((visibility ("hidden")))
 #  else
 #    define ZSTDLIB_HIDDEN
 #  endif
 #endif
 
-#if defined(ZSTD_DLL_EXPORT) && (ZSTD_DLL_EXPORT==1)
-#  define ZSTDLIB_API __declspec(dllexport) ZSTDLIB_VISIBLE
-#elif defined(ZSTD_DLL_IMPORT) && (ZSTD_DLL_IMPORT==1)
-#  define ZSTDLIB_API __declspec(dllimport) ZSTDLIB_VISIBLE /* It isn't required but allows to generate better code, saving a function pointer load from the IAT and an indirect jump.*/
-#else
-#  define ZSTDLIB_API ZSTDLIB_VISIBLE
-#endif
+#define ZSTDLIB_API ZSTDLIB_VISIBLE
 
 /* Deprecation warnings :
  * Should these warnings be a problem, it is generally possible to disable them,
@@ -58,14 +43,10 @@
 #ifdef ZSTD_DISABLE_DEPRECATE_WARNINGS
 #  define ZSTD_DEPRECATED(message) /* disable deprecation warnings */
 #else
-#  if defined (__cplusplus) && (__cplusplus >= 201402) /* C++14 or greater */
-#    define ZSTD_DEPRECATED(message) [[deprecated(message)]]
-#  elif (defined(GNUC) && (GNUC > 4 || (GNUC == 4 && GNUC_MINOR >= 5))) || defined(__clang__) || defined(__IAR_SYSTEMS_ICC__)
+#  if (defined(GNUC) && (GNUC > 4 || (GNUC == 4 && GNUC_MINOR >= 5))) || defined(__clang__) || defined(__IAR_SYSTEMS_ICC__)
 #    define ZSTD_DEPRECATED(message) __attribute__((deprecated(message)))
-#  elif defined(__GNUC__) && (__GNUC__ >= 3)
+#  elif (__GNUC__ >= 3)
 #    define ZSTD_DEPRECATED(message) __attribute__((deprecated))
-#  elif defined(_MSC_VER)
-#    define ZSTD_DEPRECATED(message) __declspec(deprecated(message))
 #  else
 #    pragma message("WARNING: You need to implement ZSTD_DEPRECATED for this compiler")
 #    define ZSTD_DEPRECATED(message)
@@ -73,7 +54,7 @@
 #endif /* ZSTD_DISABLE_DEPRECATE_WARNINGS */
 
 
-/*******************************************************************************
+/* *****************************************************************************
   Introduction
 
   zstd, short for Zstandard, is a fast lossless compression algorithm, targeting
@@ -146,7 +127,7 @@ ZSTDLIB_API const char* ZSTD_versionString(void);
 #define ZSTD_BLOCKSIZE_MAX     (1<<ZSTD_BLOCKSIZELOG_MAX)
 
 
-/***************************************
+/* *************************************
 *  Simple Core API
 ***************************************/
 /*! ZSTD_compress() :
@@ -174,30 +155,30 @@ ZSTDLIB_API size_t ZSTD_decompress( void* dst, size_t dstCapacity,
 
 /*======  Decompression helper functions  ======*/
 
-/*! ZSTD_getFrameContentSize() : requires v1.3.0+
- * `src` should point to the start of a ZSTD encoded frame.
- * `srcSize` must be at least as large as the frame header.
- *           hint : any size >= `ZSTD_frameHeaderSize_max` is large enough.
- * @return : - decompressed size of `src` frame content, if known
- *           - ZSTD_CONTENTSIZE_UNKNOWN if the size cannot be determined
- *           - ZSTD_CONTENTSIZE_ERROR if an error occurred (e.g. invalid magic number, srcSize too small)
- *  note 1 : a 0 return value means the frame is valid but "empty".
- *           When invoking this method on a skippable frame, it will return 0.
- *  note 2 : decompressed size is an optional field, it may not be present (typically in streaming mode).
- *           When `return==ZSTD_CONTENTSIZE_UNKNOWN`, data to decompress could be any size.
- *           In which case, it's necessary to use streaming mode to decompress data.
- *           Optionally, application can rely on some implicit limit,
- *           as ZSTD_decompress() only needs an upper bound of decompressed size.
- *           (For example, data could be necessarily cut into blocks <= 16 KB).
- *  note 3 : decompressed size is always present when compression is completed using single-pass functions,
- *           such as ZSTD_compress(), ZSTD_compressCCtx() ZSTD_compress_usingDict() or ZSTD_compress_usingCDict().
- *  note 4 : decompressed size can be very large (64-bits value),
- *           potentially larger than what local system can handle as a single memory segment.
- *           In which case, it's necessary to use streaming mode to decompress data.
- *  note 5 : If source is untrusted, decompressed size could be wrong or intentionally modified.
- *           Always ensure return value fits within application's authorized limits.
- *           Each application can set its own limits.
- *  note 6 : This function replaces ZSTD_getDecompressedSize() */
+/*! @brief Returns the decompressed content size stored in a ZSTD frame header.
+ *
+ *  @since v1.3.0
+ *
+ *  @param src Pointer to the beginning of a ZSTD encoded frame.
+ *  @param srcSize Size of the buffer pointed to by @p src. It must be at least as large as the frame header.
+ *                 Any value greater than or equal to `ZSTD_frameHeaderSize_max` is sufficient.
+ *  @return The decompressed size in bytes when the value is available in the frame header.
+ *  @retval ZSTD_CONTENTSIZE_UNKNOWN The frame does not encode a decompressed size (typical for streaming).
+ *  @retval ZSTD_CONTENTSIZE_ERROR An error occurred (e.g. invalid magic number, @p srcSize too small).
+ *
+ *  @note The return value is not compatible with `ZSTD_isError()`.
+ *  @note A return value of 0 denotes a valid but empty frame. Skippable frames also report 0.
+ *  @note The decompressed size field is optional. When it is absent (the function returns @c ZSTD_CONTENTSIZE_UNKNOWN),
+ *        the caller must rely on streaming decompression or an application-specific upper bound. `ZSTD_decompress()`
+ *        only requires an upper bound, so applications may enforce their own block limits (for example 16 KB).
+ *  @note The decompressed size is guaranteed to be present when compression was performed with single-pass APIs such as
+ *        `ZSTD_compress()`, `ZSTD_compressCCtx()`, `ZSTD_compress_usingDict()`, or `ZSTD_compress_usingCDict()`.
+ *  @note The decompressed size is a 64-bit value and may exceed the addressable space of the system. Use streaming
+ *        decompression when the value is too large to materialize in contiguous memory.
+ *  @warning When processing untrusted input, validate the returned size against the application's limits; attackers may
+ *           forge an arbitrarily large value.
+ *  @note This function replaces `ZSTD_getDecompressedSize()`.
+ */
 #define ZSTD_CONTENTSIZE_UNKNOWN (0ULL - 1)
 #define ZSTD_CONTENTSIZE_ERROR   (0ULL - 2)
 ZSTDLIB_API unsigned long long ZSTD_getFrameContentSize(const void *src, size_t srcSize);
@@ -262,7 +243,7 @@ ZSTDLIB_API int          ZSTD_maxCLevel(void);             /*!< maximum compress
 ZSTDLIB_API int          ZSTD_defaultCLevel(void);         /*!< default compression level, specified by ZSTD_CLEVEL_DEFAULT, requires v1.5.0+ */
 
 
-/***************************************
+/* *************************************
 *  Explicit context
 ***************************************/
 /*= Compression context
@@ -312,7 +293,7 @@ ZSTDLIB_API size_t ZSTD_decompressDCtx(ZSTD_DCtx* dctx,
                                  const void* src, size_t srcSize);
 
 
-/*********************************************
+/* *******************************************
 *  Advanced compression API (Requires v1.4.0+)
 **********************************************/
 
@@ -623,7 +604,7 @@ ZSTDLIB_API size_t ZSTD_compress2( ZSTD_CCtx* cctx,
                              const void* src, size_t srcSize);
 
 
-/***********************************************
+/* *********************************************
 *  Advanced decompression API (Requires v1.4.0+)
 ************************************************/
 
@@ -692,20 +673,20 @@ ZSTDLIB_API size_t ZSTD_DCtx_setParameter(ZSTD_DCtx* dctx, ZSTD_dParameter param
 ZSTDLIB_API size_t ZSTD_DCtx_reset(ZSTD_DCtx* dctx, ZSTD_ResetDirective reset);
 
 
-/****************************
+/* **************************
 *  Streaming
 ****************************/
 
 typedef struct ZSTD_inBuffer_s {
-  const void* src;    /**< start of input buffer */
-  size_t size;        /**< size of input buffer */
-  size_t pos;         /**< position where reading stopped. Will be updated. Necessarily 0 <= pos <= size */
+  const void* src;    /*< start of input buffer */
+  size_t size;        /*< size of input buffer */
+  size_t pos;         /*< position where reading stopped. Will be updated. Necessarily 0 <= pos <= size */
 } ZSTD_inBuffer;
 
 typedef struct ZSTD_outBuffer_s {
-  void*  dst;         /**< start of output buffer */
-  size_t size;        /**< size of output buffer */
-  size_t pos;         /**< position where writing stopped. Will be updated. Necessarily 0 <= pos <= size */
+  void*  dst;         /*< start of output buffer */
+  size_t size;        /*< size of output buffer */
+  size_t pos;         /*< position where writing stopped. Will be updated. Necessarily 0 <= pos <= size */
 } ZSTD_outBuffer;
 
 
@@ -771,7 +752,7 @@ typedef struct ZSTD_outBuffer_s {
 *
 * *******************************************************************/
 
-typedef ZSTD_CCtx ZSTD_CStream;  /**< CCtx and CStream are now effectively same object (>= v1.3.0) */
+typedef ZSTD_CCtx ZSTD_CStream;  /*< CCtx and CStream are now effectively same object (>= v1.3.0) */
                                  /* Continue to distinguish them for compatibility with older versions <= v1.2.0 */
 /*===== ZSTD_CStream management functions =====*/
 ZSTDLIB_API ZSTD_CStream* ZSTD_createCStream(void);
@@ -837,8 +818,8 @@ ZSTDLIB_API size_t ZSTD_compressStream2( ZSTD_CCtx* cctx,
  * In which cases, prefer using large buffers, as large as practical,
  * for both input and output, to reduce the nb of roundtrips.
  */
-ZSTDLIB_API size_t ZSTD_CStreamInSize(void);    /**< recommended size for input buffer */
-ZSTDLIB_API size_t ZSTD_CStreamOutSize(void);   /**< recommended size for output buffer. Guarantee to successfully flush at least one complete compressed block. */
+ZSTDLIB_API size_t ZSTD_CStreamInSize(void);    /*< recommended size for input buffer */
+ZSTDLIB_API size_t ZSTD_CStreamOutSize(void);   /*< recommended size for output buffer. Guarantee to successfully flush at least one complete compressed block. */
 
 
 /* *****************************************************************************
@@ -903,7 +884,7 @@ ZSTDLIB_API size_t ZSTD_endStream(ZSTD_CStream* zcs, ZSTD_outBuffer* output);
 *                                that will never request more than the remaining content of the compressed frame.
 * *******************************************************************************/
 
-typedef ZSTD_DCtx ZSTD_DStream;  /**< DCtx and DStream are now effectively same object (>= v1.3.0) */
+typedef ZSTD_DCtx ZSTD_DStream;  /*< DCtx and DStream are now effectively same object (>= v1.3.0) */
                                  /* For compatibility with versions <= v1.2.0, prefer differentiating them. */
 /*===== ZSTD_DStream management functions =====*/
 ZSTDLIB_API ZSTD_DStream* ZSTD_createDStream(void);
@@ -949,7 +930,7 @@ ZSTDLIB_API size_t ZSTD_DStreamInSize(void);    /*!< recommended size for input 
 ZSTDLIB_API size_t ZSTD_DStreamOutSize(void);   /*!< recommended size for output buffer. Guarantee to successfully flush at least one complete block in all circumstances. */
 
 
-/**************************
+/* ************************
 *  Simple dictionary API
 ***************************/
 /*! ZSTD_compress_usingDict() :
@@ -977,7 +958,7 @@ ZSTDLIB_API size_t ZSTD_decompress_usingDict(ZSTD_DCtx* dctx,
                                        const void* dict,size_t dictSize);
 
 
-/***********************************
+/* *********************************
  *  Bulk processing dictionary API
  **********************************/
 typedef struct ZSTD_CDict_s ZSTD_CDict;
@@ -1034,7 +1015,7 @@ ZSTDLIB_API size_t ZSTD_decompress_usingDDict(ZSTD_DCtx* dctx,
                                         const ZSTD_DDict* ddict);
 
 
-/********************************
+/* ******************************
  *  Dictionary helper functions
  *******************************/
 
@@ -1069,7 +1050,7 @@ ZSTDLIB_API unsigned ZSTD_getDictID_fromDDict(const ZSTD_DDict* ddict);
 ZSTDLIB_API unsigned ZSTD_getDictID_fromFrame(const void* src, size_t srcSize);
 
 
-/*******************************************************************************
+/* *****************************************************************************
  * Advanced dictionary and prefix API (Requires v1.4.0+)
  *
  * This API allows dictionaries to be used with ZSTD_compress2(),
@@ -1227,16 +1208,10 @@ ZSTDLIB_API size_t ZSTD_sizeof_DDict(const ZSTD_DDict* ddict);
 
 /* This can be overridden externally to hide static symbols. */
 #ifndef ZSTDLIB_STATIC_API
-#  if defined(ZSTD_DLL_EXPORT) && (ZSTD_DLL_EXPORT==1)
-#    define ZSTDLIB_STATIC_API __declspec(dllexport) ZSTDLIB_VISIBLE
-#  elif defined(ZSTD_DLL_IMPORT) && (ZSTD_DLL_IMPORT==1)
-#    define ZSTDLIB_STATIC_API __declspec(dllimport) ZSTDLIB_VISIBLE
-#  else
-#    define ZSTDLIB_STATIC_API ZSTDLIB_VISIBLE
-#  endif
+#define ZSTDLIB_STATIC_API ZSTDLIB_VISIBLE
 #endif
 
-/****************************************************************************************
+/* **************************************************************************************
  *   experimental API (static linking only)
  ****************************************************************************************
  * The following symbols and constants
@@ -1342,19 +1317,19 @@ typedef struct {
 } ZSTD_Sequence;
 
 typedef struct {
-    unsigned windowLog;       /**< largest match distance : larger == more compression, more memory needed during decompression */
-    unsigned chainLog;        /**< fully searched segment : larger == more compression, slower, more memory (useless for fast) */
-    unsigned hashLog;         /**< dispatch table : larger == faster, more memory */
-    unsigned searchLog;       /**< nb of searches : larger == more compression, slower */
-    unsigned minMatch;        /**< match length searched : larger == faster decompression, sometimes less compression */
-    unsigned targetLength;    /**< acceptable match size for optimal parser (only) : larger == more compression, slower */
-    ZSTD_strategy strategy;   /**< see ZSTD_strategy definition above */
+    unsigned windowLog;       /*< largest match distance : larger == more compression, more memory needed during decompression */
+    unsigned chainLog;        /*< fully searched segment : larger == more compression, slower, more memory (useless for fast) */
+    unsigned hashLog;         /*< dispatch table : larger == faster, more memory */
+    unsigned searchLog;       /*< nb of searches : larger == more compression, slower */
+    unsigned minMatch;        /*< match length searched : larger == faster decompression, sometimes less compression */
+    unsigned targetLength;    /*< acceptable match size for optimal parser (only) : larger == more compression, slower */
+    ZSTD_strategy strategy;   /*< see ZSTD_strategy definition above */
 } ZSTD_compressionParameters;
 
 typedef struct {
-    int contentSizeFlag; /**< 1: content size will be in frame header (when known) */
-    int checksumFlag;    /**< 1: generate a 32-bits checksum using XXH64 algorithm at end of frame, for error detection */
-    int noDictIDFlag;    /**< 1: no dictID will be saved into frame header (dictID is only useful for dictionary compression) */
+    int contentSizeFlag; /*< 1: content size will be in frame header (when known) */
+    int checksumFlag;    /*< 1: generate a 32-bits checksum using XXH64 algorithm at end of frame, for error detection */
+    int noDictIDFlag;    /*< 1: no dictID will be saved into frame header (dictID is only useful for dictionary compression) */
 } ZSTD_frameParameters;
 
 typedef struct {
@@ -1369,8 +1344,8 @@ typedef enum {
 } ZSTD_dictContentType_e;
 
 typedef enum {
-    ZSTD_dlm_byCopy = 0,  /**< Copy dictionary content internally */
-    ZSTD_dlm_byRef = 1    /**< Reference dictionary content -- the dictionary buffer must outlive its users. */
+    ZSTD_dlm_byCopy = 0,  /*< Copy dictionary content internally */
+    ZSTD_dlm_byRef = 1    /*< Reference dictionary content -- the dictionary buffer must outlive its users. */
 } ZSTD_dictLoadMethod_e;
 
 typedef enum {
@@ -1432,12 +1407,12 @@ typedef enum {
 } ZSTD_dictAttachPref_e;
 
 typedef enum {
-  ZSTD_lcm_auto = 0,          /**< Automatically determine the compression mode based on the compression level.
+  ZSTD_lcm_auto = 0,          /*< Automatically determine the compression mode based on the compression level.
                                *   Negative compression levels will be uncompressed, and positive compression
                                *   levels will be compressed. */
-  ZSTD_lcm_huffman = 1,       /**< Always attempt Huffman compression. Uncompressed literals will still be
+  ZSTD_lcm_huffman = 1,       /*< Always attempt Huffman compression. Uncompressed literals will still be
                                *   emitted if Huffman compression is not profitable. */
-  ZSTD_lcm_uncompressed = 2   /**< Always emit uncompressed literals. */
+  ZSTD_lcm_uncompressed = 2   /*< Always emit uncompressed literals. */
 } ZSTD_literalCompressionMode_e;
 
 typedef enum {
@@ -1451,7 +1426,7 @@ typedef enum {
 } ZSTD_ParamSwitch_e;
 #define ZSTD_paramSwitch_e ZSTD_ParamSwitch_e  /* old name */
 
-/***************************************
+/* *************************************
 *  Frame header and size functions
 ***************************************/
 
@@ -1740,7 +1715,7 @@ ZSTDLIB_STATIC_API unsigned ZSTD_isSkippableFrame(const void* buffer, size_t siz
 
 
 
-/***************************************
+/* *************************************
 *  Memory management
 ***************************************/
 
@@ -1833,10 +1808,10 @@ ZSTDLIB_STATIC_API size_t ZSTD_estimateDDictSize(size_t dictSize, ZSTD_dictLoadM
  *  Limitation 3 : static dctx is incompatible with legacy support.
  */
 ZSTDLIB_STATIC_API ZSTD_CCtx*    ZSTD_initStaticCCtx(void* workspace, size_t workspaceSize);
-ZSTDLIB_STATIC_API ZSTD_CStream* ZSTD_initStaticCStream(void* workspace, size_t workspaceSize);    /**< same as ZSTD_initStaticCCtx() */
+ZSTDLIB_STATIC_API ZSTD_CStream* ZSTD_initStaticCStream(void* workspace, size_t workspaceSize);    /*< same as ZSTD_initStaticCCtx() */
 
 ZSTDLIB_STATIC_API ZSTD_DCtx*    ZSTD_initStaticDCtx(void* workspace, size_t workspaceSize);
-ZSTDLIB_STATIC_API ZSTD_DStream* ZSTD_initStaticDStream(void* workspace, size_t workspaceSize);    /**< same as ZSTD_initStaticDCtx() */
+ZSTDLIB_STATIC_API ZSTD_DStream* ZSTD_initStaticDStream(void* workspace, size_t workspaceSize);    /*< same as ZSTD_initStaticDCtx() */
 
 ZSTDLIB_STATIC_API const ZSTD_CDict* ZSTD_initStaticCDict(
                                         void* workspace, size_t workspaceSize,
@@ -1865,10 +1840,8 @@ typedef struct { ZSTD_allocFunction customAlloc; ZSTD_freeFunction customFree; v
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 #endif
 static
-#ifdef __GNUC__
 __attribute__((__unused__))
-#endif
-ZSTD_customMem const ZSTD_defaultCMem = { NULL, NULL, NULL };  /**< this constant defers to stdlib's functions */
+ZSTD_customMem const ZSTD_defaultCMem = { NULL, NULL, NULL };  /*< this constant defers to stdlib's functions */
 #if defined(__clang__) && __clang_major__ >= 5
 #pragma clang diagnostic pop
 #endif
@@ -1917,7 +1890,7 @@ ZSTDLIB_STATIC_API ZSTD_DDict* ZSTD_createDDict_advanced(
     ZSTD_customMem customMem);
 
 
-/***************************************
+/* *************************************
 *  Advanced compression functions
 ***************************************/
 
@@ -2432,7 +2405,7 @@ ZSTDLIB_STATIC_API size_t ZSTD_compressStream2_simpleArgs (
                             ZSTD_EndDirective endOp);
 
 
-/***************************************
+/* *************************************
 *  Advanced decompression functions
 ***************************************/
 
@@ -2606,7 +2579,7 @@ ZSTDLIB_STATIC_API size_t ZSTD_decompressStream_simpleArgs (
                       const void* src, size_t srcSize, size_t* srcPos);
 
 
-/********************************************************************
+/* ******************************************************************
 *  Advanced streaming functions
 *  Warning : most of these functions are now redundant with the Advanced API.
 *  Once Advanced API reaches "stable" status,
@@ -2970,7 +2943,7 @@ ZSTD_CCtxParams_registerSequenceProducer(
 );
 
 
-/*********************************************************************
+/* *******************************************************************
 *  Buffer-less and synchronous inner streaming functions (DEPRECATED)
 *
 *  This API is deprecated, and will be removed in a future version.
@@ -2984,7 +2957,7 @@ ZSTD_CCtxParams_registerSequenceProducer(
 *  please open an issue on our GitHub.
 ********************************************************************* */
 
-/**
+/*
   Buffer-less streaming compression (synchronous mode)
 
   A ZSTD_CCtx object is required to track streaming operations.
@@ -3019,11 +2992,11 @@ ZSTDLIB_STATIC_API size_t ZSTD_compressBegin(ZSTD_CCtx* cctx, int compressionLev
 ZSTD_DEPRECATED("The buffer-less API is deprecated in favor of the normal streaming API. See docs.")
 ZSTDLIB_STATIC_API size_t ZSTD_compressBegin_usingDict(ZSTD_CCtx* cctx, const void* dict, size_t dictSize, int compressionLevel);
 ZSTD_DEPRECATED("The buffer-less API is deprecated in favor of the normal streaming API. See docs.")
-ZSTDLIB_STATIC_API size_t ZSTD_compressBegin_usingCDict(ZSTD_CCtx* cctx, const ZSTD_CDict* cdict); /**< note: fails if cdict==NULL */
+ZSTDLIB_STATIC_API size_t ZSTD_compressBegin_usingCDict(ZSTD_CCtx* cctx, const ZSTD_CDict* cdict); /*< note: fails if cdict==NULL */
 
 ZSTD_DEPRECATED("This function will likely be removed in a future release. It is misleading and has very limited utility.")
 ZSTDLIB_STATIC_API
-size_t ZSTD_copyCCtx(ZSTD_CCtx* cctx, const ZSTD_CCtx* preparedCCtx, unsigned long long pledgedSrcSize); /**<  note: if pledgedSrcSize is not known, use ZSTD_CONTENTSIZE_UNKNOWN */
+size_t ZSTD_copyCCtx(ZSTD_CCtx* cctx, const ZSTD_CCtx* preparedCCtx, unsigned long long pledgedSrcSize); /*<  note: if pledgedSrcSize is not known, use ZSTD_CONTENTSIZE_UNKNOWN */
 
 ZSTD_DEPRECATED("The buffer-less API is deprecated in favor of the normal streaming API. See docs.")
 ZSTDLIB_STATIC_API size_t ZSTD_compressContinue(ZSTD_CCtx* cctx, void* dst, size_t dstCapacity, const void* src, size_t srcSize);
@@ -3033,11 +3006,11 @@ ZSTDLIB_STATIC_API size_t ZSTD_compressEnd(ZSTD_CCtx* cctx, void* dst, size_t ds
 /* The ZSTD_compressBegin_advanced() and ZSTD_compressBegin_usingCDict_advanced() are now DEPRECATED and will generate a compiler warning */
 ZSTD_DEPRECATED("use advanced API to access custom parameters")
 ZSTDLIB_STATIC_API
-size_t ZSTD_compressBegin_advanced(ZSTD_CCtx* cctx, const void* dict, size_t dictSize, ZSTD_parameters params, unsigned long long pledgedSrcSize); /**< pledgedSrcSize : If srcSize is not known at init time, use ZSTD_CONTENTSIZE_UNKNOWN */
+size_t ZSTD_compressBegin_advanced(ZSTD_CCtx* cctx, const void* dict, size_t dictSize, ZSTD_parameters params, unsigned long long pledgedSrcSize); /*< pledgedSrcSize : If srcSize is not known at init time, use ZSTD_CONTENTSIZE_UNKNOWN */
 ZSTD_DEPRECATED("use advanced API to access custom parameters")
 ZSTDLIB_STATIC_API
 size_t ZSTD_compressBegin_usingCDict_advanced(ZSTD_CCtx* const cctx, const ZSTD_CDict* const cdict, ZSTD_frameParameters const fParams, unsigned long long const pledgedSrcSize);   /* compression parameters are already set within cdict. pledgedSrcSize must be correct. If srcSize is not known, use macro ZSTD_CONTENTSIZE_UNKNOWN */
-/**
+/*
   Buffer-less streaming decompression (synchronous mode)
 
   A ZSTD_DCtx object is required to track streaming operations.
@@ -3112,7 +3085,7 @@ size_t ZSTD_compressBegin_usingCDict_advanced(ZSTD_CCtx* const cctx, const ZSTD_
 
 /*=====   Buffer-less streaming decompression functions  =====*/
 
-ZSTDLIB_STATIC_API size_t ZSTD_decodingBufferSize_min(unsigned long long windowSize, unsigned long long frameContentSize);  /**< when frame content size is not known, pass in frameContentSize == ZSTD_CONTENTSIZE_UNKNOWN */
+ZSTDLIB_STATIC_API size_t ZSTD_decodingBufferSize_min(unsigned long long windowSize, unsigned long long frameContentSize);  /*< when frame content size is not known, pass in frameContentSize == ZSTD_CONTENTSIZE_UNKNOWN */
 
 ZSTDLIB_STATIC_API size_t ZSTD_decompressBegin(ZSTD_DCtx* dctx);
 ZSTDLIB_STATIC_API size_t ZSTD_decompressBegin_usingDict(ZSTD_DCtx* dctx, const void* dict, size_t dictSize);
@@ -3143,7 +3116,7 @@ ZSTDLIB_API int ZSTD_isDeterministicBuild(void);
 
 
 /* ========================================= */
-/**       Block level API (DEPRECATED)       */
+/*       Block level API (DEPRECATED)       */
 /* ========================================= */
 
 /*!
@@ -3192,7 +3165,7 @@ ZSTDLIB_STATIC_API size_t ZSTD_compressBlock  (ZSTD_CCtx* cctx, void* dst, size_
 ZSTD_DEPRECATED("The block API is deprecated in favor of the normal compression API. See docs.")
 ZSTDLIB_STATIC_API size_t ZSTD_decompressBlock(ZSTD_DCtx* dctx, void* dst, size_t dstCapacity, const void* src, size_t srcSize);
 ZSTD_DEPRECATED("The block API is deprecated in favor of the normal compression API. See docs.")
-ZSTDLIB_STATIC_API size_t ZSTD_insertBlock    (ZSTD_DCtx* dctx, const void* blockStart, size_t blockSize);  /**< insert uncompressed block into `dctx` history. Useful for multi-blocks decompression. */
+ZSTDLIB_STATIC_API size_t ZSTD_insertBlock    (ZSTD_DCtx* dctx, const void* blockStart, size_t blockSize);  /*< insert uncompressed block into `dctx` history. Useful for multi-blocks decompression. */
 
 
 #endif   /* ZSTD_H_ZSTD_STATIC_LINKING_ONLY */
