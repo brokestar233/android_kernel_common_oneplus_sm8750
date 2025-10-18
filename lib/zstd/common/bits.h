@@ -29,21 +29,7 @@ MEM_STATIC unsigned ZSTD_countTrailingZeros32_fallback(U32 val)
 MEM_STATIC unsigned ZSTD_countTrailingZeros32(U32 val)
 {
     assert(val != 0);
-#if defined(_MSC_VER)
-#  if STATIC_BMI2
-    return (unsigned)_tzcnt_u32(val);
-#  else
-    if (val != 0) {
-        unsigned long r;
-        _BitScanForward(&r, val);
-        return (unsigned)r;
-    } else {
-        __assume(0); /* Should not reach this code path */
-    }
-#  endif
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-    return (unsigned)__builtin_ctz(val);
-#elif defined(__ICCARM__)
+#if (__GNUC__ >= 4)
     return (unsigned)__builtin_ctz(val);
 #else
     return ZSTD_countTrailingZeros32_fallback(val);
@@ -70,21 +56,7 @@ MEM_STATIC unsigned ZSTD_countLeadingZeros32_fallback(U32 val)
 MEM_STATIC unsigned ZSTD_countLeadingZeros32(U32 val)
 {
     assert(val != 0);
-#if defined(_MSC_VER)
-#  if STATIC_BMI2
-    return (unsigned)_lzcnt_u32(val);
-#  else
-    if (val != 0) {
-        unsigned long r;
-        _BitScanReverse(&r, val);
-        return (unsigned)(31 - r);
-    } else {
-        __assume(0); /* Should not reach this code path */
-    }
-#  endif
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-    return (unsigned)__builtin_clz(val);
-#elif defined(__ICCARM__)
+#if (__GNUC__ >= 4)
     return (unsigned)__builtin_clz(val);
 #else
     return ZSTD_countLeadingZeros32_fallback(val);
@@ -94,21 +66,7 @@ MEM_STATIC unsigned ZSTD_countLeadingZeros32(U32 val)
 MEM_STATIC unsigned ZSTD_countTrailingZeros64(U64 val)
 {
     assert(val != 0);
-#if defined(_MSC_VER) && defined(_WIN64)
-#  if STATIC_BMI2
-    return (unsigned)_tzcnt_u64(val);
-#  else
-    if (val != 0) {
-        unsigned long r;
-        _BitScanForward64(&r, val);
-        return (unsigned)r;
-    } else {
-        __assume(0); /* Should not reach this code path */
-    }
-#  endif
-#elif defined(__GNUC__) && (__GNUC__ >= 4) && defined(__LP64__)
-    return (unsigned)__builtin_ctzll(val);
-#elif defined(__ICCARM__)
+#if (__GNUC__ >= 4) && defined(__LP64__)
     return (unsigned)__builtin_ctzll(val);
 #else
     {
@@ -126,21 +84,7 @@ MEM_STATIC unsigned ZSTD_countTrailingZeros64(U64 val)
 MEM_STATIC unsigned ZSTD_countLeadingZeros64(U64 val)
 {
     assert(val != 0);
-#if defined(_MSC_VER) && defined(_WIN64)
-#  if STATIC_BMI2
-    return (unsigned)_lzcnt_u64(val);
-#  else
-    if (val != 0) {
-        unsigned long r;
-        _BitScanReverse64(&r, val);
-        return (unsigned)(63 - r);
-    } else {
-        __assume(0); /* Should not reach this code path */
-    }
-#  endif
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-    return (unsigned)(__builtin_clzll(val));
-#elif defined(__ICCARM__)
+#if (__GNUC__ >= 4)
     return (unsigned)(__builtin_clzll(val));
 #else
     {
