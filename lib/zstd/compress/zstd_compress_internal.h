@@ -21,9 +21,6 @@
 ***************************************/
 #include "../common/zstd_internal.h"
 #include "zstd_cwksp.h"
-#ifdef ZSTD_MULTITHREAD
-#  include "zstdmt_compress.h"
-#endif
 #include "../common/bits.h" /* ZSTD_highbit32, ZSTD_NbCommonBytes */
 #include "zstd_preSplit.h" /* ZSTD_SLIPBLOCK_WORKSPACESIZE */
 
@@ -80,7 +77,7 @@ typedef struct {
     ZSTD_fseCTables_t fse;
 } ZSTD_entropyCTables_t;
 
-/***********************************************
+/* *********************************************
 *  Sequences *
 ***********************************************/
 typedef struct SeqDef_s {
@@ -120,7 +117,7 @@ typedef struct {
     U32 matchLength;
 } ZSTD_SequenceLength;
 
-/**
+/*
  * Returns the ZSTD_SequenceLength for the given sequences. It handles the decoding of long sequences
  * indicated by longLengthPos and longLengthType, and adds MINMATCH back to matchLength.
  */
@@ -144,10 +141,10 @@ const SeqStore_t* ZSTD_getSeqStore(const ZSTD_CCtx* ctx);   /* compress & dictBu
 int ZSTD_seqToCodes(const SeqStore_t* seqStorePtr);   /* compress, dictBuilder, decodeCorpus (shouldn't get its definition from here) */
 
 
-/***********************************************
+/* *********************************************
 *  Entropy buffer statistics structs and funcs *
 ***********************************************/
-/** ZSTD_hufCTablesMetadata_t :
+/* ZSTD_hufCTablesMetadata_t :
  *  Stores Literals Block Type for a super-block in hType, and
  *  huffman tree description in hufDesBuffer.
  *  hufDesSize refers to the size of huffman tree description in bytes.
@@ -158,7 +155,7 @@ typedef struct {
     size_t hufDesSize;
 } ZSTD_hufCTablesMetadata_t;
 
-/** ZSTD_fseCTablesMetadata_t :
+/* ZSTD_fseCTablesMetadata_t :
  *  Stores symbol compression modes for a super-block in {ll, ol, ml}Type, and
  *  fse tables in fseTablesBuffer.
  *  fseTablesSize refers to the size of fse tables in bytes.
@@ -177,7 +174,7 @@ typedef struct {
     ZSTD_fseCTablesMetadata_t fseMetadata;
 } ZSTD_entropyCTablesMetadata_t;
 
-/** ZSTD_buildBlockEntropyStats() :
+/* ZSTD_buildBlockEntropyStats() :
  *  Builds entropy for the block.
  *  @return : 0 on success or error code */
 size_t ZSTD_buildBlockEntropyStats(
@@ -188,7 +185,7 @@ size_t ZSTD_buildBlockEntropyStats(
                           ZSTD_entropyCTablesMetadata_t* entropyMetadata,
                           void* workspace, size_t wkspSize);
 
-/*********************************
+/* *******************************
 *  Compression internals structs *
 *********************************/
 
@@ -444,7 +441,7 @@ struct ZSTD_CCtx_params_s {
 #define ENTROPY_WORKSPACE_SIZE (HUF_WORKSPACE_SIZE + COMPRESS_SEQUENCES_WORKSPACE_SIZE)
 #define TMP_WORKSPACE_SIZE (MAX(ENTROPY_WORKSPACE_SIZE, ZSTD_SLIPBLOCK_WORKSPACESIZE))
 
-/**
+/*
  * Indicates whether this compression proceeds directly from user-provided
  * source buffer to user-provided destination buffer (ZSTDb_not_buffered), or
  * whether the context needs to buffer the input/output (ZSTDb_buffered).
@@ -454,7 +451,7 @@ typedef enum {
     ZSTDb_buffered
 } ZSTD_buffered_policy_e;
 
-/**
+/*
  * Struct that contains all elements of block splitter that should be allocated
  * in a wksp.
  */
@@ -529,14 +526,8 @@ struct ZSTD_CCtx_s {
     ZSTD_prefixDict prefixDict;   /* single-usage dictionary */
 
     /* Multi-threading */
-#ifdef ZSTD_MULTITHREAD
-    ZSTDMT_CCtx* mtctx;
-#endif
 
     /* Tracing */
-#if ZSTD_TRACE
-    ZSTD_TraceCtx traceCtx;
-#endif
 
     /* Workspace for block splitter */
     ZSTD_blockSplitCtx blockSplitCtx;
@@ -631,7 +622,7 @@ MEM_STATIC int ZSTD_cParam_withinBounds(ZSTD_cParameter cParam, int value)
 MEM_STATIC const BYTE*
 ZSTD_selectAddr(U32 index, U32 lowLimit, const BYTE* candidate, const BYTE* backup)
 {
-#if defined(__GNUC__) && defined(__x86_64__)
+#if defined(__x86_64__)
     __asm__ (
         "cmp %1, %2\n"
         "cmova %3, %0\n"
@@ -873,7 +864,7 @@ MEM_STATIC size_t ZSTD_count(const BYTE* pIn, const BYTE* pMatch, const BYTE* co
     return (size_t)(pIn - pStart);
 }
 
-/** ZSTD_count_2segments() :
+/* ZSTD_count_2segments() :
  *  can count match length with `ip` & `match` in 2 different segments.
  *  convention : on reaching mEnd, match count continue starting from iStart
  */
@@ -963,7 +954,7 @@ size_t ZSTD_hashPtrSalted(const void* p, U32 hBits, U32 mls, const U64 hashSalt)
 }
 
 
-/** ZSTD_ipow() :
+/* ZSTD_ipow() :
  * Return base^exponent.
  */
 static U64 ZSTD_ipow(U64 base, U64 exponent)
@@ -979,7 +970,7 @@ static U64 ZSTD_ipow(U64 base, U64 exponent)
 
 #define ZSTD_ROLL_HASH_CHAR_OFFSET 10
 
-/** ZSTD_rollingHash_append() :
+/* ZSTD_rollingHash_append() :
  * Add the buffer to the hash value.
  */
 static U64 ZSTD_rollingHash_append(U64 hash, void const* buf, size_t size)
@@ -993,7 +984,7 @@ static U64 ZSTD_rollingHash_append(U64 hash, void const* buf, size_t size)
     return hash;
 }
 
-/** ZSTD_rollingHash_compute() :
+/* ZSTD_rollingHash_compute() :
  * Compute the rolling hash value of the buffer.
  */
 MEM_STATIC U64 ZSTD_rollingHash_compute(void const* buf, size_t size)
@@ -1001,7 +992,7 @@ MEM_STATIC U64 ZSTD_rollingHash_compute(void const* buf, size_t size)
     return ZSTD_rollingHash_append(0, buf, size);
 }
 
-/** ZSTD_rollingHash_primePower() :
+/* ZSTD_rollingHash_primePower() :
  * Compute the primePower to be passed to ZSTD_rollingHash_rotate() for a hash
  * over a window of length bytes.
  */
@@ -1010,7 +1001,7 @@ MEM_STATIC U64 ZSTD_rollingHash_primePower(U32 length)
     return ZSTD_ipow(prime8bytes, length - 1);
 }
 
-/** ZSTD_rollingHash_rotate() :
+/* ZSTD_rollingHash_rotate() :
  * Rotate the rolling hash by one byte.
  */
 MEM_STATIC U64 ZSTD_rollingHash_rotate(U64 hash, BYTE toRemove, BYTE toAdd, U64 primePower)
@@ -1035,7 +1026,7 @@ MEM_STATIC U64 ZSTD_rollingHash_rotate(U64 hash, BYTE toRemove, BYTE toAdd, U64 
     ( ((U32)-1)                  /* Maximum ending current index */            \
     - ZSTD_CURRENT_MAX)          /* Maximum beginning lowLimit */
 
-/**
+/*
  * ZSTD_window_clear():
  * Clears the window containing the history by simply setting it to empty.
  */
@@ -1055,7 +1046,7 @@ MEM_STATIC U32 ZSTD_window_isEmpty(ZSTD_window_t const window)
            (window.nextSrc - window.base) == ZSTD_WINDOW_START_INDEX;
 }
 
-/**
+/*
  * ZSTD_window_hasExtDict():
  * Returns non-zero if the window has a non-empty extDict.
  */
@@ -1064,7 +1055,7 @@ MEM_STATIC U32 ZSTD_window_hasExtDict(ZSTD_window_t const window)
     return window.lowLimit < window.dictLimit;
 }
 
-/**
+/*
  * ZSTD_matchState_dictMode():
  * Inspects the provided matchState and figures out what dictMode should be
  * passed to the compressor.
@@ -1090,7 +1081,7 @@ MEM_STATIC ZSTD_dictMode_e ZSTD_matchState_dictMode(const ZSTD_MatchState_t *ms)
 #  endif
 #endif
 
-/**
+/*
  * ZSTD_window_canOverflowCorrect():
  * Returns non-zero if the indices are large enough for overflow correction
  * to work correctly without impacting compression ratio.
@@ -1125,7 +1116,7 @@ MEM_STATIC U32 ZSTD_window_canOverflowCorrect(ZSTD_window_t const window,
     return indexLargeEnough && dictionaryInvalidated;
 }
 
-/**
+/*
  * ZSTD_window_needOverflowCorrection():
  * Returns non-zero if the indices are getting too large and need overflow
  * protection.
@@ -1146,7 +1137,7 @@ MEM_STATIC U32 ZSTD_window_needOverflowCorrection(ZSTD_window_t const window,
     return curr > ZSTD_CURRENT_MAX;
 }
 
-/**
+/*
  * ZSTD_window_correctOverflow():
  * Reduces the indices to protect from index overflow.
  * Returns the correction made to the indices, which must be applied to every
@@ -1230,7 +1221,7 @@ U32 ZSTD_window_correctOverflow(ZSTD_window_t* window, U32 cycleLog,
     return correction;
 }
 
-/**
+/*
  * ZSTD_window_enforceMaxDist():
  * Updates lowLimit so that:
  *    (srcEnd - base) - lowLimit == maxDist + loadedDictEnd
@@ -1343,7 +1334,7 @@ MEM_STATIC void ZSTD_window_init(ZSTD_window_t* window) {
     window->nbOverflowCorrections = 0;
 }
 
-/**
+/*
  * ZSTD_window_update():
  * Updates the window by appending [src, src + srcSize) to the window.
  * If it is not contiguous, the current prefix becomes the extDict, and we
@@ -1390,7 +1381,7 @@ U32 ZSTD_window_update(ZSTD_window_t* window,
     return contiguous;
 }
 
-/**
+/*
  * Returns the lowest allowed match index. It may either be in the ext-dict or the prefix.
  */
 MEM_STATIC U32 ZSTD_getLowestMatchIndex(const ZSTD_MatchState_t* ms, U32 curr, unsigned windowLog)
@@ -1407,7 +1398,7 @@ MEM_STATIC U32 ZSTD_getLowestMatchIndex(const ZSTD_MatchState_t* ms, U32 curr, u
     return matchLowest;
 }
 
-/**
+/*
  * Returns the lowest allowed match index in the prefix.
  */
 MEM_STATIC U32 ZSTD_getLowestPrefixIndex(const ZSTD_MatchState_t* ms, U32 curr, unsigned windowLog)
@@ -1601,11 +1592,11 @@ size_t ZSTD_writeLastEmptyBlock(void* dst, size_t dstCapacity);
  */
 void ZSTD_referenceExternalSequences(ZSTD_CCtx* cctx, rawSeq* seq, size_t nbSeq);
 
-/** ZSTD_cycleLog() :
+/* ZSTD_cycleLog() :
  *  condition for correct operation : hashLog > 1 */
 U32 ZSTD_cycleLog(U32 hashLog, ZSTD_strategy strat);
 
-/** ZSTD_CCtx_trace() :
+/* ZSTD_CCtx_trace() :
  *  Trace the end of a compression call.
  */
 void ZSTD_CCtx_trace(ZSTD_CCtx* cctx, size_t extraCSize);
