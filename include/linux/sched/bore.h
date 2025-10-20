@@ -10,7 +10,7 @@
 #define SCHED_BORE_AUTHOR   "Masahito Suzuki"
 #define SCHED_BORE_PROGNAME "BORE CPU Scheduler modification"
 
-#define SCHED_BORE_VERSION  "6.5.2"
+#define SCHED_BORE_VERSION  "6.5.8"
 
 extern u8   __read_mostly sched_bore;
 extern u8   __read_mostly sched_burst_inherit_type;

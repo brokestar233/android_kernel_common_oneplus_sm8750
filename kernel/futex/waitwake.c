@@ -5,7 +5,7 @@
 #include <linux/freezer.h>
 #ifdef CONFIG_SCHED_BORE
 #include <linux/sched/bore.h>
-#endif // CONFIG_SCHED_BORE
+#endif /* CONFIG_SCHED_BORE */
 
 #include "futex.h"
 #include <trace/hooks/futex.h>
@@ -362,12 +362,12 @@ void futex_wait_queue(struct futex_hash_bucket *hb, struct futex_q *q,
 		if (!timeout || timeout->task) {
 #ifdef CONFIG_SCHED_BORE
 			current->bore->futex_waiting = true;
-#endif // CONFIG_SCHED_BORE
+#endif /* CONFIG_SCHED_BORE */
 			trace_android_vh_futex_sleep_start(current);
 			schedule();
 #ifdef CONFIG_SCHED_BORE
 			current->bore->futex_waiting = false;
-#endif // CONFIG_SCHED_BORE
+#endif /* CONFIG_SCHED_BORE */
 		}
 	}
 	__set_current_state(TASK_RUNNING);
