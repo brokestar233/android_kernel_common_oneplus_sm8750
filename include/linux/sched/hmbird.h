@@ -3,9 +3,9 @@
  * HMBIRD scheduler class: Documentation/scheduler/hmbird.rst
  *
  * Copyright (c) 2024 OPlus.
- * Copyright (c) 2024 Dao Huang <huangdao1@oppo.com>
- * Copyright (c) 2024 Yuxing Wang <wangyuxing@oppo.com>
- * Copyright (c) 2024 Taiyu Li <litaiyu@oppo.com>
+ * Copyright (c) 2024 Dao Huang
+ * Copyright (c) 2024 Yuxing Wang
+ * Copyright (c) 2024 Taiyu Li
  */
 #ifndef _LINUX_SCHED_HMBIRD_H
 #define _LINUX_SCHED_HMBIRD_H

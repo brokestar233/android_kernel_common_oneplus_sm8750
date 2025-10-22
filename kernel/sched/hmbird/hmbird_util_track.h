@@ -3,9 +3,9 @@
  * HMBIRD scheduler class
  *
  * Copyright (c) 2024 OPlus.
- * Copyright (c) 2024 Dao Huang <huangdao1@oppo.com>
- * Copyright (c) 2024 Yuxing Wang <wangyuxing@oppo.com>
- * Copyright (c) 2024 Taiyu Li <litaiyu@oppo.com>
+ * Copyright (c) 2024 Dao Huang
+ * Copyright (c) 2024 Yuxing Wang
+ * Copyright (c) 2024 Taiyu Li
  */
 #ifndef __HMBIRD_UTIL_TRACK_H__
 #define __HMBIRD_UTIL_TRACK_H__
