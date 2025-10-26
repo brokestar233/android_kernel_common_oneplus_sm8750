@@ -2389,27 +2389,28 @@ int __weak module_frob_arch_sections(Elf_Ehdr *hdr,
 static char *module_blacklist;
 static char *custom_module_blacklist[] = {
 #if IS_BUILTIN(CONFIG_CRYPTO_LZO)
-    "lzo", "lzo_rle",
+    "lzo", "lzo_rle", 
 #endif
 #if IS_BUILTIN(CONFIG_ZRAM)
-	"oplus_bsp_hybridswap_zram", "oplus_bsp_zram_opt",
+	"oplus_bsp_hybridswap_zram", "oplus_bsp_zram_opt", 
+	"oplus_bsp_fg_protect", "oplus_exit_mm_optimize", 
 #endif
 #if IS_BUILTIN(CONFIG_ZSMALLOC)
-    "oplus_bsp_zsmalloc",
+    "oplus_bsp_zsmalloc", 
 #endif
 #if IS_BUILTIN(CONFIG_TCP_CONG_BBR)
 	/* BBR3 compatibility*/
-    "oplus_network_tuning",
+    "oplus_network_tuning", 
 #endif
+#ifdef CONFIG_DEBLOAT_VENDOR_MODULES
 	/* Coresight, Do not disable the coresight core, as it is dependent on msm_kgsl. */
 	"coresight_tpda", "coresight_tgu", "coresight_trace_noc", 
 	"coresight_cti", "coresight_qmi", "coresight_dummy", 
-	"coresight_remote_etm", "coresight_tpdm", "coresight_uetm",
-	 "coresight_stm", "coresight_tmc_sec",
-#ifdef CONFIG_DEBLOAT_VENDOR_MODULES
-	"f_fs_ipc_log", "qcom_iommu_debug", "qti_battery_debug",
-	"rdbg", "stm_heartbeat", "stm_p_ost", "stm_core", "stm_ftrace", "stm_console",
-	"spmi_pmic_arb_debug",
+	"coresight_remote_etm", "coresight_tpdm", "coresight_uetm", 
+	"coresight_stm", "coresight_tmc_sec", 
+	"f_fs_ipc_log", "qcom_iommu_debug", "qti_battery_debug", 
+	"rdbg", "stm_heartbeat", "stm_p_ost", "stm_core", 
+	"stm_ftrace", "stm_console", "spmi_pmic_arb_debug", 
 #endif
 #ifdef CONFIG_STAR_BLACK_LIST
 #endif
