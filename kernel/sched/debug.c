@@ -375,9 +375,8 @@ static __init int sched_init_debug(void)
 #endif
 
 	debugfs_create_file("debug", 0444, debugfs_sched, NULL, &sched_debug_fops);
-
-#ifdef CONFIG_SCHED_CLASS_EXT
-	debugfs_create_file("ext", 0444, debugfs_sched, NULL, &sched_ext_fops);
+#ifdef CONFIG_HMBIRD_SCHED
+	debugfs_create_file("hmbird", 0444, debugfs_sched, NULL, &sched_hmbird_fops);
 #endif
 	return 0;
 }
@@ -1006,9 +1005,6 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 	SEQ_printf(m,
 		"---------------------------------------------------------"
 		"----------\n");
-#ifdef CONFIG_SLIM_SCHED
-	SEQ_printf(m, "p->sched_prop:0x%lx\n", p->sched_prop);
-#endif
 
 #define P_SCHEDSTAT(F)  __PS(#F, schedstat_val(p->stats.F))
 #define PN_SCHEDSTAT(F) __PSN(#F, schedstat_val(p->stats.F))
@@ -1104,8 +1100,10 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 	} else if (fair_policy(p->policy)) {
 		P(se.slice);
 	}
-#ifdef CONFIG_SCHED_CLASS_EXT
-	__PS("ext.enabled", p->sched_class == &ext_sched_class);
+#ifdef CONFIG_HMBIRD_SCHED
+	__PS("hmbird.enabled", p->sched_class == &hmbird_sched_class);
+	__PS("sched_prop", get_hmbird_ts(p)->sched_prop);
+	__PS("top_task_prop", get_hmbird_ts(p)->top_task_prop);
 #endif
 #undef PN_SCHEDSTAT
 #undef P_SCHEDSTAT

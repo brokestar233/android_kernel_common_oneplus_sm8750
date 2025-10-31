@@ -73,7 +73,9 @@ struct task_delay_info;
 struct task_group;
 struct user_event_mm;
 
-#include <linux/sched/ext.h>
+#ifdef CONFIG_HMBIRD_SCHED
+#include <linux/sched/hmbird.h>
+#endif
 
 /*
  * Task state bitmask. NOTE! These bits are also
@@ -297,11 +299,6 @@ enum {
 };
 
 extern void scheduler_tick(void);
-
-#ifdef CONFIG_SLIM_SCHED
-extern enum hrtimer_restart scheduler_tick_no_balance(struct hrtimer *timer);
-extern void stop_shadow_tick_timer(void);
-#endif
 
 #define	MAX_SCHEDULE_TIMEOUT		LONG_MAX
 
@@ -1523,13 +1520,8 @@ struct task_struct {
 	 */
 	struct callback_head		l1d_flush_kill;
 #endif
-#ifdef CONFIG_SLIM_SCHED
-	ANDROID_KABI_USE(1, unsigned long sched_prop);
-	ANDROID_KABI_USE(2, struct sched_ext_entity *scx);
-#else
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
-#endif
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
 	ANDROID_KABI_RESERVE(5);
@@ -1933,6 +1925,91 @@ static inline int task_nice(const struct task_struct *p)
 	return PRIO_TO_NICE((p)->static_prio);
 }
 
+#ifdef CONFIG_HMBIRD_SCHED
+static inline bool task_is_top_task(struct task_struct *p)
+{
+	return (((struct hmbird_entity *)(p->android_oem_data1[HMBIRD_TS_IDX]))
+		->top_task_prop & TOP_TASK_BITS_MASK);
+}
+
+static inline int get_top_task_prop(struct task_struct *p)
+{
+	return get_hmbird_ts(p)->top_task_prop;
+}
+
+static inline int set_top_task_prop(struct task_struct *p, u64 set, u64 clear)
+{
+	if (set)
+		get_hmbird_ts(p)->top_task_prop |= set;
+	if (clear)
+		get_hmbird_ts(p)->top_task_prop &= ~clear;
+	return 0;
+}
+
+static inline void reset_top_task_prop(struct task_struct *p)
+{
+	get_hmbird_ts(p)->top_task_prop = 0;
+}
+
+static inline int hmbird_set_sched_prop(struct task_struct *p, unsigned long sp)
+{
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity) {
+		entity->sched_prop = sp;
+	}
+	return 0;
+}
+
+static inline unsigned long hmbird_get_sched_prop(struct task_struct *p)
+{
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		return entity->sched_prop;
+	else
+		return 0;
+}
+
+static inline void hmbird_set_dsq_id(struct task_struct *p, unsigned long dsq)
+{
+	unsigned long new_dsq;
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity) {
+		new_dsq = (entity->sched_prop & ~SCHED_PROP_DEADLINE_MASK) | dsq;
+		entity->sched_prop = new_dsq;
+	}
+}
+
+static inline unsigned long hmbird_get_dsq_id(struct task_struct *p)
+{
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		return (entity->sched_prop & SCHED_PROP_DEADLINE_MASK);
+	else
+		return 0;
+}
+
+static inline void hmbird_set_dsq_sync_ux(struct task_struct *p, int val)
+{
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		entity->dsq_sync_ux = val;
+}
+
+static inline int hmbird_get_dsq_sync_ux(struct task_struct *p)
+{
+	struct hmbird_entity *entity = get_hmbird_ts(p);
+
+	if (entity)
+		return entity->dsq_sync_ux;
+	else
+		return 0;
+}
+#endif
 
 extern int can_nice(const struct task_struct *p, const int nice);
 extern int task_curr(const struct task_struct *p);

@@ -510,6 +510,9 @@ static int msm_drm_init(struct device *dev, const struct drm_driver *drv)
 		}
 
 		sched_set_fifo(ev_thread->worker->task);
+#ifdef CONFIG_HMBIRD_SCHED
+		hmbird_set_sched_prop(ev_thread->worker->task, SCHED_PROP_DEADLINE_LEVEL3);
+#endif
 	}
 
 	ret = drm_vblank_init(ddev, priv->num_crtcs);

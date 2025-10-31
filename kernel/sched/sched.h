@@ -188,18 +188,13 @@ static inline int idle_policy(int policy)
 	return policy == SCHED_IDLE;
 }
 
-static inline int normal_policy(int policy)
-{
-#ifdef CONFIG_SCHED_CLASS_EXT
-	if (policy == SCHED_EXT)
-		return true;
-#endif
-	return policy == SCHED_NORMAL;
-}
-
 static inline int fair_policy(int policy)
 {
-	return normal_policy(policy) || policy == SCHED_BATCH;
+#ifdef CONFIG_HMBIRD_SCHED
+	return policy == SCHED_HMBIRD || policy == SCHED_NORMAL || policy == SCHED_BATCH;
+#else
+	return policy == SCHED_NORMAL || policy == SCHED_BATCH;
+#endif
 }
 
 static inline int rt_policy(int policy)
@@ -247,25 +242,7 @@ static inline void update_avg(u64 *avg, u64 sample)
 #define shr_bound(val, shift)							\
 	(val >> min_t(typeof(shift), shift, BITS_PER_TYPE(typeof(val)) - 1))
 
-/*
- * cgroup weight knobs should use the common MIN, DFL and MAX values which are
- * 1, 100 and 10000 respectively. While it loses a bit of range on both ends, it
- * maps pretty well onto the shares value used by scheduler and the round-trip
- * conversions preserve the original value over the entire range.
- */
-static inline unsigned long sched_weight_from_cgroup(unsigned long cgrp_weight)
-{
-	return DIV_ROUND_CLOSEST_ULL(cgrp_weight * 1024, CGROUP_WEIGHT_DFL);
-}
-
-static inline unsigned long sched_weight_to_cgroup(unsigned long weight)
-{
-	return clamp_t(unsigned long,
-		       DIV_ROUND_CLOSEST_ULL(weight * CGROUP_WEIGHT_DFL, 1024),
-		       CGROUP_WEIGHT_MIN, CGROUP_WEIGHT_MAX);
-}
-
-/*
+/* 
  * !! For sched_setattr_nocheck() (kernel) only !!
  *
  * This is actually gross. :(
@@ -532,10 +509,12 @@ static inline void set_task_rq_fair(struct sched_entity *se,
 			     struct cfs_rq *prev, struct cfs_rq *next) { }
 #endif /* CONFIG_SMP */
 #else /* CONFIG_FAIR_GROUP_SCHED */
+#ifdef CONFIG_HMBIRD_SCHED
 static inline int sched_group_set_shares(struct task_group *tg, unsigned long shares)
 {
 	return 0;
 }
+#endif
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
 #else /* CONFIG_CGROUP_SCHED */
@@ -699,29 +678,6 @@ struct cfs_rq {
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 };
-
-#ifdef CONFIG_SCHED_CLASS_EXT
-/* scx_rq->flags, protected by the rq lock */
-enum scx_rq_flags {
-	SCX_RQ_CAN_STOP_TICK	= 1 << 0,
-};
-
-struct scx_rq {
-	struct scx_dispatch_q	local_dsq;
-	struct list_head	watchdog_list;
-	u64			ops_qseq;
-	u64			extra_enq_flags;	/* see move_task_to_local_dsq() */
-	u32			nr_running;
-	u32			flags;
-	bool			cpu_released;
-	cpumask_var_t		cpus_to_kick;
-	cpumask_var_t		cpus_to_preempt;
-	cpumask_var_t		cpus_to_wait;
-	u64			pnt_seq;
-	struct irq_work		kick_cpus_irq_work;
-	struct rq               *rq;
-};
-#endif /* CONFIG_SCHED_CLASS_EXT */
 
 static inline int rt_bandwidth_enabled(void)
 {
@@ -1258,11 +1214,7 @@ struct rq {
 
 	ANDROID_OEM_DATA_ARRAY(1, 16);
 
-#ifdef CONFIG_SLIM_SCHED
-	ANDROID_KABI_USE(1, struct scx_rq *scx);
-#else
 	ANDROID_KABI_RESERVE(1);
-#endif
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
@@ -2340,11 +2292,6 @@ struct affinity_context {
 	unsigned int flags;
 };
 
-enum rq_onoff_reason {
-	RQ_ONOFF_HOTPLUG,               /* CPU is going on/offline */
-	RQ_ONOFF_TOPOLOGY,              /* sched domain topology update */
-};
-
 struct sched_class {
 
 #ifdef CONFIG_UCLAMP_TASK
@@ -2551,7 +2498,6 @@ extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
 
 extern void reweight_task(struct task_struct *p, int prio);
-extern void __setscheduler_prio(struct task_struct *p, int prio);
 
 extern void resched_curr(struct rq *rq);
 extern void resched_cpu(int cpu);
@@ -2631,53 +2577,6 @@ static inline void sub_nr_running(struct rq *rq, unsigned count)
 
 extern void activate_task(struct rq *rq, struct task_struct *p, int flags);
 extern void deactivate_task(struct rq *rq, struct task_struct *p, int flags);
-
-struct sched_change_guard {
-	struct task_struct	*p;
-	struct rq		*rq;
-	bool			queued;
-	bool			running;
-	bool			done;
-};
-
-extern struct sched_change_guard
-sched_change_guard_init(struct rq *rq, struct task_struct *p, int flags);
-
-extern void sched_change_guard_fini(struct sched_change_guard *cg, int flags);
-
-/**
- * SCHED_CHANGE_BLOCK - Nested block for task attribute updates
- * @__rq: Runqueue the target task belongs to
- * @__p: Target task
- * @__flags: DEQUEUE/ENQUEUE_* flags
- *
- * A task may need to be dequeued and put_prev_task'd for attribute updates and
- * set_next_task'd and re-enqueued afterwards. This helper defines a nested
- * block which automatically handles these preparation and cleanup operations.
- *
- *  SCHED_CHANGE_BLOCK(rq, p, DEQUEUE_SAVE | DEQUEUE_NOCLOCK) {
- *	  update_attribute(p);
- *        ...
- *  }
- *
- * If @__flags is a variable, the variable may be updated in the block body and
- * the updated value will be used when re-enqueueing @p.
- *
- * If %DEQUEUE_NOCLOCK is specified, the caller is responsible for calling
- * update_rq_clock() beforehand. Otherwise, the rq clock is automatically
- * updated iff the task needs to be dequeued and re-enqueued. Only the former
- * case guarantees that the rq clock is up-to-date inside and after the block.
- */
-#define SCHED_CHANGE_BLOCK(__rq, __p, __flags)					\
-	for (struct sched_change_guard __cg =					\
-			sched_change_guard_init(__rq, __p, __flags);		\
-	     !__cg.done; sched_change_guard_fini(&__cg, __flags))
-
-extern void check_class_changing(struct rq *rq, struct task_struct *p,
-				 const struct sched_class *prev_class);
-extern void check_class_changed(struct rq *rq, struct task_struct *p,
-				const struct sched_class *prev_class,
-				int oldprio);
 
 extern void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags);
 
@@ -3710,6 +3609,8 @@ static inline bool cpu_busy_with_softirqs(int cpu)
 }
 #endif /* CONFIG_RT_SOFTIRQ_AWARE_SCHED */
 
-#include "ext.h"
+#ifdef CONFIG_HMBIRD_SCHED
+#include "hmbird.h"
+#endif
 
 #endif /* _KERNEL_SCHED_SCHED_H */
