@@ -344,7 +344,6 @@ EXPORT_SYMBOL(nr_online_nodes);
 static bool page_contains_unaccepted(struct page *page, unsigned int order);
 static void accept_page(struct page *page, unsigned int order);
 static bool cond_accept_memory(struct zone *zone, unsigned int order);
-static inline bool has_unaccepted_memory(void);
 static bool __free_unaccepted(struct page *page);
 
 int page_group_by_mobility_disabled __read_mostly;
@@ -869,7 +868,10 @@ buddy_merge_likely(unsigned long pfn, unsigned long buddy_pfn,
 
 static int zone_max_order(struct zone *zone)
 {
-	return zone->order && zone_idx(zone) == ZONE_NOMERGE ? zone->order : MAX_ORDER;
+	int max_order = zone->order && zone_idx(zone) == ZONE_NOMERGE ? zone->order : MAX_ORDER;
+
+	trace_android_vh_mm_customize_zone_max_order(zone, &max_order);
+	return max_order;
 }
 
 /*
@@ -3087,6 +3089,8 @@ struct page *rmqueue(struct zone *preferred_zone,
 	 */
 	WARN_ON_ONCE((gfp_flags & __GFP_NOFAIL) && (order > 1));
 
+	trace_android_vh_mm_customize_rmqueue(zone, order, &alloc_flags, &migratetype);
+
 	if (likely(pcp_allowed_order(order))) {
 		page = rmqueue_pcplist(preferred_zone, zone, order,
 				       migratetype, alloc_flags);
@@ -3546,12 +3550,25 @@ retry:
 	z = ac->preferred_zoneref;
 	for_next_zone_zonelist_nodemask(zone, z, ac->highest_zoneidx,
 					ac->nodemask) {
+		bool use_this_zone = false;
+		bool suitable = true;
 		struct page *page;
 		unsigned long mark;
 
 		if (!zone_is_suitable(zone, order))
 			continue;
 
+		trace_android_vh_mm_customize_suitable_zone(zone, gfp_mask, order, ac->highest_zoneidx,
+							    &use_this_zone, &suitable);
+		if (!suitable)
+			continue;
+
+		if (use_this_zone)
+			goto try_this_zone;
+
+		/*
+		 * This hook is deprecated by trace_android_vh_mm_customize_suitable_zone.
+		 */
 		trace_android_vh_should_skip_zone(zone, gfp_mask, order,
 			ac->migratetype, &should_skip_zone);
 		if (should_skip_zone)
@@ -4550,6 +4567,15 @@ restart:
 
 retry:
 	retry_loop_count++;
+
+	/*
+	 * Deal with possible cpuset update races or zonelist updates to avoid
+	 * infinite retries.
+	 */
+	if (check_retry_cpuset(cpuset_mems_cookie, ac) ||
+	    check_retry_zonelist(zonelist_iter_cookie))
+		goto restart;
+
 	/* Ensure kswapd doesn't accidentally go to sleep as long as we loop */
 	if (alloc_flags & ALLOC_KSWAPD)
 		wake_all_kswapds(order, gfp_mask, ac);
@@ -4983,6 +5009,9 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	if (!prepare_alloc_pages(gfp, order, preferred_nid, nodemask, &ac,
 			&alloc_gfp, &alloc_flags))
 		return NULL;
+
+	trace_android_vh_mm_customize_ac(gfp, order, &ac.zonelist, &ac.preferred_zoneref,
+					 &ac.highest_zoneidx, &alloc_flags);
 
 	trace_android_rvh_try_alloc_pages_gfp(&page, order, gfp, gfp_zone(gfp));
 	if (page)
@@ -5943,6 +5972,8 @@ static void zone_set_pageset_high_and_batch(struct zone *zone, int cpu_online)
 	if (zone->pageset_high == new_high &&
 	    zone->pageset_batch == new_batch)
 		return;
+
+	trace_android_vh_mm_customize_zone_pageset(zone, &new_high, &new_batch);
 
 	zone->pageset_high = new_high;
 	zone->pageset_batch = new_batch;
@@ -7200,9 +7231,6 @@ bool has_managed_dma(void)
 
 #ifdef CONFIG_UNACCEPTED_MEMORY
 
-/* Counts number of zones with unaccepted pages. */
-static DEFINE_STATIC_KEY_FALSE(zones_with_unaccepted_pages);
-
 static bool lazy_accept = true;
 
 static int __init accept_memory_parse(char *p)
@@ -7238,7 +7266,6 @@ static bool try_to_accept_memory_one(struct zone *zone)
 {
 	unsigned long flags;
 	struct page *page;
-	bool last;
 
 	spin_lock_irqsave(&zone->lock, flags);
 	page = list_first_entry_or_null(&zone->unaccepted_pages,
@@ -7249,7 +7276,6 @@ static bool try_to_accept_memory_one(struct zone *zone)
 	}
 
 	list_del(&page->lru);
-	last = list_empty(&zone->unaccepted_pages);
 
 	account_freepages(zone, -MAX_ORDER_NR_PAGES, MIGRATE_MOVABLE);
 	__mod_zone_page_state(zone, NR_UNACCEPTED, -MAX_ORDER_NR_PAGES);
@@ -7259,9 +7285,6 @@ static bool try_to_accept_memory_one(struct zone *zone)
 
 	__free_pages_ok(page, MAX_ORDER, FPI_TO_TAIL);
 
-	if (last)
-		static_branch_dec(&zones_with_unaccepted_pages);
-
 	return true;
 }
 
@@ -7269,9 +7292,6 @@ static bool cond_accept_memory(struct zone *zone, unsigned int order)
 {
 	long to_accept, wmark;
 	bool ret = false;
-
-	if (!has_unaccepted_memory())
-		return false;
 
 	if (list_empty(&zone->unaccepted_pages))
 		return false;
@@ -7302,29 +7322,19 @@ static bool cond_accept_memory(struct zone *zone, unsigned int order)
 	return ret;
 }
 
-static inline bool has_unaccepted_memory(void)
-{
-	return static_branch_unlikely(&zones_with_unaccepted_pages);
-}
-
 static bool __free_unaccepted(struct page *page)
 {
 	struct zone *zone = page_zone(page);
 	unsigned long flags;
-	bool first = false;
 
 	if (!lazy_accept)
 		return false;
 
 	spin_lock_irqsave(&zone->lock, flags);
-	first = list_empty(&zone->unaccepted_pages);
 	list_add_tail(&page->lru, &zone->unaccepted_pages);
 	account_freepages(zone, MAX_ORDER_NR_PAGES, MIGRATE_MOVABLE);
 	__mod_zone_page_state(zone, NR_UNACCEPTED, MAX_ORDER_NR_PAGES);
 	spin_unlock_irqrestore(&zone->lock, flags);
-
-	if (first)
-		static_branch_inc(&zones_with_unaccepted_pages);
 
 	return true;
 }
@@ -7341,11 +7351,6 @@ static void accept_page(struct page *page, unsigned int order)
 }
 
 static bool cond_accept_memory(struct zone *zone, unsigned int order)
-{
-	return false;
-}
-
-static inline bool has_unaccepted_memory(void)
 {
 	return false;
 }
