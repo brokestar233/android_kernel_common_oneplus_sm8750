@@ -251,4 +251,6 @@ source "drivers/freq_qos_arbiter/Kconfig"
 
 source "drivers/cpufreq_bouncing/Kconfig"
 
+source "drivers/oplus_omrg/Kconfig"
+
 endmenu
