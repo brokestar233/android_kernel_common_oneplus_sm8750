@@ -204,3 +204,5 @@ obj-$(CONFIG_S390)		+= s390/
 obj-$(CONFIG_IS_STARKERNELL)    += starkernel/
 
 obj-y    						+= freq_qos_arbiter/
+
+obj-y    						+= cpufreq_bouncing/
