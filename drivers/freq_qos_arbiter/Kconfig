@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2025 Oplus. All rights reserved.
+
+config OPLUS_FEATURE_CPU_QOS_ARBITER
+    tristate "Integrate qos requests"
+    default y
+    help
+        Integrate qos requests
+
+config OPLUS_FEATURE_CPU_QOS_ARBITER_TEST
+    tristate "Integrate qos requests test"
+    default n
+    help
+        Integrate qos requests test
