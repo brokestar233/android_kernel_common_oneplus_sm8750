@@ -249,4 +249,6 @@ source "drivers/starkernel/Kconfig"
 
 source "drivers/freq_qos_arbiter/Kconfig"
 
+source "drivers/cpufreq_bouncing/Kconfig"
+
 endmenu

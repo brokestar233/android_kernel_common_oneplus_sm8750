@@ -1,0 +1,12 @@
+config OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING
+	tristate "cpufreq_bouncing"
+	default m
+	select OPLUS_FEATURE_CPU_QOS_ARBITER
+	help
+	  adjust cpu max frequency based on cpu busy duration
+
+config OPLUS_FEATURE_CEILING_FREE
+	tristate "ceiling free"
+	default y
+	help
+	  set cb/omrg max frequency to default when user touch screen.
