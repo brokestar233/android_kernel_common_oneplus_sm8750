@@ -208,3 +208,5 @@ obj-$(CONFIG_IS_STARKERNELL)    += starkernel/
 obj-y    						+= freq_qos_arbiter/
 
 obj-y    						+= cpufreq_bouncing/
+
+obj-y    						+= oplus_omrg/

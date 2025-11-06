@@ -1,0 +1,6 @@
+config OPLUS_OMRG
+  tristate "oplus multiple rail group"
+  default m
+  help
+    manager frequency dependency caused by multiple rail between
+    different cpufreq device and devfreq device
