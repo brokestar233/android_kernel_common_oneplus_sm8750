@@ -247,4 +247,6 @@ source "drivers/auth_ctl/Kconfig"
 
 source "drivers/starkernel/Kconfig"
 
+source "drivers/freq_qos_arbiter/Kconfig"
+
 endmenu
