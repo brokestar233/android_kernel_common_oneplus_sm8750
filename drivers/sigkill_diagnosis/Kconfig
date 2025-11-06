@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2022-2030 Oplus. All rights reserved.
+
+config OPLUS_FEATURE_SIGKILL_DIAGNOSIS
+	tristate "sigkill diagnosis driver"
+	default y
+	help
+	  assist sigkill diagnosis. record kill reason category for athena

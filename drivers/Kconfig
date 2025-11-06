@@ -247,4 +247,6 @@ source "drivers/auth_ctl/Kconfig"
 
 source "drivers/starkernel/Kconfig"
 
+source "drivers/sigkill_diagnosis/Kconfig"
+
 endmenu
