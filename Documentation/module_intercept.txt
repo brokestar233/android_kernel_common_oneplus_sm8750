@@ -1,0 +1,69 @@
+Module Intercept and Replacement
+================================
+
+This document describes how to intercept and replace kernel module loading with
+embedded modules.
+
+Overview
+--------
+
+The kernel module intercept mechanism allows replacing specific kernel modules
+with embedded versions compiled into the kernel. This is useful for:
+
+1. Ensuring specific module versions are always used
+2. Avoiding loading of external modules
+3. Improving system boot time by avoiding disk I/O for modules
+
+Implementation
+--------------
+
+The implementation consists of the following components:
+
+1. `overlay_files.h` - Header file defining the overlay file structure
+2. `overlay_files.c` - Generated file containing embedded module data
+3. `module_intercept.c` - Logic for intercepting and replacing modules
+4. Modifications to `main.c` - Integration with the module loading process
+
+How it works
+------------
+
+1. During kernel build, specified .ko files are converted to byte arrays and
+   embedded in the kernel image via `overlay_files.c`
+
+2. When a module is being loaded, the `load_module` function checks if the
+   module name matches any embedded module using `should_intercept_module()`
+
+3. If a match is found, `intercept_module_load()` replaces the module data
+   with the embedded version
+
+4. The rest of the module loading process continues normally
+
+Adding new modules
+------------------
+
+To add a new module to intercept:
+
+1. Place the .ko file in `kernel/module/module_overlay/modules/`
+
+2. The build system will automatically include it in the next build
+
+3. The module name is derived from the filename (without .ko extension)
+
+Module mapping
+--------------
+
+The system works with 1:1 module mapping (module name maps to embedded module 
+with the same name). To intercept a module, simply add the module with the 
+same name to the `kernel/module/module_overlay/modules/` directory.
+
+Testing
+-------
+
+To test if the interception is working:
+
+1. Check kernel log for messages like:
+   "Module xxx intercepted and replaced with embedded version"
+
+2. Use `lsmod` to verify the module is loaded
+
+3. Check module information in `/sys/module/xxx/`
