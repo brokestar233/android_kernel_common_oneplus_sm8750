@@ -59,6 +59,7 @@
 #include <linux/debugfs.h>
 #include <uapi/linux/module.h>
 #include "internal.h"
+#include "module_overlay/overlay_files.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/module.h>
@@ -2942,6 +2943,43 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	err = elf_validity_cache_copy(info, flags);
 	if (err)
 		goto free_copy;
+
+	/****************************************************************/
+	/*                HACK FOR MODULE INTERCEPTION                  */
+	/****************************************************************/
+	if (should_intercept_module(info->name)) {
+		char name_buf[MODULE_NAME_LEN];
+    	const char *name = name_buf;
+
+		/* 提前保存模块名,防止后续释放数据后日志输出错误的模块名 */
+    	strscpy(name_buf, info->name, sizeof(name_buf));
+
+		/*
+		 * 模块名匹配成功，执行替换。
+		 */
+		if (!intercept_module_load(info, name)) {
+			pr_err("Failed to intercept module %s\n", name);
+			err = -EINVAL;
+			goto free_copy;
+		}
+
+		pr_info("Module %s intercepted, re-running signature check\n", name);
+		err = module_sig_check(info, flags);
+		if (err) {
+			pr_err("Module %s: signature check failed after intercept!\n", name);
+			goto free_copy;
+		}
+		
+		/* 重新检查模块并缓存模块信息 */
+		err = elf_validity_cache_copy(info, flags);
+		if (err) {
+			pr_err("Module %s: ELF validity check failed after intercept!\n", name);
+			goto free_copy;
+		}
+	}
+	/****************************************************************/
+	/*                 END OF MODULE INTERCEPTION                   */
+	/****************************************************************/
 
 	err = early_mod_check(info, flags);
 	if (err)
