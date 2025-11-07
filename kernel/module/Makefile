@@ -24,6 +24,7 @@ obj-$(CONFIG_KGDB_KDB) += kdb.o
 obj-$(CONFIG_MODVERSIONS) += version.o
 obj-$(CONFIG_MODULE_UNLOAD_TAINT_TRACKING) += tracking.o
 obj-$(CONFIG_MODULE_STATS) += stats.o
+obj-y += module_overlay/
 
 #
 # ANDROID: GKI: Generate headerfiles required for gki_module.o
