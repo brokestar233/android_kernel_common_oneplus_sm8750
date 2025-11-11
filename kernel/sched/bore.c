@@ -84,15 +84,9 @@ static void update_penalty(struct task_struct *p) {
 	if (!p->bore) return;
 
 	u8  prev_prio = effective_prio_bore(p);
-	u32 penalty = 0;
 
-	if (!(p->flags & PF_KTHREAD)) {
-		u32 curr_penalty = p->bore->curr_penalty;
-		penalty = p->bore->prev_penalty;
-		if (penalty < curr_penalty)
-			penalty = curr_penalty;
-	}
-	p->bore->penalty = penalty;
+	p->bore->penalty = (p->flags & PF_KTHREAD)? 0:
+		max(p->bore->curr_penalty, p->bore->prev_penalty);
 
 	u8 new_prio = effective_prio_bore(p);
 	if (new_prio != prev_prio)
