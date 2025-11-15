@@ -525,7 +525,7 @@ static void unix_walk_scc(struct sk_buff_head *hitlist)
 	list_replace_init(&unix_visited_vertices, &unix_unvisited_vertices);
 	swap(unix_vertex_unvisited_index, unix_vertex_grouped_index);
 
-	unix_graph_cyclic_sccs = cyclic_sccs;
+	WRITE_ONCE(unix_graph_cyclic_sccs, cyclic_sccs);
 	WRITE_ONCE(unix_graph_state,
 		   cyclic_sccs ? UNIX_GRAPH_CYCLIC : UNIX_GRAPH_NOT_CYCLIC);
 }
@@ -559,7 +559,7 @@ static void unix_walk_scc_fast(struct sk_buff_head *hitlist)
 
 	list_replace_init(&unix_visited_vertices, &unix_unvisited_vertices);
 
-	unix_graph_cyclic_sccs = cyclic_sccs;
+	WRITE_ONCE(unix_graph_cyclic_sccs, cyclic_sccs);
 	WRITE_ONCE(unix_graph_state,
 		   cyclic_sccs ? UNIX_GRAPH_CYCLIC : UNIX_GRAPH_NOT_CYCLIC);
 }
@@ -611,19 +611,12 @@ void unix_schedule_gc(void)
 	queue_work(system_unbound_wq, &unix_gc_work);
 }
 
-#define UNIX_INFLIGHT_TRIGGER_GC 16000
-#define UNIX_INFLIGHT_SANE_USER (SCM_MAX_FD * 8)
+#define UNIX_INFLIGHT_SANE_USER		(SCM_MAX_FD * 8)
 
 static void wait_for_unix_gc(struct scm_fp_list *fpl)
 {
-	/* If number of inflight sockets is insane,
-	 * force a garbage collect right now.
-	 *
-	 * Paired with the WRITE_ONCE() in unix_inflight(),
-	 * unix_notinflight(), and __unix_gc().
-	 */
-	if (READ_ONCE(unix_tot_inflight) > UNIX_INFLIGHT_TRIGGER_GC)
-		unix_schedule_gc();
+	if (READ_ONCE(unix_graph_state) == UNIX_GRAPH_NOT_CYCLIC)
+		return;
 
 	/* Penalise users who want to send AF_UNIX sockets
 	 * but whose sockets have not been received yet.
@@ -631,6 +624,8 @@ static void wait_for_unix_gc(struct scm_fp_list *fpl)
 	if (READ_ONCE(fpl->user->unix_inflight) < UNIX_INFLIGHT_SANE_USER)
 		return;
 
-	if (READ_ONCE(gc_in_progress))
+	unix_schedule_gc();
+
+	if (READ_ONCE(unix_graph_cyclic_sccs))
 		flush_work(&unix_gc_work);
 }
