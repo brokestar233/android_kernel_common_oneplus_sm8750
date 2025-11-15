@@ -189,7 +189,6 @@ static void unix_free_vertices(struct scm_fp_list *fpl)
 }
 
 static DEFINE_SPINLOCK(unix_gc_lock);
-static unsigned int unix_tot_inflight;
 
 void unix_add_edges(struct scm_fp_list *fpl, struct unix_sock *receiver)
 {
@@ -215,7 +214,6 @@ void unix_add_edges(struct scm_fp_list *fpl, struct unix_sock *receiver)
 	} while (i < fpl->count_unix);
 
 	receiver->scm_stat.nr_unix_fds += fpl->count_unix;
-	WRITE_ONCE(unix_tot_inflight, unix_tot_inflight + fpl->count_unix);
 out:
 	WRITE_ONCE(fpl->user->unix_inflight, fpl->user->unix_inflight + fpl->count);
 
@@ -246,7 +244,6 @@ void unix_del_edges(struct scm_fp_list *fpl)
 		receiver = fpl->edges[0].successor;
 		receiver->scm_stat.nr_unix_fds -= fpl->count_unix;
 	}
-	WRITE_ONCE(unix_tot_inflight, unix_tot_inflight - fpl->count_unix);
 out:
 	WRITE_ONCE(fpl->user->unix_inflight, fpl->user->unix_inflight - fpl->count);
 
