@@ -112,8 +112,13 @@ static struct unix_vertex *unix_edge_successor(struct unix_edge *edge)
 	return edge->successor->vertex;
 }
 
-static bool unix_graph_maybe_cyclic;
-static bool unix_graph_grouped;
+enum {
+	UNIX_GRAPH_NOT_CYCLIC,
+	UNIX_GRAPH_MAYBE_CYCLIC,
+	UNIX_GRAPH_CYCLIC,
+};
+
+static unsigned char unix_graph_state;
 
 static void unix_update_graph(struct unix_vertex *vertex)
 {
@@ -123,8 +128,7 @@ static void unix_update_graph(struct unix_vertex *vertex)
 	if (!vertex)
 		return;
 
-	unix_graph_maybe_cyclic = true;
-	unix_graph_grouped = false;
+	WRITE_ONCE(unix_graph_state, UNIX_GRAPH_MAYBE_CYCLIC);
 }
 
 static LIST_HEAD(unix_unvisited_vertices);
@@ -187,7 +191,6 @@ static void unix_free_vertices(struct scm_fp_list *fpl)
 }
 
 static DEFINE_SPINLOCK(unix_gc_lock);
-unsigned int unix_tot_inflight;
 
 void unix_add_edges(struct scm_fp_list *fpl, struct unix_sock *receiver)
 {
@@ -213,7 +216,6 @@ void unix_add_edges(struct scm_fp_list *fpl, struct unix_sock *receiver)
 	} while (i < fpl->count_unix);
 
 	receiver->scm_stat.nr_unix_fds += fpl->count_unix;
-	WRITE_ONCE(unix_tot_inflight, unix_tot_inflight + fpl->count_unix);
 out:
 	WRITE_ONCE(fpl->user->unix_inflight, fpl->user->unix_inflight + fpl->count);
 
@@ -244,7 +246,6 @@ void unix_del_edges(struct scm_fp_list *fpl)
 		receiver = fpl->edges[0].successor;
 		receiver->scm_stat.nr_unix_fds -= fpl->count_unix;
 	}
-	WRITE_ONCE(unix_tot_inflight, unix_tot_inflight - fpl->count_unix);
 out:
 	WRITE_ONCE(fpl->user->unix_inflight, fpl->user->unix_inflight - fpl->count);
 
@@ -289,6 +290,8 @@ int unix_prepare_fpl(struct scm_fp_list *fpl)
 				    GFP_KERNEL_ACCOUNT);
 	if (!fpl->edges)
 		goto err;
+
+	unix_schedule_gc(fpl->user);
 
 	return 0;
 
@@ -395,9 +398,11 @@ static bool unix_scc_cyclic(struct list_head *scc)
 static LIST_HEAD(unix_visited_vertices);
 static unsigned long unix_vertex_grouped_index = UNIX_VERTEX_INDEX_MARK2;
 
-static void __unix_walk_scc(struct unix_vertex *vertex, unsigned long *last_index,
-			    struct sk_buff_head *hitlist)
+static unsigned long __unix_walk_scc(struct unix_vertex *vertex,
+				     unsigned long *last_index,
+				     struct sk_buff_head *hitlist)
 {
+	unsigned long cyclic_sccs = 0;
 	LIST_HEAD(vertex_stack);
 	struct unix_edge *edge;
 	LIST_HEAD(edge_stack);
@@ -488,8 +493,8 @@ prev_vertex:
 			if (unix_vertex_max_scc_index < vertex->scc_index)
 				unix_vertex_max_scc_index = vertex->scc_index;
 
-			if (!unix_graph_maybe_cyclic)
-				unix_graph_maybe_cyclic = unix_scc_cyclic(&scc);
+			if (unix_scc_cyclic(&scc))
+				cyclic_sccs++;
 		}
 
 		list_del(&scc);
@@ -498,13 +503,17 @@ prev_vertex:
 	/* Need backtracking ? */
 	if (!list_empty(&edge_stack))
 		goto prev_vertex;
+
+	return cyclic_sccs;
 }
+
+static unsigned long unix_graph_cyclic_sccs;
 
 static void unix_walk_scc(struct sk_buff_head *hitlist)
 {
 	unsigned long last_index = UNIX_VERTEX_INDEX_START;
+	unsigned long cyclic_sccs = 0;
 
-	unix_graph_maybe_cyclic = false;
 	unix_vertex_max_scc_index = UNIX_VERTEX_INDEX_START;
 
 	/* Visit every vertex exactly once.
@@ -514,18 +523,20 @@ static void unix_walk_scc(struct sk_buff_head *hitlist)
 		struct unix_vertex *vertex;
 
 		vertex = list_first_entry(&unix_unvisited_vertices, typeof(*vertex), entry);
-		__unix_walk_scc(vertex, &last_index, hitlist);
+		cyclic_sccs += __unix_walk_scc(vertex, &last_index, hitlist);
 	}
 
 	list_replace_init(&unix_visited_vertices, &unix_unvisited_vertices);
 	swap(unix_vertex_unvisited_index, unix_vertex_grouped_index);
 
-	unix_graph_grouped = true;
+	WRITE_ONCE(unix_graph_cyclic_sccs, cyclic_sccs);
+	WRITE_ONCE(unix_graph_state,
+		   cyclic_sccs ? UNIX_GRAPH_CYCLIC : UNIX_GRAPH_NOT_CYCLIC);
 }
 
 static void unix_walk_scc_fast(struct sk_buff_head *hitlist)
 {
-	unix_graph_maybe_cyclic = false;
+	unsigned long cyclic_sccs = unix_graph_cyclic_sccs;
 
 	while (!list_empty(&unix_unvisited_vertices)) {
 		struct unix_vertex *vertex;
@@ -542,34 +553,38 @@ static void unix_walk_scc_fast(struct sk_buff_head *hitlist)
 				scc_dead = unix_vertex_dead(vertex);
 		}
 
-		if (scc_dead)
+		if (scc_dead) {
+			cyclic_sccs--;
 			unix_collect_skb(&scc, hitlist);
-		else if (!unix_graph_maybe_cyclic)
-			unix_graph_maybe_cyclic = unix_scc_cyclic(&scc);
+		}
 
 		list_del(&scc);
 	}
 
 	list_replace_init(&unix_visited_vertices, &unix_unvisited_vertices);
+
+	WRITE_ONCE(unix_graph_cyclic_sccs, cyclic_sccs);
+	WRITE_ONCE(unix_graph_state,
+		   cyclic_sccs ? UNIX_GRAPH_CYCLIC : UNIX_GRAPH_NOT_CYCLIC);
 }
 
 static bool gc_in_progress;
 
-static void __unix_gc(struct work_struct *work)
+static void unix_gc(struct work_struct *work)
 {
 	struct sk_buff_head hitlist;
 	struct sk_buff *skb;
 
 	spin_lock(&unix_gc_lock);
 
-	if (!unix_graph_maybe_cyclic) {
+	if (unix_graph_state == UNIX_GRAPH_NOT_CYCLIC) {
 		spin_unlock(&unix_gc_lock);
 		goto skip_gc;
 	}
 
 	__skb_queue_head_init(&hitlist);
 
-	if (unix_graph_grouped)
+	if (unix_graph_state == UNIX_GRAPH_CYCLIC)
 		unix_walk_scc_fast(&hitlist);
 	else
 		unix_walk_scc(&hitlist);
@@ -586,36 +601,27 @@ skip_gc:
 	WRITE_ONCE(gc_in_progress, false);
 }
 
-static DECLARE_WORK(unix_gc_work, __unix_gc);
+static DECLARE_WORK(unix_gc_work, unix_gc);
 
-void unix_gc(void)
+#define UNIX_INFLIGHT_SANE_USER		(SCM_MAX_FD * 8)
+
+void unix_schedule_gc(struct user_struct *user)
 {
-	WRITE_ONCE(gc_in_progress, true);
-	queue_work(system_unbound_wq, &unix_gc_work);
-}
-
-#define UNIX_INFLIGHT_TRIGGER_GC 16000
-#define UNIX_INFLIGHT_SANE_USER (SCM_MAX_FD * 8)
-
-void wait_for_unix_gc(struct scm_fp_list *fpl)
-{
-	/* If number of inflight sockets is insane,
-	 * force a garbage collect right now.
-	 *
-	 * Paired with the WRITE_ONCE() in unix_inflight(),
-	 * unix_notinflight(), and __unix_gc().
-	 */
-	if (READ_ONCE(unix_tot_inflight) > UNIX_INFLIGHT_TRIGGER_GC &&
-	    !READ_ONCE(gc_in_progress))
-		unix_gc();
+	if (READ_ONCE(unix_graph_state) == UNIX_GRAPH_NOT_CYCLIC)
+		return;
 
 	/* Penalise users who want to send AF_UNIX sockets
 	 * but whose sockets have not been received yet.
 	 */
-	if (!fpl || !fpl->count_unix ||
-	    READ_ONCE(fpl->user->unix_inflight) < UNIX_INFLIGHT_SANE_USER)
+	if (user &&
+	    READ_ONCE(user->unix_inflight) < UNIX_INFLIGHT_SANE_USER)
 		return;
 
-	if (READ_ONCE(gc_in_progress))
+	if (!READ_ONCE(gc_in_progress)) {
+		WRITE_ONCE(gc_in_progress, true);
+		queue_work(system_unbound_wq, &unix_gc_work);
+	}
+
+	if (user && READ_ONCE(unix_graph_cyclic_sccs))
 		flush_work(&unix_gc_work);
 }
