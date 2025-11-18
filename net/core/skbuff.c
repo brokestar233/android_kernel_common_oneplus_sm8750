@@ -205,7 +205,7 @@ static void skb_under_panic(struct sk_buff *skb, unsigned int sz, void *addr)
 }
 
 #define NAPI_SKB_CACHE_SIZE	128
-#define NAPI_SKB_CACHE_BULK	16
+#define NAPI_SKB_CACHE_BULK	32
 #define NAPI_SKB_CACHE_HALF	(NAPI_SKB_CACHE_SIZE / 2)
 
 #if PAGE_SIZE == SZ_4K
