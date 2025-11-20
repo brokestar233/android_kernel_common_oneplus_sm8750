@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h>
+#include <linux/zstd.h>
 #include "../internal.h"
 #include "overlay_files.h"
 
@@ -23,7 +24,11 @@ bool should_intercept_module(const char *name)
 bool intercept_module_load(struct load_info *info, const char *name)
 {
     const struct overlay_file *ov;
-    void *new_hdr;
+    void *decompressed_data = NULL;
+    size_t decompressed_size;
+    zstd_dctx *dctx = NULL;
+    void *workspace = NULL;
+    size_t workspace_size;
 
     ov = find_overlay(name);
     if (!ov)
@@ -33,19 +38,46 @@ bool intercept_module_load(struct load_info *info, const char *name)
     vfree(info->hdr);
     info->hdr = NULL;
 
-    /* 分配新缓冲区 */
-    new_hdr = vmalloc(ov->len);
-    if (!new_hdr) {
-        pr_err("module_overlay: vmalloc failed for %s\n", name);
+    /* 初始化zstd解压缩上下文 */
+    workspace_size = zstd_dctx_workspace_bound();
+    workspace = vzalloc(workspace_size);
+    if (!workspace) {
+        pr_err("module_overlay: Failed to allocate workspace for %s\n", name);
         return false;
     }
 
-    memcpy(new_hdr, ov->data, ov->len);
-    info->hdr = new_hdr;
-    info->len = ov->len;
+    dctx = zstd_init_dctx(workspace, workspace_size);
+    if (!dctx) {
+        pr_err("module_overlay: Failed to initialize dctx for %s\n", name);
+        vfree(workspace);
+        return false;
+    }
 
-    pr_info("module_overlay: %s replaced with embedded version (%zu bytes)\n",
-            name, ov->len);
+    /* 分配解压后缓冲区 */
+    decompressed_data = vmalloc(ov->orig_size);
+    if (!decompressed_data) {
+        pr_err("module_overlay: vmalloc failed for decompressed data of %s\n", name);
+        vfree(workspace);
+        return false;
+    }
+
+    /* 解压缩数据 */
+    decompressed_size = zstd_decompress_dctx(dctx, decompressed_data, ov->orig_size, ov->data, ov->len);
+    if (zstd_is_error(decompressed_size)) {
+        pr_err("module_overlay: zstd decompress failed for %s: %zu\n", name, decompressed_size);
+        vfree(decompressed_data);
+        vfree(workspace);
+        return false;
+    }
+
+    vfree(workspace);
+
+    /* 设置解压后的数据 */
+    info->hdr = decompressed_data;
+    info->len = decompressed_size;
+
+    pr_info("module_overlay: %s replaced with embedded version (%zu -> %zu bytes)\n",
+            name, ov->len, decompressed_size);
 
     return true;
 }
