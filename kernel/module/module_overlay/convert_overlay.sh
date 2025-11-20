@@ -11,15 +11,18 @@ overlay_dir="$srctree/../kernel/module/module_overlay/modules"
 cat <<'EOF' > "$out_file"
 #include "overlay_files.h"
 #include <linux/stddef.h>
+#include <linux/zstd.h>
 
 EOF
 
 # === 关联数组存储信息 ===
-declare -A name_map    # name -> array_name
-declare -A count_map   # name -> element_count
+declare -A name_map        # name -> array_name
+declare -A count_map       # name -> element_count
+declare -A orig_size_map   # name -> original_size
 
 # === 临时文件 ===
 tmp_xxd="/tmp/overlay_xxd_$$.c"
+tmp_comp="/tmp/overlay_comp_$$.ko"
 
 # === 处理所有 .ko 文件 ===
 shopt -s nullglob
@@ -33,15 +36,21 @@ for ko in "${ko_files[@]}"; do
     name="${base%.ko}"                    # 去掉 .ko
     array_name="${name//[^a-zA-Z0-9]/_}_data"  # 合法 C 标识符
 
+    # 先获取原始大小
+    orig_size=$(stat -c%s "$ko")
+    
+    # 使用 zstd 进行最大压缩
+    if ! zstd -22 -f "$ko" -o "$tmp_comp"; then
+        echo "zstd compression failed: $ko" >&2
+        continue
+    fi
+
     # 生成字节数组
-    if ! xxd -i "$ko" > "$tmp_xxd.raw" 2>/dev/null; then
+    if ! xxd -i "$tmp_comp" > "$tmp_xxd.raw" 2>/dev/null; then
         echo "xxd failed: $ko" >&2
         continue
     fi
 
-    ### CHANGED START ###
-    # 修复：从 xxd 输出中提取 _len 变量的值作为 count
-    # xxd 的输出包含 "unsigned int ..._len = XXX;"
     len_line=$(grep -E 'unsigned int[[:space:]]+.*_len[[:space:]]*=' "$tmp_xxd.raw")
     count=$(echo "$len_line" | awk -F'=' '{print $2}' | awk -F';' '{print $1}' | tr -d ' ')
 
@@ -51,29 +60,25 @@ for ko in "${ko_files[@]}"; do
         continue
     fi
 
-    # 安全替换：
+    # 替换：
     # 1. 替换数组定义行
     # 2. 转换 0x... 为 0x...U
-    # 3. (修复) 删除 _len 定义行
+    # 3. 删除 _len 定义行
     sed -E \
         -e "s/unsigned char[[:space:]]+([^[]+)[[:space:]]*\[([^]]*)\]/const unsigned char ${array_name}[\2]/" \
         -e 's/0x([0-9a-fA-F]{2})/0x\1U/g' \
         -e 's/-/_/g' \
         -e '/unsigned int[[:space:]]+.*_len[[:space:]]*=/d' \
         "$tmp_xxd.raw" > "$tmp_xxd" || { echo "sed failed: $ko" >&2; rm -f "$tmp_xxd.raw"; continue; }
-    ### CHANGED END ###
 
-    rm -f "$tmp_xxd.raw"
+    rm -f "$tmp_xxd.raw" "$tmp_comp"
 
-    ### CHANGED START ###
-    # 修复：删除旧的、不正确的 count 计算方式
-    # count=$(grep -E '^[[:space:]]+0x[0-9a-fA-F]' "$tmp_xxd" | wc -l)
     ((file_idx++))
-    ### CHANGED END ###
 
     # 记录
     name_map["$name"]="$array_name"
     count_map["$name"]=$count
+    orig_size_map["$name"]=$orig_size
 
     # 追加数组定义到输出文件
     cat "$tmp_xxd" >> "$out_file"
@@ -92,8 +97,9 @@ else
     for name in "${!name_map[@]}"; do
         array_name="${name_map[$name]}"
         count="${count_map[$name]}"
-        printf '    { .name = "%s", .data = %s, .len = %d },\n' \
-               "$name" "$array_name" "$count" >> "$out_file"
+        orig_size="${orig_size_map[$name]}"
+        printf '    { .name = "%s", .data = %s, .len = %d, .orig_size = %d },\n' \
+               "$name" "$array_name" "$count" "$orig_size" >> "$out_file"
     done
 fi
 

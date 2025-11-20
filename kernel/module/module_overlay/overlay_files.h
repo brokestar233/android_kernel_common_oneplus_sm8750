@@ -7,8 +7,9 @@ struct load_info;
 
 struct overlay_file {
     const char *name;           /* 不带 .ko 的模块名 */
-    const unsigned char *data;  /* 原始 .ko 字节流 */
-    size_t len;                 /* 字节长度 */
+    const unsigned char *data;  /* zstd 压缩后的 .ko 字节流 */
+    size_t len;                 /* 压缩后字节长度 */
+    size_t orig_size;           /* 原始大小 */
 };
 
 extern const struct overlay_file overlay_file_list[];
