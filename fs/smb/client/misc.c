@@ -145,6 +145,15 @@ tcon_info_alloc(bool dir_leases_enabled, enum smb3_tcon_ref_trace trace)
 	mutex_init(&ret_buf->fscache_lock);
 #endif
 	trace_smb3_tcon_ref(ret_buf->debug_id, ret_buf->tc_count, trace);
+#ifdef CONFIG_CIFS_DFS_UPCALL
+	INIT_LIST_HEAD(&ret_buf->dfs_ses_list);
+#endif
+	INIT_LIST_HEAD(&ret_buf->pending_opens);
+	INIT_DELAYED_WORK(&ret_buf->query_interfaces,
+			  smb2_query_server_interfaces);
+#ifdef CONFIG_CIFS_DFS_UPCALL
+	INIT_DELAYED_WORK(&ret_buf->dfs_cache_work, dfs_cache_refresh);
+#endif
 
 	return ret_buf;
 }
@@ -251,7 +260,7 @@ free_rsp_buf(int resp_buftype, void *rsp)
 }
 
 /* NB: MID can not be set if treeCon not passed in, in that
-   case it is responsbility of caller to set the mid */
+   case it is responsibility of caller to set the mid */
 void
 header_assemble(struct smb_hdr *buffer, char smb_command /* command */ ,
 		const struct cifs_tcon *treeCon, int word_count
