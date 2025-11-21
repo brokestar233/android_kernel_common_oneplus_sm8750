@@ -2759,7 +2759,15 @@ static void stable_tree_append(struct rmap_item *rmap_item,
 node_vma_new:
 	/* no same vma already in node, alloc a new node_vma */
 	new_node_vma = alloc_node_vma();
-	BUG_ON(!new_node_vma);
+	/*
+	 * Fail to allocate node_vma may cause merging ratio decrease,
+	 * but it can be recovered later when memory is available.
+	 * We should not trigger BUG_ON in such situation.
+	 */
+	if (!new_node_vma) {
+		/* Skip appending this rmap_item to stable_node */
+		return;
+	}
 	new_node_vma->head = stable_node;
 	new_node_vma->slot = rmap_item->slot;
 
