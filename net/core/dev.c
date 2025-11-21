@@ -3945,6 +3945,7 @@ no_lock_out:
 
 		llist_for_each_entry_safe(skb, next, ll_list, ll_node) {
 			prefetch(next);
+			prefetch(&next->priority);
 			skb_mark_not_on_list(skb);
 			rc = dev_qdisc_enqueue(skb, q, &to_free, txq);
 			count++;
