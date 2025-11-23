@@ -203,7 +203,7 @@ obj-$(CONFIG_S390)		+= s390/
 
 obj-$(CONFIG_AUTHORITY_CTRL)		+= auth_ctl/
 
-obj-$(CONFIG_IS_STARKERNELL)    += starkernel/
+obj-y    += starkernel/
 
 obj-y    						+= freq_qos_arbiter/
 
