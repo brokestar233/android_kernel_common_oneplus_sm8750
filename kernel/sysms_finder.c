@@ -7,29 +7,10 @@
 
 #include <linux/sysms_finder.h>
 
-enum {
-	SYMBOL_GAME_PID,
-	NR_SYMBOLS,
-};
-
-struct symbol_entry {
-	const char *name;
-	unsigned long addr;
-	bool found;
-};
-
-static struct symbol_entry symbols_status[NR_SYMBOLS] = {
-	[SYMBOL_GAME_PID] = {
-		.name = "game_pid",
-		.addr = 0,
-		.found = false,
-	},
-};
-
-static bool lookup_symbol(int symbol_index)
+unsigned long lookup_symbol(int symbol_index)
 {
 	if (symbol_index >= NR_SYMBOLS)
-		return false;
+		return 0;
 
 	if (!symbols_status[symbol_index].found) {
 		symbols_status[symbol_index].addr = kallsyms_lookup_name(symbols_status[symbol_index].name);
@@ -38,10 +19,11 @@ static bool lookup_symbol(int symbol_index)
 			printk(KERN_INFO "sysms_finder: %s found\n", symbols_status[symbol_index].name);
 		} else {
 			printk(KERN_ERR "sysms_finder: Error looking up %s\n", symbols_status[symbol_index].name);
+			return 0;
 		}
 	}
 
-	return symbols_status[symbol_index].found;
+	return symbols_status[symbol_index].addr;
 }
 
 bool check_game_pid(void)
@@ -49,11 +31,13 @@ bool check_game_pid(void)
 	bool result = true;
 	pid_t *var_ptr;
 	pid_t game_pid;
+	unsigned long addr;
 
-	if (!lookup_symbol(SYMBOL_GAME_PID))
+	addr = lookup_symbol(SYMBOL_GAME_PID);
+	if (!addr)
 		return result;
 
-	var_ptr = (pid_t *)symbols_status[SYMBOL_GAME_PID].addr;
+	var_ptr = (pid_t *)addr;
 	game_pid = *var_ptr;
 
 	if (game_pid != -1) {
