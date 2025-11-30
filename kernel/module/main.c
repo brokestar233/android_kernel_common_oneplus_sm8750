@@ -2957,10 +2957,18 @@ static int load_module(struct load_info *info, const char __user *uargs,
 		/*
 		 * 模块名匹配成功，执行替换。
 		 */
-		if (!intercept_module_load(info, name)) {
+		switch (intercept_module_load(info, name)) {
+		case INTERCEPT_STATUS_SUCCESS:
+			break;
+		case INTERCEPT_STATUS_ERROR:
 			pr_err("Failed to intercept module %s\n", name);
 			err = -EINVAL;
 			goto free_copy;
+		case INTERCEPT_STATUS_SKIP:
+			pr_info("Skipped intercepting module %s\n", name);
+			goto skip_intercept;
+		default:
+			BUG();
 		}
 
 		pr_info("Module %s intercepted, re-running signature check\n", name);
@@ -2981,6 +2989,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	/*                 END OF MODULE INTERCEPTION                   */
 	/****************************************************************/
 
+skip_intercept:
 	err = early_mod_check(info, flags);
 	if (err)
 		goto free_copy;
