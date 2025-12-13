@@ -289,7 +289,7 @@ int unix_prepare_fpl(struct scm_fp_list *fpl)
 	if (!fpl->edges)
 		goto err;
 
-	unix_schedule_gc(fpl->user);
+	unix_schedule_gc();
 
 	return 0;
 
@@ -608,7 +608,7 @@ void unix_schedule_gc(void)
 
 #define UNIX_INFLIGHT_SANE_USER		(SCM_MAX_FD * 8)
 
-static void wait_for_unix_gc(struct scm_fp_list *fpl)
+static void __maybe_unused wait_for_unix_gc(struct scm_fp_list *fpl)
 {
 	if (READ_ONCE(unix_graph_state) == UNIX_GRAPH_NOT_CYCLIC)
 		return;
@@ -616,15 +616,15 @@ static void wait_for_unix_gc(struct scm_fp_list *fpl)
 	/* Penalise users who want to send AF_UNIX sockets
 	 * but whose sockets have not been received yet.
 	 */
-	if (user &&
-	    READ_ONCE(user->unix_inflight) < UNIX_INFLIGHT_SANE_USER)
+	if (fpl->user &&
+	    READ_ONCE(fpl->user->unix_inflight) < UNIX_INFLIGHT_SANE_USER)
 		return;
 
 	if (!READ_ONCE(gc_in_progress)) {
 		WRITE_ONCE(gc_in_progress, true);
-		queue_work(system_dfl_wq, &unix_gc_work);
+		queue_work(system_unbound_wq, &unix_gc_work);
 	}
 
-	if (user && READ_ONCE(unix_graph_cyclic_sccs))
+	if (fpl->user && READ_ONCE(unix_graph_cyclic_sccs))
 		flush_work(&unix_gc_work);
 }
