@@ -7,13 +7,13 @@
 
 #include <linux/jump_label.h>
 #include <linux/kprobes.h>
-#include <linux/wordpart.h>
 
 #include <asm/cacheflush.h>
 #include <asm/compiler.h>
 #include <asm/insn.h>
 #include <asm/kprobes.h>
-#include <asm/text-patching.h>
+#include <asm/patching.h>
+#include "decode-insn.h"
 
 #define OPTPROBE_BATCH_SIZE 64
 
@@ -37,6 +37,11 @@ void *alloc_optinsn_page(void)
 {
 	int i;
 
+	/*
+	 * This returns pre-allocated text page so that it is allocated enough near
+	 * from the code. Thus it would be within the area that can be jumped by
+	 * 26bit PC-relative branch.
+	 */
 	for (i = 0; i < OPT_INSN_PAGES; i++) {
 		if (!insn_page_in_use[i]) {
 			insn_page_in_use[i] = true;
@@ -78,6 +83,10 @@ int arch_within_optimized_kprobe(struct optimized_kprobe *op, kprobe_opcode_t *a
 	return op->kp.addr == addr;
 }
 
+/*
+ * Since the aarch64 optprobe will use a PC-relative 26bit immediate jump,
+ * the jump offset must be in (-128MB, +128MB] range. (2^26*2^2 = 2^28)
+ */
 static int optprobe_check_branch_limit(unsigned long pc, unsigned long addr)
 {
 	long offset;
@@ -94,26 +103,46 @@ static int optprobe_check_branch_limit(unsigned long pc, unsigned long addr)
 
 int arch_prepare_optimized_kprobe(struct optimized_kprobe *op, struct kprobe *orig)
 {
-	kprobe_opcode_t *code, *buf;
+	kprobe_opcode_t *buf __free(kfree) = NULL;
+	kprobe_opcode_t *code;
 	int ret = -ENOMEM;
 	u32 insn;
 	int i;
+
+	/* Check if the instruction can be probed before doing anything */
+	switch (arm_kprobe_decode_insn(orig->addr, &op->kp.ainsn)) {
+	case INSN_REJECTED:
+		/* Don't try to optimize instructions that can't be handled */
+		return -EINVAL;
+	case INSN_GOOD_NO_SLOT:
+		/* Instructions that don't use insn slot can't be optimized */
+		return -EINVAL;
+	default:
+		break;
+	}
 
 	buf = kzalloc(MAX_OPTINSN_SIZE, GFP_KERNEL);
 	if (!buf)
 		return ret;
 
+	/*
+	 * On aarch64, optprobe uses b.imm26 branch code to pre-allocated trampoline area
+	 * thus the num
+	 */
 	code = get_optinsn_slot();
-	if (!code)
+	if (!code) {
+		ret = -EBUSY;
 		goto out;
-
-	if (optprobe_check_branch_limit((unsigned long)code, (unsigned long)orig->addr + 8)) {
-		ret = -ERANGE;
-		goto error;
 	}
+
+	ret = optprobe_check_branch_limit((unsigned long)code, (unsigned long)orig->addr + 8);
+
+	if (ret)
+		goto error;
 
 	memcpy(buf, optprobe_template_entry, MAX_OPTINSN_SIZE);
 
+	/* Inject a branch with link (function call) from trampoline to callback. */
 	insn = aarch64_insn_gen_branch_imm((unsigned long)&code[TMPL_CALL_COMMON],
 					   (unsigned long)&optprobe_common,
 					   AARCH64_INSN_BRANCH_LINK);
@@ -124,13 +153,16 @@ int arch_prepare_optimized_kprobe(struct optimized_kprobe *op, struct kprobe *or
 
 	buf[TMPL_CALL_COMMON] = insn;
 
+	/* Inject a branch (jump back) from trampoline to the next of probed insn. */
 	insn = aarch64_insn_gen_branch_imm((unsigned long)&code[TMPL_RESTORE_END],
-					   (unsigned long)(op->kp.addr + 1),
+					   (unsigned long)op->kp.addr + AARCH64_INSN_SIZE,
 					   AARCH64_INSN_BRANCH_NOLINK);
-	if (insn == AARCH64_BREAK_FAULT) {
-		ret = -ERANGE;
-		goto error;
-	}
+	/*
+	 * Since we've already checked the range, this should not happen.
+	 * But if it does, let's WARN_ON_ONCE for debugging.
+	 */
+	if (WARN_ON_ONCE(insn == AARCH64_BREAK_FAULT))
+		insn = AARCH64_BREAK_FAULT;
 
 	buf[TMPL_RESTORE_END] = insn;
 
@@ -166,6 +198,8 @@ void arch_optimize_kprobes(struct list_head *oplist)
 	int i = 0;
 
 	list_for_each_entry_safe(op, tmp, oplist, list) {
+		u32 insn;
+
 		WARN_ON(kprobe_disabled(&op->kp));
 
 		/*
@@ -175,9 +209,13 @@ void arch_optimize_kprobes(struct list_head *oplist)
 		memcpy(op->optinsn.orig_insn, op->kp.addr, AARCH64_INSN_SIZE);
 
 		addrs[i] = op->kp.addr;
-		insns[i] = aarch64_insn_gen_branch_imm((unsigned long)op->kp.addr,
-						       (unsigned long)op->optinsn.trampoline,
-						       AARCH64_INSN_BRANCH_NOLINK);
+		insn = aarch64_insn_gen_branch_imm((unsigned long)op->kp.addr,
+						   (unsigned long)op->optinsn.trampoline,
+						   AARCH64_INSN_BRANCH_NOLINK);
+		if (insn == AARCH64_BREAK_FAULT)
+			goto error;
+
+		insns[i] = insn;
 
 		list_del_init(&op->list);
 		if (++i == OPTPROBE_BATCH_SIZE)
@@ -185,6 +223,17 @@ void arch_optimize_kprobes(struct list_head *oplist)
 	}
 
 	aarch64_insn_patch_text(addrs, insns, i);
+	return;
+
+error:
+	/*
+	 * On error, recover the instructions inserted in the previous loop
+	 * because arch_unoptimize_kprobes() won't be called.
+	 */
+	if (i > 0) {
+		for (i--; i >= 0; i--)
+			aarch64_insn_patch_text(&addrs[i], op->optinsn.orig_insn, 1);
+	}
 }
 
 void arch_unoptimize_kprobe(struct optimized_kprobe *op)
@@ -225,12 +274,12 @@ void arch_remove_optimized_kprobe(struct optimized_kprobe *op)
 
 }
 
-void optprobe_optimized_callback(struct optimized_kprobe *op, struct pt_regs *regs)
+asmlinkage void optprobe_optimized_callback(struct optimized_kprobe *op, struct pt_regs *regs)
 {
 	if (kprobe_disabled(&op->kp))
 		return;
 
-	guard(preempt)();
+	preempt_disable();
 
 	if (kprobe_running()) {
 		kprobes_inc_nmissed_count(&op->kp);
@@ -240,5 +289,7 @@ void optprobe_optimized_callback(struct optimized_kprobe *op, struct pt_regs *re
 		opt_pre_handler(&op->kp, regs);
 		__this_cpu_write(current_kprobe, NULL);
 	}
+
+	preempt_enable();
 }
 NOKPROBE_SYMBOL(optprobe_optimized_callback)

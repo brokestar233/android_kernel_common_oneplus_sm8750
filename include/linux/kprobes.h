@@ -370,6 +370,9 @@ extern int arch_within_optimized_kprobe(struct optimized_kprobe *op,
 
 extern void opt_pre_handler(struct kprobe *p, struct pt_regs *regs);
 
+asmlinkage void optprobe_optimized_callback(struct optimized_kprobe *op,
+					   struct pt_regs *regs);
+
 DEFINE_INSN_CACHE_OPS(optinsn);
 
 extern void wait_for_kprobe_optimizer(void);
