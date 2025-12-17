@@ -78,8 +78,8 @@ struct zram_table_entry {
 
 #ifdef CONFIG_ZRAM_WRITEBACK
 struct zram_shrink_ctx {
-    struct zram *zram;
-    bool *encountered_in_swapcache;
+	struct zram *zram;
+	struct zram_pp_ctl *ctl;
 };
 #endif
 
