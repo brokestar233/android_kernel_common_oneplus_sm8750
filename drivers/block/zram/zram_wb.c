@@ -8,12 +8,17 @@
 #include <linux/kthread.h>
 #include <linux/wait.h>
 #include <linux/freezer.h>
+#include <linux/blkdev.h>
 
 #include "zram_wb.h"
 
 static struct task_struct *wb_thread;
 static DECLARE_WAIT_QUEUE_HEAD(wb_wq);
 static struct zram_wb_request_list wb_req_list;
+static struct bio_set zram_wb_bs;
+
+#define bio_to_zram_wb_request(bio) \
+	((struct zram_wb_request *)bio_data(bio))
 
 unsigned long alloc_block_bdev(struct zram *zram)
 {
@@ -165,8 +170,7 @@ static int wb_thread_func(void *data)
 
 static void zram_writeback_end_io(struct bio *bio)
 {
-	struct zram_wb_request *req =
-		(struct zram_wb_request *)bio->bi_private;
+	struct zram_wb_request *req = bio_to_zram_wb_request(bio);
 
 	enqueue_wb_request(&wb_req_list, req);
 	wake_up(&wb_wq);
@@ -186,17 +190,14 @@ struct zram_wb_request *alloc_wb_request(struct zram *zram,
 	if (!page)
 		return ERR_PTR(-ENOMEM);
 
-	bio = bio_alloc(zram->bdev, 1, REQ_OP_WRITE, GFP_NOIO | __GFP_NOWARN);
+	bio = bio_alloc_bioset(zram->bdev, 1, REQ_OP_WRITE, GFP_NOIO | __GFP_NOWARN,
+			       &zram_wb_bs);
 	if (!bio) {
 		err = -ENOMEM;
 		goto out_free_page;
 	}
 
-	req = kmalloc(sizeof(struct zram_wb_request), GFP_NOIO | __GFP_NOWARN);
-	if (!req) {
-		err = -ENOMEM;
-		goto out_free_bio;
-	}
+	req = bio_to_zram_wb_request(bio);
 	req->zram = zram;
 	req->pps = pps;
 	req->ppctl = ppctl;
@@ -205,12 +206,9 @@ struct zram_wb_request *alloc_wb_request(struct zram *zram,
 
 	bio->bi_iter.bi_sector = blk_idx * (PAGE_SIZE >> 9);
 	__bio_add_page(bio, page, PAGE_SIZE, 0);
-	bio->bi_private = req;
 	bio->bi_end_io = zram_writeback_end_io;
 	return req;
 
-out_free_bio:
-	bio_put(bio);
 out_free_page:
 	__free_page(page);
 	return ERR_PTR(err);
@@ -223,11 +221,15 @@ void free_wb_request(struct zram_wb_request *req)
 
 	__free_page(page);
 	bio_put(bio);
-	kfree(req);
 }
 
 int setup_zram_writeback(void)
 {
+	if (bioset_init(&zram_wb_bs, 1, sizeof(struct zram_wb_request), BIOSET_NEED_BVECS)) {
+		pr_err("Unable to init zram_wb_bs\n");
+		return -1;
+	}
+
 	spin_lock_init(&wb_req_list.lock);
 	INIT_LIST_HEAD(&wb_req_list.head);
 	wb_req_list.count = 0;
@@ -235,6 +237,7 @@ int setup_zram_writeback(void)
 	wb_thread = kthread_run(wb_thread_func, NULL, "zram_wb_thread");
 	if (IS_ERR(wb_thread)) {
 		pr_err("Unable to create zram_wb_thread\n");
+		bioset_exit(&zram_wb_bs); 
 		return -1;
 	}
 	return 0;
@@ -244,5 +247,5 @@ void destroy_zram_writeback(void)
 {
 	kthread_stop(wb_thread);
 	destroy_wb_request_list(&wb_req_list);
+	bioset_exit(&zram_wb_bs);
 }
-
