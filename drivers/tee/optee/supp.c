@@ -115,7 +115,6 @@ u32 optee_supp_thrd_req(struct tee_context *ctx, u32 func, size_t num_params,
 	 */
 	while (wait_for_completion_interruptible(&req->c)) {
 		mutex_lock(&supp->mutex);
-
 		interruptable = !supp->ctx;
 		if (interruptable) {
 			/*

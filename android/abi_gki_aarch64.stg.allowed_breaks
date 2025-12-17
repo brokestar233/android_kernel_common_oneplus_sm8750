@@ -265,4 +265,12 @@ type 'struct mm_struct' changed
 
 type 'struct files_struct' changed
   member 'struct task_dma_buf_info* dmabuf_info' was added
+type 'enum bpf_reg_type' changed
+  enumerator '__BPF_REG_TYPE_LIMIT' value changed from 33554431 to 67108863
+
+type 'enum bpf_return_type' changed
+  enumerator '__BPF_RET_TYPE_LIMIT' value changed from 33554431 to 67108863
+
+type 'enum bpf_arg_type' changed
+  enumerator '__BPF_ARG_TYPE_LIMIT' value changed from 33554431 to 67108863
 
