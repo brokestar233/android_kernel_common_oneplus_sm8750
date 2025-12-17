@@ -3238,7 +3238,6 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
     struct zram_pp_ctl *ctl = ctx->ctl;
     enum lru_status ret = LRU_REMOVED_RETRY;
     u32 index;
-    struct zram_pp_slot *pps = NULL;
 
     /* 第二次机会算法:如果entry被引用过,给它第二次机会 */
     if (entry->referenced) {
@@ -3260,23 +3259,12 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
     /* 获取entry的索引 */
     index = entry - zram->table;
     
-    /* 分配pp slot(在持锁前分配以减少锁持有时间) */
-    pps = kmalloc(sizeof(*pps), GFP_ATOMIC);
-    if (!pps) {
-        ret = LRU_RETRY;
-        goto relock;
-    }
-    
-    INIT_LIST_HEAD(&pps->entry);
-    pps->index = index;
-    
     /* 获取zram slot锁进行状态检查和标记 */
     zram_slot_lock(zram, index);
     
     /* 检查页面是否仍然有效 */
     if (!zram_allocated(zram, index)) {
         zram_slot_unlock(zram, index);
-        kfree(pps);
         ret = LRU_SKIP;
         goto relock;
     }
@@ -3285,7 +3273,6 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
     if (zram_test_flag(zram, index, ZRAM_PP_SLOT) ||
         zram_test_flag(zram, index, ZRAM_WB)) {
         zram_slot_unlock(zram, index);
-        kfree(pps);
         ret = LRU_SKIP;
         goto relock;
     }
@@ -3293,8 +3280,13 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
     /* 设置PP_SLOT标志(持锁状态下) */
     zram_set_flag(zram, index, ZRAM_PP_SLOT);
     
-    /* 添加到pp slot进行批量处理(持锁状态下获取对象大小) */
-    place_pp_slot(zram, ctl, pps);
+    /* 添加到pp slot进行批量处理 */
+    if (!place_pp_slot(zram, ctl, index)) {
+        zram_clear_flag(zram, index, ZRAM_PP_SLOT);
+        zram_slot_unlock(zram, index);
+        ret = LRU_RETRY;
+        goto relock;
+    }
     
     /* 释放zram slot锁 */
     zram_slot_unlock(zram, index);
@@ -3353,7 +3345,6 @@ static unsigned long zram_shrinker_scan(struct shrinker *shrinker, struct shrink
 	unsigned long shrink_ret;
 	unsigned long pages_written = 0;
 	struct zram_pp_ctl *ctl = NULL;
-	struct zram_pp_slot *pps;
 	struct zram_shrink_ctx ctx = {
 		.zram = zram,
 	};
