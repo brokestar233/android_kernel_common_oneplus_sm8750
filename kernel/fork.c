@@ -1005,7 +1005,7 @@ void __put_task_struct(struct task_struct *tsk)
 	WARN_ON(tsk == current);
 
 	trace_android_vh_put_task(tsk);
-	put_dmabuf_info(tsk);
+	put_dmabuf_info(tsk->dmabuf_info);
 #ifdef CONFIG_HMBIRD_SCHED
 	hmbird_free(tsk);
 #endif
@@ -1393,6 +1393,7 @@ static inline void __mmput(struct mm_struct *mm)
 	exit_mmap(mm);
 	mm_put_huge_zero_page(mm);
 	set_mm_exe_file(mm, NULL);
+	put_dmabuf_info(mm->dmabuf_info);
 	if (!list_empty(&mm->mmlist)) {
 		spin_lock(&mmlist_lock);
 		list_del(&mm->mmlist);
@@ -1727,6 +1728,7 @@ static struct mm_struct *dup_mm(struct task_struct *tsk,
 		goto fail_nomem;
 
 	memcpy(mm, oldmm, sizeof(*mm));
+	mm->dmabuf_info = NULL;
 
 	if (!mm_init(mm, tsk, mm->user_ns))
 		goto fail_nomem;
@@ -2803,7 +2805,7 @@ bad_fork_cancel_cgroup:
 	write_unlock_irq(&tasklist_lock);
 	cgroup_cancel_fork(p, args);
 bad_fork_cleanup_dmabuf:
-	put_dmabuf_info(p);
+	put_dmabuf_info(p->dmabuf_info);
 bad_fork_put_pidfd:
 	if (clone_flags & CLONE_PIDFD) {
 		fput(pidfile);
@@ -3595,6 +3597,17 @@ int unshare_files(void)
 	old = task->files;
 	task_lock(task);
 	task->files = copy;
+
+	/*
+	 * This is a new partial sharing relationship for task, since we have a new
+	 * files_struct (but the MM is still used). Since partial sharing is not
+	 * supported for dmabuf accounting, we need to remove the accounting info
+	 * from the task. Leave the mm->dmabuf_info so any existing accounting can
+	 * be unaccounted properly. The fixup for this new files_struct happens
+	 * externally with appropriate locking.
+	 */
+	put_dmabuf_info(task->dmabuf_info);
+	task->dmabuf_info = NULL;
 	task_unlock(task);
 	put_files_struct(old);
 	return 0;

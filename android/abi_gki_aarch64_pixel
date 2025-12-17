@@ -2726,6 +2726,7 @@
   __traceiter_android_vh_swap_writepage
   __traceiter_android_vh_sysrq_crash
   __traceiter_android_vh_timerfd_create
+  __traceiter_android_vh_try_to_freeze_todo_logging
   __traceiter_android_vh_tune_swappiness
   __traceiter_android_vh_typec_store_partner_src_caps
   __traceiter_android_vh_typec_tcpm_log
@@ -2743,6 +2744,7 @@
   __traceiter_android_vh_usb_dev_resume
   __traceiter_android_vh_use_amu_fie
   __traceiter_android_vh_xhci_full_reset_on_remove
+  __traceiter_android_rvh_gup_longterm_locked
   __traceiter_clock_set_rate
   __traceiter_cma_alloc_finish
   __traceiter_cma_alloc_start
@@ -2872,6 +2874,7 @@
   __tracepoint_android_vh_swap_writepage
   __tracepoint_android_vh_sysrq_crash
   __tracepoint_android_vh_timerfd_create
+  __tracepoint_android_vh_try_to_freeze_todo_logging
   __tracepoint_android_vh_tune_swappiness
   __tracepoint_android_vh_typec_store_partner_src_caps
   __tracepoint_android_vh_typec_tcpm_log
@@ -2889,6 +2892,7 @@
   __tracepoint_android_vh_usb_dev_resume
   __tracepoint_android_vh_use_amu_fie
   __tracepoint_android_vh_xhci_full_reset_on_remove
+  __tracepoint_android_rvh_gup_longterm_locked
   __tracepoint_clock_set_rate
   __tracepoint_cma_alloc_finish
   __tracepoint_cma_alloc_start
