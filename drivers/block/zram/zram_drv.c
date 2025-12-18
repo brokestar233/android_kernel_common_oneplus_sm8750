@@ -57,7 +57,7 @@
 #define CHECK_INTERVAL (30 * HZ) // 每30秒检查一次
 #define MEM_THRESHOLD 80
 
-static u64 batch_size = 512;
+static u64 batch_size = 768;
 
 static struct task_struct *monitor_thread;
 
@@ -3215,7 +3215,7 @@ static int monitor_func(void *data)
 		exec_count++;
 		if (exec_count == 10) {
 			combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_usage, avg_zram_usage, 50ULL, 200ULL);
-			batch_size = div64_ul(512 * combined_pressure_factor_percent, 100ULL);
+			batch_size = div64_ul(768 * combined_pressure_factor_percent, 100ULL);
 			pr_info("combined_pressure_factor_percent=%llu, batch_size=%llu\n", combined_pressure_factor_percent, batch_size);
 			exec_count = 0;
 		}
@@ -3411,7 +3411,7 @@ static void zram_init_shrinker(struct zram *zram)
 
 	shrinker->count_objects = zram_shrinker_count;
 	shrinker->scan_objects = zram_shrinker_scan;
-	shrinker->batch = 512;
+	shrinker->batch = 768;
 	shrinker->seeks = DEFAULT_SEEKS;
 	shrinker->private_data = zram;
 	
