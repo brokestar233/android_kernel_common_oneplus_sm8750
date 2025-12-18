@@ -2898,7 +2898,7 @@ bad_fork_free:
 	WRITE_ONCE(p->__state, TASK_DEAD);
 	exit_task_stack_account(p);
 	put_task_stack(p);
-	delayed_free_task(p);
+	put_task_struct(p);
 fork_out:
 	spin_lock_irq(&current->sighand->siglock);
 	hlist_del_init(&delayed.node);
