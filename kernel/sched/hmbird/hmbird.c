@@ -3277,6 +3277,9 @@ void hmbird_cancel_fork(struct task_struct *p)
 
 void hmbird_free(struct task_struct *p)
 {
+	if (!get_hmbird_ts(p))
+		return;
+
 	unsigned long flags;
 
 	spin_lock_irqsave(&hmbird_tasks_lock, flags);
