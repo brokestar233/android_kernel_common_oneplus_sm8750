@@ -6,5 +6,3 @@ obj-$(CONFIG_UPROBES)		+= uprobes.o decode-insn.o	\
 				   simulate-insn.o
 obj-$(CONFIG_OPTPROBES)	+= opt_arm64.o			\
 				   optprobe_trampoline.o
-
-ccflags-y += -Wno-declaration-after-statement
