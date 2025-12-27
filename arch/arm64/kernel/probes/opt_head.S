@@ -5,10 +5,10 @@
 #include <asm/asm-offsets.h>
 #include <asm/assembler.h>
 #include "base_regs.h"
-	.align 2
+	.align 12
 	.global optinsn_slot
 	optinsn_slot:
-	.space  4096
+	.space  65536
 	.global optprobe_template_entry
 	optprobe_template_entry:
 
