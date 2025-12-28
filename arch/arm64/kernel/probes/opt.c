@@ -27,22 +27,19 @@
 	- (kprobe_opcode_t *)&optprobe_template_entry)
 
 
-#define MAX_OPTINSN_PAGES 16  /* 64KB / 4KB(PAGE_SIZE) = 16页 */
-static int optinsn_pages_allocated = 0;
+static bool optinsn_page_in_use;
 
 void *alloc_optinsn_page(void)
 {
-    /* 如果已经分配了超过16页，就停止分配 */
-	if (optinsn_pages_allocated >= MAX_OPTINSN_PAGES)
+	if (optinsn_page_in_use)
 		return NULL;
-
-    /* 每次返回 &optinsn_slot 起始地址 + 偏移量 */
-	return (void *)((unsigned long)&optinsn_slot + (optinsn_pages_allocated++ * PAGE_SIZE));
+	optinsn_page_in_use = true;
+	return &optinsn_slot;
 }
 
 void free_optinsn_page(void *page __maybe_unused)
 {
-	return;
+	optinsn_page_in_use = false;
 }
 
 int arch_prepared_optinsn(struct arch_optimized_insn *optinsn)
