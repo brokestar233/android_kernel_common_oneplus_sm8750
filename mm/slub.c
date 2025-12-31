@@ -430,28 +430,7 @@ static inline void set_freepointer(struct kmem_cache *s, void *object, void *fp)
 	unsigned long freeptr_addr = (unsigned long)object + s->offset;
 
 #ifdef CONFIG_SLAB_FREELIST_HARDENED
-    /*
-	 * 将 BUG_ON 替换为 WARN 逻辑。
-     * 如果 object == fp，说明发生了 Double Free 或者内存被篡改成了对象地址本身。
-     */
-    if (unlikely(object == fp)) {
-        pr_err("==================================================================\n");
-        WARN(1, "SLUB: Double free or corruption detected in %s at %p\n", s->name, object);
-        
-        /* Dump 整个对象的内存内容，帮助分析是谁篡改了这里 */
-        pr_err("Object dump at %p (size %u):\n", object, s->object_size);
-        print_hex_dump(KERN_ERR, "  data: ", DUMP_PREFIX_OFFSET, 16, 1,
-                       object, s->object_size, true);
-        
-        pr_err("==================================================================\n");
-        
-        /*
-		 * 关键点：直接返回，不执行下面的写入操作。
-         * 如果执行写入，freelist 会变成死循环（A -> A），导致系统彻底卡死。
-         * 这样做虽然会导致一个对象的内存泄漏，但能保住内核不挂。
-         */
-        return;
-    }
+	BUG_ON(object == fp); /* naive detection of double free or corruption */
 #endif
 
 	freeptr_addr = (unsigned long)kasan_reset_tag((void *)freeptr_addr);
