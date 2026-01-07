@@ -1275,7 +1275,8 @@ loop_set_status(struct loop_device *lo, blk_mode_t mode,
 
 	err = mutex_lock_killable(&lo->lo_mutex);
 	if (err)
-		return err;
+		goto out_abort_claiming;
+
 	if (lo->lo_state != Lo_bound) {
 		err = -ENXIO;
 		goto out_unlock;
@@ -1325,6 +1326,7 @@ out_unfreeze:
 	}
 out_unlock:
 	mutex_unlock(&lo->lo_mutex);
+out_abort_claiming:
 	if (!(mode & BLK_OPEN_EXCL))
 		bd_abort_claiming(bdev, loop_set_status);
 out_reread_partitions:
