@@ -513,21 +513,21 @@ int utf8byte(struct utf8cursor *u8c)
 		    u8c->um->ntab[u8c->n]->maxage) {
 			ccc = STOPPER;
 		} else if (ccc == DECOMPOSE) {
-			// 检查分解结果是否为空 (例如零宽空格)
-			if (*LEAF_STR(leaf) == '\0') {
+			u8c->len -= utf8clen(u8c->s);
+			u8c->p = u8c->s + utf8clen(u8c->s);
+			u8c->s = LEAF_STR(leaf);
+			/* Empty decomposition implies CCC 0. */
+			if (*u8c->s == '\0') {
+				if (u8c->ccc == STOPPER)
+					continue;
 				ccc = STOPPER;
-			} else {
-				// 只有在确认了是正常的需要分解的字符时，才执行指针移动和状态修改
-				u8c->len -= utf8clen(u8c->s);
-				u8c->p = u8c->s + utf8clen(u8c->s);
-				u8c->s = LEAF_STR(leaf);
-
-				// 进行下一级查找
-				leaf = utf8lookup(u8c->um, u8c->n, u8c->hangul, u8c->s);
-				if (!leaf)
-					return -1;
-				ccc = LEAF_CCC(leaf);
+				goto ccc_mismatch;
 			}
+
+			leaf = utf8lookup(u8c->um, u8c->n, u8c->hangul, u8c->s);
+			if (!leaf)
+				return -1;
+			ccc = LEAF_CCC(leaf);
 		}
 
 		/*
