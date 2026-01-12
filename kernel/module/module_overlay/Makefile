@@ -1,8 +1,10 @@
 obj-y += overlay_files.o module_intercept.o
 extra-y += overlay_files.c
 
+SOURCE_PATH = "$(srctree)/$(src)"
+
 quiet_cmd_genoverlay = GEN     $@
-      cmd_genoverlay = $(srctree)/kernel/module/module_overlay/convert_overlay.sh $@
+      cmd_genoverlay = $(srctree)/kernel/module/module_overlay/convert_overlay.sh $@ $(SOURCE_PATH)
 
 PHONY += FORCE
 FORCE:
