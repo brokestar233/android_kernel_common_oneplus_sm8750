@@ -1,10 +1,21 @@
 #!/bin/bash
-srctree=$(pwd)
+out_file="$1"
+srctree="$2"
+
+srctree=$(echo "$srctree" | sed 's|//|/|g')
+
+if [[ "$srctree" == ..* ]]; then
+    srctree="$srctree"
+else
+    srctree=$(echo "$srctree" | sed 's|\(.*\)\1|\1|')
+fi
+
+srctree=$(echo "$srctree" | sed 's|/overwrite_configs$||; s|$|/overwrite_configs|')
 
 # 创建目标文件并写入头部
-> "$srctree/drivers/of/overwriter/overwrite_configs.c"
+> "$out_file"
 
-cat << EOF > "$srctree/drivers/of/overwriter/overwrite_configs.c"
+cat << EOF > "$out_file"
 #include "overwrite_configs.h" // 包含头文件，获取 struct overwrite_config_group 的定义
 #include <linux/stddef.h>
 
@@ -31,7 +42,7 @@ function process_file() {
 }
 
 # 处理 common 文件夹中的配置文件
-common_dir="$srctree/../drivers/of/overwriter/overwrite_configs/common"
+common_dir="$srctree/common"
 if [ -d "$common_dir" ]; then
     for file in "$common_dir"/*.conf; do
         if [ -f "$file" ]; then
@@ -47,7 +58,7 @@ config_map["common"]+="\"a /soc/author/version BUILD_DATE:$build_date\nCOMMIT:$c
 ((config_counts["common"]++))
 
 # 处理数字命名的机型代号文件夹
-config_base_dir="$srctree/../drivers/of/overwriter/overwrite_configs"
+config_base_dir="$srctree"
 for model_dir in "$config_base_dir"/[0-9]*; do
     if [ -d "$model_dir" ]; then
         model_prefix=$(basename "$model_dir")
@@ -70,19 +81,19 @@ for prefix in "${!config_map[@]}"; do
     fi
 
     # 为每个前缀生成一个独立的字符串数组
-    echo "static const char *const ${c_var_name}_values[] = {" >> "$srctree/drivers/of/overwriter/overwrite_configs.c"
+    echo "static const char *const ${c_var_name}_values[] = {" >> "$out_file"
     # 移除最后一个逗号（如果有的话）
     if [ -n "$values_str" ]; then
-        echo "    ${values_str%,}" >> "$srctree/drivers/of/overwriter/overwrite_configs.c"
+        echo "    ${values_str%,}" >> "$out_file"
     fi
-    echo "};" >> "$srctree/drivers/of/overwriter/overwrite_configs.c"
-    echo "" >> "$srctree/drivers/of/overwriter/overwrite_configs.c"
+    echo "};" >> "$out_file"
+    echo "" >> "$out_file"
 done
 
 group_count=0
 
 # --- 生成 overwrite_config_groups 数组 ---
-cat << EOF >> "$srctree/drivers/of/overwriter/overwrite_configs.c"
+cat << EOF >> "$out_file"
 // 所有配置组的全局数组
 const struct overwrite_config_group overwrite_config_groups[] = {
 EOF
@@ -97,12 +108,12 @@ for prefix in "${!config_map[@]}"; do
     fi
 
     # 将该前缀的组添加到主数组中
-    echo "    { .prefix = \"$prefix\", .values = ${c_var_name}_values, .count = $values_count }," >> "$srctree/drivers/of/overwriter/overwrite_configs.c"
+    echo "    { .prefix = \"$prefix\", .values = ${c_var_name}_values, .count = $values_count }," >> "$out_file"
     ((group_count++))
 done
 
 # 写入尾部
-cat << EOF >> "$srctree/drivers/of/overwriter/overwrite_configs.c"
+cat << EOF >> "$out_file"
 };
 
 const int overwrite_config_group_count = $group_count;
@@ -110,9 +121,9 @@ EOF
 
 # 确保输出文件的换行符为 Linux 格式（LF）
 if command -v dos2unix >/dev/null 2>&1; then
-    dos2unix "$srctree/drivers/of/overwriter/overwrite_configs.c" 2>/dev/null
+    dos2unix "$out_file" 2>/dev/null
 else
     # 如果没有 dos2unix 工具，使用 tr 移除 \r
-    tr -d '\r' < "$srctree/drivers/of/overwriter/overwrite_configs.c" > "$srctree/drivers/of/overwriter/overwrite_configs.tmp"
-    mv "$srctree/drivers/of/overwriter/overwrite_configs.tmp" "$srctree/drivers/of/overwriter/overwrite_configs.c"
+    tr -d '\r' < "$out_file" > "$srctree/overwrite_configs.tmp"
+    mv "$srctree/overwrite_configs.tmp" "$out_file"
 fi

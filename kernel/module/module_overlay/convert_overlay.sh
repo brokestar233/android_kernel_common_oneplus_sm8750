@@ -2,8 +2,17 @@
 
 # === 路径配置 ===
 out_file="$1"
-srctree=$(pwd)
-overlay_dir="$srctree/../kernel/module/module_overlay/modules"
+srctree="$2"
+
+overlay_dir=$(echo "$srctree" | sed 's|//|/|g')
+
+if [[ "$overlay_dir" == ..* ]]; then
+    overlay_dir="$overlay_dir"
+else
+    overlay_dir=$(echo "$overlay_dir" | sed 's|\(.*\)\1|\1|')
+fi
+
+overlay_dir=$(echo "$overlay_dir" | sed 's|/modules$||; s|$|/modules|')
 
 > "$out_file"
 
@@ -40,13 +49,13 @@ for ko in "${ko_files[@]}"; do
     orig_size=$(stat -c%s "$ko")
     
     # 使用 zstd 进行最大压缩
-    if ! zstd -22 -f "$ko" -o "$tmp_comp"; then
+    if ! /usr/bin/zstd -22 -f "$ko" -o "$tmp_comp"; then
         echo "zstd compression failed: $ko" >&2
         continue
     fi
 
     # 生成字节数组
-    if ! xxd -i "$tmp_comp" > "$tmp_xxd.raw" 2>/dev/null; then
+    if ! /usr/bin/xxd -i "$tmp_comp" > "$tmp_xxd.raw" 2>/dev/null; then
         echo "xxd failed: $ko" >&2
         continue
     fi
