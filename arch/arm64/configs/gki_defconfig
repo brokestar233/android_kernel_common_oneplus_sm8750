@@ -70,7 +70,7 @@ CONFIG_ARM64_PMEM=y
 CONFIG_RANDOMIZE_BASE=y
 # CONFIG_RANDOMIZE_MODULE_REGION_FULL is not set
 CONFIG_UNWIND_PATCH_PAC_INTO_SCS=y
-CONFIG_CMDLINE="console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
+CONFIG_CMDLINE="console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.stacktrace=on kasan.vmalloc=on kasan_multi_shot kvm-arm.mode=protected bootconfig ioremap_guard"
 CONFIG_CMDLINE_EXTEND=y
 # CONFIG_DMI is not set
 CONFIG_HIBERNATION=y
@@ -810,3 +810,9 @@ CONFIG_KUNIT_TEST=m
 CONFIG_KUNIT_EXAMPLE_TEST=m
 # CONFIG_KUNIT_DEFAULT_ENABLED is not set
 # CONFIG_RUNTIME_TESTING_MENU is not set
+CONFIG_KASAN=y
+CONFIG_KASAN_SW_TAGS=y
+CONFIG_KASAN_INLINE=y
+# CONFIG_KASAN_OUTLINE=y
+CONFIG_KASAN_VMALLOC=y
+CONFIG_KASAN_STACK=y
