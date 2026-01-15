@@ -4728,17 +4728,35 @@ rm_slot:
 			busy_mm = slot->mm;
 
 			if (err == -EBUSY) {
+				struct mm_struct *iter_mm = NULL;
+
 				/* skip other vmas on the same mm */
 				do {
 					reset = advance_current_scan(rung);
 					iter = rung->current_scan;
 					busy_retry--;
-					if (iter->vma->vm_mm != busy_mm ||
+
+					/* 
+					 * FIX: KASAN use-after-free protection.
+					 * We must hold vma_slot_list_lock to ensure the slot/vma 
+					 * is not freed concurrently before dereferencing vm_mm.
+					 */
+					spin_lock(&vma_slot_list_lock);
+					if (slot_in_uksm(iter)) {
+						iter_mm = iter->vma->vm_mm;
+					} else {
+						/* Slot removed/dead, treat as mismatch to break loop safely */
+						iter_mm = NULL;
+					}
+					spin_unlock(&vma_slot_list_lock);
+
+					/* Check against the safely retrieved iter_mm */
+					if (iter_mm != busy_mm ||
 					    !busy_retry || reset)
 						break;
 				} while (1);
 
-				if (iter->vma->vm_mm != busy_mm) {
+				if (iter_mm != busy_mm) {
 					continue;
 				} else {
 					/* scan round finsished */
