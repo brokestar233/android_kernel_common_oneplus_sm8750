@@ -6,6 +6,8 @@
 #include <linux/signal_types.h>
 #include <linux/string.h>
 
+#pragma clang diagnostic ignored "-Warray-bounds"
+
 struct task_struct;
 
 /* for sysctl */

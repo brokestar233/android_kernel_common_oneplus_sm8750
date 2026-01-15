@@ -1,6 +1,6 @@
 #!/bin/bash
-FILE_TO_CHECK="../drivers/starkernel/Kconfig"
+FILE_TO_CHECK="$1/drivers/starkernel/Kconfig"
 if [ ! -f "$FILE_TO_CHECK" ]; then
-    echo "" > ../drivers/starkernel/Kconfig
-    echo "" > ../drivers/starkernel/Makefile
+    echo "" > $1/drivers/starkernel/Kconfig
+    echo "" > $1/drivers/starkernel/Makefile
 fi

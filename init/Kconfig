@@ -2107,6 +2107,6 @@ menu "BrokeStar"
 
 config ARCH_ORYON
 	bool
-	default y
+	default n
 
 endmenu

@@ -205,6 +205,3 @@ obj-y    += starkernel/
 
 obj-y    						+= freq_qos_arbiter/
 
-obj-y    						+= cpufreq_bouncing/
-
-obj-y    						+= oplus_omrg/
