@@ -31,30 +31,109 @@ static struct bio_set zram_wb_bs;
 #define bio_to_zram_wb_request(bio) \
 	((struct zram_wb_request *)((char *)(bio) - ZRAM_WB_FRONT_PAD))
 
-unsigned long alloc_block_bdev(struct zram *zram)
+/* 
+ * 内部辅助函数：尝试分配指定长度的连续区间
+ * 返回值：成功返回起始索引，失败返回 0
+ */
+static unsigned long alloc_block_bdev_range(struct zram *zram, int count)
 {
-	unsigned long blk_idx = 1;
+	unsigned long blk_idx = 1; /* skip 0 bit */
+	unsigned long i;
+	/*
+	 * 自动对齐：尝试让起始索引按 count 对齐 (前提 count 是 2 的幂)
+     * 这样可以显著提高底层块设备的合并效率
+     */
+    unsigned long align_mask = (unsigned long)count - 1;
+
 retry:
-	/* skip 0 bit to confuse zram.handle = 0 */
-	blk_idx = find_next_zero_bit(zram->bitmap, zram->nr_pages, blk_idx);
-	if (blk_idx == zram->nr_pages)
+	/* 
+	 * 1. 查找：寻找连续 count 个 0 位 
+	 */
+	blk_idx = bitmap_find_next_zero_area(zram->bitmap, zram->nr_pages, 
+					     blk_idx, count, align_mask);
+	
+	if (blk_idx >= zram->nr_pages)
 		return 0;
 
-	if (test_and_set_bit(blk_idx, zram->bitmap))
-		goto retry;
+	/* 
+	 * 2. 尝试锁定：原子地设置每一位
+	 * 这是一个乐观锁策略。如果中途失败，必须回滚。
+	 */
+	for (i = 0; i < count; i++) {
+		if (test_and_set_bit(blk_idx + i, zram->bitmap)) {
+			/* 
+			 * 发生竞争：有人在我们之前抢占了 blk_idx + i。
+			 * 回滚：清除之前已经由本线程设置的位 [0 ... i-1]
+			 */
+			while (i > 0) {
+				i--;
+				clear_bit(blk_idx + i, zram->bitmap);
+			}
+			
+			/* 从冲突位置的下一位重新开始搜索 */
+			blk_idx++; 
+			goto retry;
+		}
+	}
 
-	atomic64_inc(&zram->stats.bd_count);
+	/* 成功分配 */
+	atomic64_add(count, &zram->stats.bd_count);
 	return blk_idx;
 }
 
+/*
+ * 实现 TODO 1.2: 分配降级策略
+ * req_count: 请求分配的块数 (例如 64)
+ * act_count: 输出参数，实际分配的块数
+ */
+unsigned long alloc_block_bdev_batch(struct zram *zram, int req_count, int *act_count)
+{
+    static const int FALLBACK_SIZES[] = {64, 32, 16, 8, 4, 2, 1};
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(FALLBACK_SIZES); i++) {
+        int try_count = FALLBACK_SIZES[i];
+        if (try_count > req_count) continue;   // 不超过请求量
+
+        unsigned long blk_idx = alloc_block_bdev_range(zram, try_count);
+        if (blk_idx) {
+            if (act_count) *act_count = try_count;
+            return blk_idx;
+        }
+    }
+
+    if (act_count) *act_count = 0;
+    return 0;
+}
+
+/* 保持原有单块分配函数的兼容性 */
+unsigned long alloc_block_bdev(struct zram *zram)
+{
+	int count = 0;
+	return alloc_block_bdev_batch(zram, 1, &count);
+}
+
+/* 新增：批量释放辅助函数 */
+void free_block_bdev_range(struct zram *zram, unsigned long blk_idx, int count)
+{
+	int i;
+	/* 
+	 * 注意：这里假设调用者保证了范围的合法性
+	 * 逐个清除位
+	 */
+	for (i = 0; i < count; i++) {
+		if (!test_and_clear_bit(blk_idx + i, zram->bitmap))
+			WARN_ON_ONCE(1); /* 释放了未分配的块 */
+	}
+	atomic64_sub(count, &zram->stats.bd_count);
+}
+
+/* 保持原有单块释放函数的兼容性 */
 void free_block_bdev(struct zram *zram, unsigned long blk_idx)
 {
-	int was_set;
-
-	was_set = test_and_clear_bit(blk_idx, zram->bitmap);
-	WARN_ON_ONCE(!was_set);
-	atomic64_dec(&zram->stats.bd_count);
+	free_block_bdev_range(zram, blk_idx, 1);
 }
+
 
 static void complete_wb_request(struct zram_wb_request *req)
 {

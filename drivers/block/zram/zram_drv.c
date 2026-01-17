@@ -764,83 +764,157 @@ static void read_from_bdev_async(struct zram *zram, struct page *page,
 
 static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 {
-    unsigned long blk_idx = 0;
-    struct zram_pp_slot *pps;
-    int ret = 0;
-    u32 index;
-    int nr_pps = atomic_read(&ctl->num_pp_slots);
+	/* 
+	 * batch_base_idx: 当前批次的起始块索引
+	 * batch_count:    当前批次实际分配到的块数
+	 * batch_cursor:   当前批次已经消耗（提交写回）的块数
+	 */
+	unsigned long batch_base_idx = 0;
+	int batch_count = 0;
+	int batch_cursor = 0;
+	struct blk_plug plug;
+	
+	struct zram_pp_slot *pps;
+	int ret = 0;
+	u32 index;
+	/* 用于估算剩余需要的块数 */
+	int pending_slots = atomic_read(&ctl->num_pp_slots);
 
-    if (!nr_pps)
-        return 0;
+	if (!pending_slots)
+		return 0;
 
-    while ((pps = select_pp_slot(ctl))) {
-        struct zram_wb_request *req;
-        struct page *page;
+	blk_start_plug(&plug);
 
-        spin_lock(&zram->wb_limit_lock);
-        if (zram->wb_limit_enable && !zram->bd_wb_limit) {
-            spin_unlock(&zram->wb_limit_lock);
-            ret = -EIO;
-            break;
-        }
-        spin_unlock(&zram->wb_limit_lock);
+	while ((pps = select_pp_slot(ctl))) {
+		struct zram_wb_request *req;
+		struct page *page;
+		unsigned long current_blk_idx;
 
-        if (!blk_idx) {
-            blk_idx = alloc_block_bdev(zram);
-            if (!blk_idx) {
-                ret = -ENOSPC;
-                break;
-            }
-        }
+		/* 1. 检查写回限制 */
+		spin_lock(&zram->wb_limit_lock);
+		if (zram->wb_limit_enable && !zram->bd_wb_limit) {
+			spin_unlock(&zram->wb_limit_lock);
+			ret = -EIO;
+			/* 
+			 * 注意：这里不能直接 break，必须先处理当前 pps，
+			 * 但这里逻辑是先 check 再 alloc，所以直接 release pps 后 break 即可
+			 */
+			release_pp_slot(zram, pps);
+			break;
+		}
+		spin_unlock(&zram->wb_limit_lock);
 
-        req = alloc_wb_request(zram, pps, ctl, blk_idx);
-        if (IS_ERR(req)) {
-            ret = PTR_ERR(req);
-            break;
-        }
-        page = bio_first_page_all(req->bio);
+		/* 
+		 * 2. 块分配逻辑
+		 * 如果当前批次用完了（或者从未分配过），申请新的一批
+		 */
+		if (batch_cursor >= batch_count) {
+			/* 清理上一批次可能剩余的碎片（理论上 cursor==count 不会进这里，但为了安全） */
+			if (batch_count > batch_cursor) {
+				free_block_bdev_range(zram, batch_base_idx + batch_cursor,
+						      batch_count - batch_cursor);
+			}
 
-        index = pps->index;
-        zram_slot_lock(zram, index);
-        /*
-         * scan_slots() sets ZRAM_PP_SLOT and relases slot lock, so
-         * slots can change in the meantime. If slots are accessed or
-         * freed they lose ZRAM_PP_SLOT flag and hence we don't
-         * post-process them.
-         */
-        if (!zram_test_flag(zram, index, ZRAM_PP_SLOT))
-            goto next;
-        zram_slot_unlock(zram, index);
+			/* 
+			 * 策略：尝试申请剩余槽位数量的块，但设置一个上限（例如 64）
+			 * 以防止一次申请过大导致位图搜索过慢
+			 */
+			int want_count = pending_slots;
+			if (want_count > 64) 
+				want_count = 64;
+			if (want_count < 1) 
+				want_count = 1;
 
-        if (zram_read_page(zram, page, index, NULL)) {
-            release_pp_slot(zram, pps);
-            continue;
-        }
+			batch_cursor = 0;
+			batch_count = 0;
+			batch_base_idx = alloc_block_bdev_batch(zram, want_count, &batch_count);
 
-        nr_pps--;
-        remove_pp_slot_from_ctl(pps);
-        blk_idx = 0;
-        submit_bio(req->bio);
-        continue;
+			if (!batch_base_idx) {
+				ret = -ENOSPC;
+				release_pp_slot(zram, pps);
+				break;
+			}
+		}
+
+		/* 计算当前要使用的块索引 */
+		current_blk_idx = batch_base_idx + batch_cursor;
+
+		/* 3. 分配请求结构 (BIO) */
+		req = alloc_wb_request(zram, pps, ctl, current_blk_idx);
+		if (IS_ERR(req)) {
+			ret = PTR_ERR(req);
+			release_pp_slot(zram, pps);
+			/* 注意：这里出错意味着 current_blk_idx 没被用掉，会在函数末尾被回收 */
+			break;
+		}
+		page = bio_first_page_all(req->bio);
+
+		index = pps->index;
+		zram_slot_lock(zram, index);
+		
+		/* 检查槽位是否仍然有效 */
+		if (!zram_test_flag(zram, index, ZRAM_PP_SLOT))
+			goto next; // 跳到错误处理，不消耗块
+		
+		zram_slot_unlock(zram, index);
+
+		/* 读取数据 */
+		if (zram_read_page(zram, page, index, NULL)) {
+			release_pp_slot(zram, pps);
+			/* 读失败，也不消耗块，继续下一个槽位尝试复用此块 */
+			continue;
+		}
+
+		/* 
+		 * 4. 提交 BIO
+		 * 只有成功提交了，我们才认为这个块被“消耗”了
+		 */
+		pending_slots--; /* 更新剩余计数 */
+		remove_pp_slot_from_ctl(pps);
+		
+		submit_bio(req->bio);
+		
+		/* 关键：成功提交后，游标才前进 */
+		batch_cursor++;
+		continue;
 
 next:
-        zram_slot_unlock(zram, index);
-        release_pp_slot(zram, pps);
-        free_wb_request(req);
+		/* 
+		 * 路径：槽位失效。
+		 * 动作：释放资源，但 *不* 增加 batch_cursor。
+		 * 下一次循环将再次使用当前的 current_blk_idx 给下一个 pps 使用。
+		 */
+		zram_slot_unlock(zram, index);
+		release_pp_slot(zram, pps);
+		free_wb_request(req);
+		cond_resched();
+	}
 
-        cond_resched();
-    }
+	blk_finish_plug(&plug);
 
-    if (blk_idx)
-        free_block_bdev(zram, blk_idx);
+	/* 
+	 * 5. 最终清理
+	 * 循环结束（无论是做完了还是出错中断），如果当前批次里还有未使用的块，
+	 * 需要将它们归还给位图。
+	 */
+	if (batch_base_idx && batch_count > batch_cursor) {
+		free_block_bdev_range(zram, 
+				      batch_base_idx + batch_cursor, 
+				      batch_count - batch_cursor);
+	}
 
-    if (nr_pps && atomic_sub_and_test(nr_pps, &ctl->num_pp_slots))
-        complete(&ctl->all_done);
+	/* 等待异步 IO 完成 */
+	/* 
+	 * 注意：pending_slots 只是局部估算，
+	 * 准确的等待逻辑依赖于 ctl->num_pp_slots 计数器
+	 */
+	int remaining = atomic_read(&ctl->num_pp_slots);
+	if (remaining && atomic_sub_and_test(remaining, &ctl->num_pp_slots))
+		complete(&ctl->all_done);
 
-    /* wait until all async bios completed */
-    wait_for_completion(&ctl->all_done);
+	wait_for_completion(&ctl->all_done);
 
-    return ret;
+	return ret;
 }
 
 #define PAGE_WRITEBACK			0
