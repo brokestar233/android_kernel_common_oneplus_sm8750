@@ -40,9 +40,9 @@
     - 决策: 仅当有效页面数 >= 4 (最小聚合单位) 时，触发批量处理。
 
 ### P1 (Frontend): 构建大 BIO
-- [ ] **2.3 批量加锁与提取**
+- [X] **2.3 批量加锁与提取**
     - 逻辑: 批量获取窗口内页面的 `zram_slot_lock`，解压数据到临时 Buffer (或者直接利用页面引用)。
-- [ ] **2.4 构造 Multi-page BIO**
+- [X] **2.4 构造 Multi-page BIO**
     - 逻辑: 调用 `bio_alloc` 创建一个包含多个 vector 的 BIO。
     - 映射: 将 Phase 1 申请到的连续 `sector` 填入 BIO。
 - [ ] **2.5 Metadata 压缩存储**
