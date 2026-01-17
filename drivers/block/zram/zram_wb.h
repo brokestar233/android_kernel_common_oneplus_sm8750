@@ -6,13 +6,31 @@
 #include <linux/bio.h>
 #include "zram_drv.h"
 
-struct zram_wb_request {
-	struct zram *zram;
-	unsigned long blk_idx;
+/* 定义最大合并数量 */
+#define ZRAM_WB_MAX_BATCH_SIZE 64
+
+/* 单个页面请求的元数据 */
+struct zram_wb_sub_req {
 	struct zram_pp_slot *pps;
+	unsigned long blk_idx;  /* 物理块索引 */
+	unsigned long index;    /* ZRAM 逻辑索引 (table index) */
+};
+
+/* 
+ * 批次请求结构
+ * 这个结构体将驻留在 bio 的 front_pad 区域中
+ */
+struct zram_wb_batch_request {
+	struct zram *zram;
 	struct zram_pp_ctl *ppctl;
 	struct bio *bio;
 	struct list_head node;
+	
+	/* 当前批次中包含的有效子请求数量 */
+	unsigned int count;
+	
+	/* 记录每个页面的元数据，用于回调时释放资源 */
+	struct zram_wb_sub_req sub_reqs[ZRAM_WB_MAX_BATCH_SIZE];
 };
 
 struct zram_wb_request_list {
@@ -23,18 +41,16 @@ struct zram_wb_request_list {
 
 #if IS_ENABLED(CONFIG_ZRAM_WRITEBACK)
 unsigned long alloc_block_bdev(struct zram *zram);
-/* 新增：批量分配接口，act_count 返回实际分配的数量 */
 unsigned long alloc_block_bdev_batch(struct zram *zram, int req_count, int *act_count);
 void free_block_bdev(struct zram *zram, unsigned long blk_idx);
-/* 新增：批量释放接口（可选，为了对称性） */
 void free_block_bdev_range(struct zram *zram, unsigned long blk_idx, int count);
+
+struct zram_wb_batch_request *alloc_wb_batch_request(struct zram *zram,
+						     struct zram_pp_ctl *ctl,
+						     unsigned long start_blk_idx);
+
 int setup_zram_writeback(void);
 void destroy_zram_writeback(void);
-struct zram_wb_request *alloc_wb_request(struct zram *zram,
-					 struct zram_pp_slot *pps,
-					 struct zram_pp_ctl *ppctl,
-					 unsigned long blk_idx);
-void free_wb_request(struct zram_wb_request *req);
 #else
 inline unsigned long alloc_block_bdev(struct zram *zram) { return 0; }
 inline unsigned long alloc_block_bdev_batch(struct zram *zram, int req_count, int *act_count) { return 0; }
