@@ -3549,8 +3549,17 @@ static unsigned long zram_shrinker_count(struct shrinker *shrinker, struct shrin
 {
     struct zram *zram = shrinker->private_data;
     
-    if (!zram->backing_dev || !gfp_has_io_fs(sc->gfp_mask))
+    if (!zram->backing_dev || !gfp_has_io_fs(sc->gfp_mask)) {
         return 0;
+	}
+
+	if (!atomic64_read(&zram->stats.pages_stored)) {
+        return 0;
+	}
+
+	if (!zram->zram_list_lru.node) {
+        return 0;
+	}
 
     return list_lru_shrink_count(&zram->zram_list_lru, sc);
 }
