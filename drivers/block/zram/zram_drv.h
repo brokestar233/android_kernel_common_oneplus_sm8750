@@ -77,9 +77,15 @@ struct zram_table_entry {
 };
 
 #ifdef CONFIG_ZRAM_WRITEBACK
-struct zram_shrink_ctx {
-	struct zram *zram;
-	struct zram_pp_ctl *ctl;
+#define BATCH_SIZE 64
+#define WINDOW_RADIUS 8
+#define MIN_AGGREGATE 4
+
+struct zram_shrink_work {
+    struct zram *zram;
+    unsigned long candidates[BATCH_SIZE]; /* 候选页面索引数组 */
+    int nr_candidates;                    /* 当前收集数量 */
+    struct zram_pp_ctl *ctl;              /* 写回控制器 */
 };
 #endif
 
