@@ -483,8 +483,6 @@ void free_zone_device_page(struct page *page)
 if (folio_test_anon(folio)) {
 	for (i = 0; i < nr; i++)
 		__ClearPageAnonExclusive(folio_page(folio, i));
-} else {
-	VM_WARN_ON_ONCE(folio_test_large(folio));
 }
 
 	/*
