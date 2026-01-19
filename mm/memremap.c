@@ -470,54 +470,73 @@ EXPORT_SYMBOL_GPL(get_dev_pagemap);
 
 void free_zone_device_page(struct page *page)
 {
-	if (WARN_ON_ONCE(!page->pgmap->ops || !page->pgmap->ops->page_free))
+	struct folio *folio = page_folio(page);
+	struct dev_pagemap *pgmap = folio->pgmap;
+	unsigned long nr = folio_nr_pages(folio);
+	int i;
+
+	if (WARN_ON_ONCE(!pgmap || !pgmap->ops || !pgmap->ops->page_free))
 		return;
 
-	mem_cgroup_uncharge(page_folio(page));
+	mem_cgroup_uncharge(folio);
 
-	/*
-	 * Note: we don't expect anonymous compound pages yet. Once supported
-	 * and we could PTE-map them similar to THP, we'd have to clear
-	 * PG_anon_exclusive on all tail pages.
-	 */
-	VM_BUG_ON_PAGE(PageAnon(page) && PageCompound(page), page);
-	if (PageAnon(page))
-		__ClearPageAnonExclusive(page);
-
-	/*
-	 * When a device managed page is freed, the folio->mapping field
-	 * may still contain a (stale) mapping value. For example, the
-	 * lower bits of folio->mapping may still identify the folio as an
-	 * anonymous folio. Ultimately, this entire field is just stale
-	 * and wrong, and it will cause errors if not cleared.
-	 *
-	 * For other types of ZONE_DEVICE pages, migration is either
-	 * handled differently or not done at all, so there is no need
-	 * to clear page->mapping.
-	 */
-	page->mapping = NULL;
-	page->pgmap->ops->page_free(page);
-
-	if (page->pgmap->type != MEMORY_DEVICE_PRIVATE &&
-	    page->pgmap->type != MEMORY_DEVICE_COHERENT)
-		/*
-		 * Reset the page count to 1 to prepare for handing out the page
-		 * again.
-		 */
-		set_page_count(page, 1);
-	else
-		put_dev_pagemap(page->pgmap);
+if (folio_test_anon(folio)) {
+	for (i = 0; i < nr; i++)
+		__ClearPageAnonExclusive(folio_page(folio, i));
+} else {
+	VM_WARN_ON_ONCE(folio_test_large(folio));
 }
 
-void zone_device_page_init(struct page *page)
+	/*
+ * When a device managed page is freed, the folio->mapping field
+ * may still contain a (stale) mapping value. For example, the
+ * lower bits of folio->mapping may still identify the folio as an
+ * anonymous folio. Ultimately, this entire field is just stale
+ * and wrong, and it will cause errors if not cleared.
+ *
+ * For other types of ZONE_DEVICE pages, migration is either
+ * handled differently or not done at all, so there is no need
+ * to clear page->mapping.
+ */
+page->mapping = NULL;
+
+switch (pgmap->type) {
+case MEMORY_DEVICE_PRIVATE:
+case MEMORY_DEVICE_COHERENT:
+	if (WARN_ON_ONCE(!pgmap->ops || !pgmap->ops->page_free))
+		break;
+	pgmap->ops->page_free(&folio->page);
+	percpu_ref_put_many(&folio->pgmap->ref, nr);
+	break;
+
+case MEMORY_DEVICE_GENERIC:
+	/*
+	 * Reset the page count to 1 to prepare for handing out the page
+	 * again.
+	 */
+	set_page_count(page, 1);
+	break;
+
+default:
+	put_dev_pagemap(pgmap);
+	break;
+}
+}
+
+void zone_device_page_init(struct page *page, unsigned int order)
 {
+	VM_WARN_ON_ONCE(order > MAX_ORDER_NR_PAGES);
+
 	/*
 	 * Drivers shouldn't be allocating pages after calling
 	 * memunmap_pages().
 	 */
-	WARN_ON_ONCE(!percpu_ref_tryget_live(&page->pgmap->ref));
+WARN_ON_ONCE(!percpu_ref_tryget_many(&page_pgmap(page)->ref, 1 << order));
 	set_page_count(page, 1);
 	lock_page(page);
+
+	if (order)
+		prep_compound_page(page, order);
 }
 EXPORT_SYMBOL_GPL(zone_device_page_init);
 

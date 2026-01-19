@@ -1581,30 +1581,33 @@ static __always_inline void __folio_remove_rmap(struct folio *folio,
 		break;
 	}
 
-	if (nr_pmdmapped) {
-		if (folio_test_anon(folio))
-			idx = NR_ANON_THPS;
-		else if (folio_test_swapbacked(folio))
-			idx = NR_SHMEM_PMDMAPPED;
-		else
-			idx = NR_FILE_PMDMAPPED;
-		__lruvec_stat_mod_folio(folio, idx, -nr_pmdmapped);
-	}
-	if (nr) {
-		idx = folio_test_anon(folio) ? NR_ANON_MAPPED : NR_FILE_MAPPED;
-		__lruvec_stat_mod_folio(folio, idx, -nr);
+if (nr_pmdmapped) {
+	if (folio_test_anon(folio))
+		idx = NR_ANON_THPS;
+	else if (folio_test_swapbacked(folio))
+		idx = NR_SHMEM_PMDMAPPED;
+	else
+		idx = NR_FILE_PMDMAPPED;
+	__lruvec_stat_mod_folio(folio, idx, -nr_pmdmapped);
+}
+if (nr) {
+	idx = folio_test_anon(folio) ? NR_ANON_MAPPED : NR_FILE_MAPPED;
+	__lruvec_stat_mod_folio(folio, idx, -nr);
 
-		/*
-		 * Queue anon large folio for deferred split if at least one
-		 * page of the folio is unmapped and at least one page
-		 * is still mapped.
-		 *
-		 * Check partially_mapped first to ensure it is a large folio.
-		 */
-		if (folio_test_anon(folio) && partially_mapped &&
-		    !folio_test_partially_mapped(folio))
-			deferred_split_folio(folio, true);
-	}
+	/*
+	 * Queue anon large folio for deferred split if at least one page of
+	 * the folio is unmapped and at least one page is still mapped.
+	 *
+	 * Check partially_mapped first to ensure it is a large folio.
+	 *
+	 * Device private folios do not support deferred splitting and
+	 * shrinker based scanning of the folios to free.
+	 */
+	if (partially_mapped && folio_test_anon(folio) &&
+	    !folio_test_partially_mapped(folio) &&
+	    !folio_is_device_private(folio))
+		deferred_split_folio(folio, true);
+    }
 
 	/*
 	 * It would be tidy to reset folio_test_anon mapping when fully

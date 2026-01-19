@@ -187,7 +187,7 @@ static inline bool folio_is_device_coherent(const struct folio *folio)
 }
 
 #ifdef CONFIG_ZONE_DEVICE
-void zone_device_page_init(struct page *page);
+void zone_device_page_init(struct page *page, unsigned int order);
 void *memremap_pages(struct dev_pagemap *pgmap, int nid);
 void memunmap_pages(struct dev_pagemap *pgmap);
 void *devm_memremap_pages(struct device *dev, struct dev_pagemap *pgmap);
@@ -199,6 +199,14 @@ bool pgmap_pfn_valid(struct dev_pagemap *pgmap, unsigned long pfn);
 unsigned long vmem_altmap_offset(struct vmem_altmap *altmap);
 void vmem_altmap_free(struct vmem_altmap *altmap, unsigned long nr_pfns);
 unsigned long memremap_compat_align(void);
+
+static inline void zone_device_folio_init(struct folio *folio, unsigned int order)
+{
+	zone_device_page_init(&folio->page, order);
+	if (order)
+		folio_set_large_rmappable(folio);
+}
+
 #else
 static inline void *devm_memremap_pages(struct device *dev,
 		struct dev_pagemap *pgmap)
