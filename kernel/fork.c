@@ -2320,7 +2320,6 @@ __latent_entropy struct task_struct *copy_process(
 					struct kernel_clone_args *args)
 {
 	int pidfd = -1, retval;
-	int sig_copied = 0; 
 	struct task_struct *p;
 	struct multiprocess_signals delayed;
 	struct file *pidfile = NULL;
@@ -2582,7 +2581,6 @@ __latent_entropy struct task_struct *copy_process(
 	retval = copy_signal(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_sighand;
-	sig_copied = 1;
 	retval = copy_mm(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_signal;
@@ -2895,9 +2893,6 @@ bad_fork_cleanup_count:
 	dec_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
 	exit_creds(p);
 bad_fork_free:
-	if (!sig_copied)
-        p->signal = NULL;
-
 	WRITE_ONCE(p->__state, TASK_DEAD);
 	exit_task_stack_account(p);
 	put_task_stack(p);
