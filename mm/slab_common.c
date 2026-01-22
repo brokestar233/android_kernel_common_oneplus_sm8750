@@ -322,6 +322,9 @@ kmem_cache_create_usercopy(const char *name,
 	 */
 	flags &= CACHE_CREATE_MASK;
 
+	/* Embrace davem */
+	flags |= SLAB_HWCACHE_ALIGN;	
+
 	/* Fail closed on bad usersize of useroffset values. */
 	if (!IS_ENABLED(CONFIG_HARDENED_USERCOPY) ||
 	    WARN_ON(!usersize && useroffset) ||
