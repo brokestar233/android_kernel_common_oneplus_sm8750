@@ -418,6 +418,7 @@ static void set_next_task_idle(struct rq *rq, struct task_struct *next, bool fir
 	hmbird_update_idle(rq, true);
 #endif
 	schedstat_inc(rq->sched_goidle);
+	update_idle_rq_clock_pelt(rq);
 }
 
 #ifdef CONFIG_SMP
