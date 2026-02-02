@@ -8117,6 +8117,7 @@ struct energy_env {
 	unsigned long pd_busy_time;
 	unsigned long cpu_cap;
 	unsigned long pd_cap;
+	unsigned long pd_max_util;
 };
 
 /*
@@ -8184,41 +8185,32 @@ static inline void eenv_pd_busy_time(struct energy_env *eenv,
  * exceed @eenv->cpu_cap.
  */
 static inline unsigned long
-eenv_pd_max_util(struct energy_env *eenv, struct cpumask *pd_cpus,
-		 struct task_struct *p, int dst_cpu)
+eenv_pd_max_util(struct energy_env *eenv, struct perf_domain *pd,
+ 		 struct task_struct *p, int dst_cpu)
 {
-	unsigned long max_util = 0;
-	int cpu;
+	unsigned long max_util = eenv->pd_max_util;
 
-	for_each_cpu(cpu, pd_cpus) {
-		struct task_struct *tsk = (cpu == dst_cpu) ? p : NULL;
-		unsigned long util = cpu_util(cpu, p, dst_cpu, 1);
+	if (dst_cpu >= 0 && cpumask_test_cpu(dst_cpu, perf_domain_span(pd))) {
+		unsigned long util = cpu_util(dst_cpu, p, dst_cpu, 1);
 		unsigned long eff_util, min, max;
 
-		/*
-		 * Performance domain frequency: utilization clamping
-		 * must be considered since it affects the selection
-		 * of the performance domain frequency.
-		 * NOTE: in case RT tasks are running, by default the
-		 * FREQUENCY_UTIL's utilization can be max OPP.
-		 */
-		eff_util = effective_cpu_util(cpu, util, &min, &max);
+		eff_util = effective_cpu_util(dst_cpu, util, &min, &max);
 
 		/* Task's uclamp can modify min and max value */
-		if (tsk && uclamp_is_used()) {
+		if (uclamp_is_used()) {
 			min = max(min, uclamp_eff_value(p, UCLAMP_MIN));
 
 			/*
 			 * If there is no active max uclamp constraint,
 			 * directly use task's one, otherwise keep max.
 			 */
-			if (uclamp_rq_is_idle(cpu_rq(cpu)))
+			if (uclamp_rq_is_idle(cpu_rq(dst_cpu)))
 				max = uclamp_eff_value(p, UCLAMP_MAX);
 			else
 				max = max(max, uclamp_eff_value(p, UCLAMP_MAX));
 		}
 
-		eff_util = sugov_effective_cpu_perf(cpu, eff_util, min, max);
+		eff_util = sugov_effective_cpu_perf(dst_cpu, eff_util, min, max);
 		max_util = max(max_util, eff_util);
 	}
 
@@ -8234,7 +8226,7 @@ static inline unsigned long
 compute_energy(struct energy_env *eenv, struct perf_domain *pd,
 	       struct cpumask *pd_cpus, struct task_struct *p, int dst_cpu)
 {
-	unsigned long max_util = eenv_pd_max_util(eenv, pd_cpus, p, dst_cpu);
+	unsigned long max_util = eenv_pd_max_util(eenv, pd, p, dst_cpu);
 	unsigned long busy_time = eenv->pd_busy_time;
 
 	if (dst_cpu >= 0)
@@ -8356,11 +8348,19 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
 
 		eenv.cpu_cap = cpu_thermal_cap;
 		eenv.pd_cap = 0;
+		eenv.pd_max_util = 0;
 
 		for_each_cpu(cpu, cpus) {
 			struct rq *rq = cpu_rq(cpu);
+			unsigned long util_b, eff_util_b, min_b, max_b;
 
 			eenv.pd_cap += cpu_thermal_cap;
+
+			/* Pre-calculate base max utilization for the performance domain */
+			util_b = cpu_util(cpu, p, -1, 1);
+			eff_util_b = effective_cpu_util(cpu, util_b, &min_b, &max_b);
+			eff_util_b = sugov_effective_cpu_perf(cpu, eff_util_b, min_b, max_b);
+			eenv.pd_max_util = max(eenv.pd_max_util, eff_util_b);
 
 			if (!cpumask_test_cpu(cpu, sched_domain_span(sd)))
 				continue;
