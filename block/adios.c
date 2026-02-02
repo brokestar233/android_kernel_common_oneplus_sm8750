@@ -25,7 +25,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 
-#define ADIOS_VERSION "3.1.6"
+#define ADIOS_VERSION "3.1.9"
 
 /* Request Types:
  *
@@ -233,8 +233,7 @@ struct adios_data {
 	atomic_t state;
 	u8  bq_state[ADIOS_BQ_PAGES];
 
-	void (*insert_request_fn)(struct blk_mq_hw_ctx *, struct request *,
-								blk_insert_t, struct list_head *);
+	bool models_stable;
 
 	u64 global_latency_window;
 	u64 compliance_flags;
@@ -949,7 +948,7 @@ static void insert_request_pre_stability(struct blk_mq_hw_ctx *hctx,
 	struct adios_rq_data *rd = get_rq_data(rq);
 	u8 optype = adios_optype(rq);
 	u8 pq_idx = !(insert_flags & BLK_MQ_INSERT_AT_HEAD);
-	bool models_stable = false;
+	bool stable = false;
 
 	rd->managed = true;
 	rd->block_size = blk_rq_bytes(rq);
@@ -961,11 +960,11 @@ static void insert_request_pre_stability(struct blk_mq_hw_ctx *hctx,
 	rcu_read_lock();
 	if (rcu_dereference(ad->latency_model[ADIOS_READ].params)->base > 0 &&
 		rcu_dereference(ad->latency_model[ADIOS_WRITE].params)->base > 0)
-			models_stable = true;
+			stable = true;
 	rcu_read_unlock();
 
-	if (models_stable)
-		ad->insert_request_fn = insert_request_post_stability;
+	if (stable)
+        	ad->models_stable = true;
 }
 
 // Insert multiple requests into the scheduler
@@ -987,7 +986,10 @@ static void adios_insert_requests(struct blk_mq_hw_ctx *hctx,
 		}
 		rq = list_first_entry(list, struct request, queuelist);
 		list_del_init(&rq->queuelist);
-		ad->insert_request_fn(hctx, rq, insert_flags, &free);
+		if (likely(ad->models_stable))
+        		insert_request_post_stability(hctx, rq, insert_flags, &free);
+        else
+                insert_request_pre_stability(hctx, rq, insert_flags, &free);
 	}} while (!stop);
 
 	blk_mq_free_requests(&free);
@@ -1358,16 +1360,12 @@ retry:
 	 * due to a REQ_OP_FLUSH barrier.
 	 */
 	if (eval_adios_state(ad, ADIOS_STATE_BP)) {
-		union adios_in_flight_rqs ifr;
-		ifr.scalar = atomic64_read(&ad->in_flight_rqs.atomic);
-		if (!ifr.count) {
 			bool barrier_released = false;
 			scoped_guard(spinlock_irqsave, &ad->lock)
 				barrier_released = release_barrier_requests(ad);
 			if (barrier_released)
 				goto retry;
 		}
-	}
 
 	return NULL;
 found:
@@ -1559,7 +1557,7 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 	ad->batch_order = default_batch_order;
 	ad->compliance_flags = default_compliance_flags;
 
-	ad->insert_request_fn = insert_request_pre_stability;
+	ad->models_stable = false;
 
 	atomic_set(&ad->state, 0);
 
