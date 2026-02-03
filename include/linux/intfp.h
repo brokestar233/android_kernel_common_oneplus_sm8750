@@ -2,7 +2,7 @@
 #define _INTFP_H
 /*
  * Integer-based Fixed-Point and Pseudo-Logarithmic Number Library (intfp)
- * Version: 1.0
+ * Version: 1.2
  * Copyright (C) 2025 Masahito Suzuki
  *
  *
@@ -86,6 +86,20 @@
 #define __intfp_log2(v, bits) ((bits == 64)? \
 	(64U-1 - __builtin_clzll((u64)v)): \
 	(32U-1 - __builtin_clz  ((u32)v)))
+
+/**
+ * @brief Internal helper to count leading zeros.
+ * @param v The value (must be non-zero).
+ * @param bits The bit-width of the value (32 or 64).
+ * @return The number of leading zero bits.
+ *
+ * Used in conversion functions to allow the compiler to use the CLZ result
+ * directly as a shift amount, avoiding the round-trip through log2:
+ *   log2(v) = bits-1 - clz(v),  shift = bits-1 - log2(v) = clz(v)
+ */
+#define __intfp_clz(v, bits) ((bits == 64)? \
+	__builtin_clzll((u64)v): \
+	(__builtin_clz  ((u32)v) - (32 - (bits))))
 
 /**
  * @brief Generates a bitmask for the lower 'h+1' bits.
@@ -191,10 +205,10 @@ s##lbits s##hbits##fp_to_s##lbits(s##hbits v, u8 fp) { \
  */ \
 u##lbits u##hbits##_to_loc##lbits##fp(u##hbits v, u8 ofp) { \
 	if (v <= 1) return !v; /* Special encoding: v=0 -> 1, v=1 -> 0 */ \
-	u8 e = __intfp_log2(v, hbits); /* e = floor(log2(v)) */ \
-	/* Normalize v, discard the implicit leading '1', and scale to mantissa size */ \
-	u##lbits m = v << (hbits-1 - e) << 1 >> (hbits - ofp); \
-	return ((u##lbits)e << ofp) | m; /* Combine exponent and mantissa */ \
+	u8 clz = __intfp_clz(v, hbits); \
+	/* Keep implicit leading 1 in mantissa; addition carries it into exponent */ \
+	u##lbits m = (u##hbits)(v << clz) >> (hbits - 1 - ofp); \
+	return ((u##lbits)(hbits - 2 - clz) << ofp) + m; \
 } \
 /** @brief Converts to 'loc' using the maximum possible precision for the mantissa. */ \
 u##lbits u##hbits##_to_loc##lbits##fpmax(u##hbits v) { \
@@ -266,11 +280,11 @@ u##hbits loc##lbits##fpmax_to_u##hbits(u##hbits v) { \
  */ \
 s##lbits u##hbits##fp_to_log##lbits##fp(u##hbits v, u8 ifp, u8 ofp) { \
 	if (v == 0) return intfp_log_0(lbits); \
-	u8 e = __intfp_log2(v, hbits); /* e = floor(log2(v)) */ \
-	u##lbits m = v << (hbits-1 - e) << 1 >> (hbits - ofp); \
-	/* Adjust exponent by subtracting the fixed-point fractional bit count */ \
-	u##lbits adj = (u##lbits)ifp << ofp; \
-	return (s##lbits)((((u##lbits)e << ofp) | m) - adj); \
+	u8 clz = __intfp_clz(v, hbits); \
+	/* Keep implicit leading 1 in mantissa; addition carries it into exponent. \
+	 * ifp adjustment is folded into the exponent term (no extra instruction). */ \
+	u##lbits m = (u##hbits)(v << clz) >> (hbits - 1 - ofp); \
+	return (s##lbits)(((u##lbits)(hbits - 2 - clz - ifp) << ofp) + m); \
 } \
 /** @brief Converts to 'log' using max precision, from a fixed-point value. */ \
 s##lbits u##hbits##fp_to_log##lbits##fpmax(u##hbits v, u8 ifp) { \
