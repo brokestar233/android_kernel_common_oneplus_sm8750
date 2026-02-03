@@ -765,13 +765,16 @@ struct qos_task_struct {
 #define BORE_BC_TIMESTAMP_SHIFT 16
 
 struct bore_bc {
-	u64				timestamp:	48;
-	u64				penalty:	16;
+    union {
+            struct {
+    u64                             timestamp:      48;
+    u64                             penalty:        16;
+            };
+            u64                     value;
+    };
 };
 
 struct bore_ctx {
-	struct bore_bc	subtree;
-	struct bore_bc	group;
 	u64				burst_time;
 	u16				prev_penalty;
 	u16				curr_penalty;
@@ -784,7 +787,9 @@ struct bore_ctx {
 	};
 	bool			stop_update;
 	bool			futex_waiting;
-};
+	struct bore_bc  subtree;
+    struct bore_bc  group;
+} ____cacheline_aligned;
 #endif /* CONFIG_SCHED_BORE */
 
 struct task_struct {

@@ -7185,11 +7185,11 @@ static bool __dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	if (!(p->se.ext.sched_delayed && (task_on_rq_migrating(p) || (flags & DEQUEUE_SAVE))))
 		util_est_dequeue(&rq->cfs, p);
 #ifdef CONFIG_SCHED_BORE
-	struct cfs_rq *cfs_rq = &rq->cfs;
+	struct cfs_rq *cfs_rq = cfs_rq_of(&p->se);
 	struct sched_entity *se = &p->se;
 	if ((flags & DEQUEUE_SLEEP) && entity_is_task(se)) {
 		if (cfs_rq->curr == se)
-			update_curr(cfs_rq_of(&p->se));
+			update_curr(cfs_rq);
 		restart_burst_bore(p);
 	}
 #endif /* CONFIG_SCHED_BORE */

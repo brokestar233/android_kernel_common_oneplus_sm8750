@@ -20,23 +20,29 @@ static int __maybe_unused maxval_8_bits  =  255;
 static int __maybe_unused maxval_12_bits = 4095;
 
 #define MAX_BURST_PENALTY ((40U << 8) - 1)
-#define BURST_CACHE_STOP_COUNT 63
+#define BURST_CACHE_SAMPLE_LIMIT 63
+#define BURST_CACHE_SCAN_LIMIT (BURST_CACHE_SAMPLE_LIMIT * 2)
+
+static u32 bore_reciprocal_lut[BURST_CACHE_SAMPLE_LIMIT + 1];
 
 static u32 (*inherit_penalty_fn)(struct task_struct *, u64, u64);
 
 static inline u32 log2p1_u64_u32fp(u64 v, u8 fp) {
-	if (!v) return 0;
-	u32 exponent = fls64(v),
-		mantissa = (u32)(v << (64 - exponent) << 1 >> (64 - fp));
+	if (unlikely(!v)) return 0;
+    int clz = __builtin_clzll(v);
+    int exponent = 64 - clz;
+    u32 mantissa = (u32)((v << clz) << 1 >> (64 - fp));
 	return exponent << fp | mantissa;
 }
 
 static inline u32 calc_burst_penalty(u64 burst_time) {
 	u32 greed = log2p1_u64_u32fp(burst_time, 8),
-		tolerance = sched_burst_penalty_offset << 8,
-		penalty = max(0, (s32)(greed - tolerance)),
-		scaled_penalty = penalty * sched_burst_penalty_scale >> 10;
-	return min(MAX_BURST_PENALTY, scaled_penalty);
+		tolerance = sched_burst_penalty_offset << 8;
+    s32 diff = (s32)(greed - tolerance);
+    u32 penalty = diff & ~(diff >> 31);
+    u32 scaled_penalty = penalty * sched_burst_penalty_scale >> 10;
+    s32 overflow = scaled_penalty - MAX_BURST_PENALTY;
+    return scaled_penalty - (overflow & ~(overflow >> 31));
 }
 
 static inline u64 rescale_slice(u64 delta, u8 old_prio, u8 new_prio) {
@@ -47,13 +53,11 @@ static inline u64 rescale_slice(u64 delta, u8 old_prio, u8 new_prio) {
 }
 
 static inline u32 binary_smooth(u32 new, u32 old) {
-	if (new <= old) return new;
-
-	u32 increment = new - old,
-		shift = sched_burst_smoothness,
-		divisor = 1U << shift;
-
-	return old + ((increment + divisor - 1) >> shift);
+	u32 is_growing = (new > old);
+    u32 increment = (new - old) * is_growing;
+    u32 shift = sched_burst_smoothness;
+    u32 smoothed = old + ((increment + (1U << shift) - 1) >> shift);
+    return (new & ~(-is_growing)) | (smoothed & (-is_growing));
 }
 
 static void reweight_task_by_prio(struct task_struct *p, int prio) {
@@ -75,9 +79,13 @@ static void reweight_task_by_prio(struct task_struct *p, int prio) {
 
 u8 effective_prio_bore(struct task_struct *p) {
 	int prio = p->static_prio - MAX_RT_PRIO;
-	if (likely(sched_bore && p->bore))
-		prio += p->bore->score;
-	return (u8)clamp(prio, 0, maxval_prio);
+	if (unlikely(p->bore))
+		return (u8)clamp(prio, 0, maxval_prio);
+	prio += p->bore->score & -(s32)sched_bore;
+    prio &= ~(prio >> 31);
+    s32 diff = prio - maxval_prio;
+    prio -= (diff & ~(diff >> 31));
+    return (u8)prio;
 }
 
 static void update_penalty(struct task_struct *p) {
@@ -85,8 +93,10 @@ static void update_penalty(struct task_struct *p) {
 
 	u8  prev_prio = effective_prio_bore(p);
 
-	p->bore->penalty = (p->flags & PF_KTHREAD)? 0:
-		max(p->bore->curr_penalty, p->bore->prev_penalty);
+	s32 diff = (s32)p->bore->curr_penalty - (s32)p->bore->prev_penalty;
+	u16 max_val = p->bore->curr_penalty - (diff & (diff >> 31));
+    u32 is_kthread = !!(p->flags & PF_KTHREAD);
+    p->bore->penalty = max_val & -(s32)(!is_kthread);
 
 	u8 new_prio = effective_prio_bore(p);
 	if (new_prio != prev_prio)
@@ -134,7 +144,7 @@ static inline bool task_is_bore_eligible(struct task_struct *p)
 
 #ifndef for_each_child_task
 #define for_each_child_task(p, t) \
-	list_for_each_entry(t, &(p)->children, sibling)
+	list_for_each_entry_rcu(t, &(p)->children, sibling)
 #endif
 
 static inline u32 count_children_upto2(struct task_struct *p) {
@@ -144,16 +154,22 @@ static inline u32 count_children_upto2(struct task_struct *p) {
 }
 
 static inline bool burst_cache_expired(struct bore_bc *bc, u64 now) {
-	u64 timestamp = bc->timestamp << BORE_BC_TIMESTAMP_SHIFT;
-	return now - timestamp > sched_burst_cache_lifetime;
+	struct bore_bc bc_val = { .value = READ_ONCE(bc->value) };
+    u64 timestamp = (u64)bc_val.timestamp << BORE_BC_TIMESTAMP_SHIFT;
+    return now - timestamp > (u64)sched_burst_cache_lifetime;
 }
 
 static void update_burst_cache(struct bore_bc *bc,
 		struct task_struct *p, u32 count, u32 total, u64 now) {
 	if (!p->bore) return;
-	u32 average = count ? total / count : 0;
-	bc->penalty = max(average, p->bore->penalty);
-	bc->timestamp = now >> BORE_BC_TIMESTAMP_SHIFT;
+	u32 average = (count == 1) ? total :
+            (u32)(((u64)total * bore_reciprocal_lut[count]) >> 32);
+
+    struct bore_bc new_bc = {
+            .penalty = max(average, p->bore->penalty),
+            .timestamp = now >> BORE_BC_TIMESTAMP_SHIFT
+    };
+    WRITE_ONCE(bc->value, new_bc.value);
 }
 
 static u32 inherit_none(struct task_struct *parent,
@@ -162,16 +178,19 @@ static u32 inherit_none(struct task_struct *parent,
 
 static u32 inherit_from_parent(struct task_struct *parent,
 									u64 clone_flags, u64 now) {
+	struct bore_bc bc_val;
+	
 	if (clone_flags & CLONE_PARENT)
-		parent = parent->real_parent;
+		parent = rcu_dereference(parent->real_parent);
 
 	struct bore_bc *bc = &parent->bore->subtree;
 
 	if (burst_cache_expired(bc, now)) {
 		struct task_struct *child;
-		u32 count = 0, total = 0;
+		u32 count = 0, total = 0, scan_count = 0;
 		for_each_child_task(parent, child) {
-			if (count >= BURST_CACHE_STOP_COUNT) break;
+			if (count >= BURST_CACHE_SAMPLE_LIMIT) break;
+            if (scan_count++ >= BURST_CACHE_SCAN_LIMIT) break;
 
 			if (!task_is_bore_eligible(child)) continue;
 			count++;
@@ -181,21 +200,23 @@ static u32 inherit_from_parent(struct task_struct *parent,
 		update_burst_cache(bc, parent, count, total, now);
 	}
 
-	return bc->penalty;
+	bc_val.value = READ_ONCE(bc->value);
+	return (u32)bc_val.penalty;
 }
 
 static u32 inherit_from_ancestor_hub(struct task_struct *parent,
 										u64 clone_flags, u64 now) {
+	struct bore_bc bc_val;
 	struct task_struct *ancestor = parent;
 	u32 sole_child_count = 0;
 
 	if (clone_flags & CLONE_PARENT) {
-		ancestor = ancestor->real_parent;
+		ancestor = rcu_dereference(ancestor->real_parent);
 		sole_child_count = 1;
 	}
 
 	for (struct task_struct *next;
-			(next = ancestor->real_parent) != ancestor &&
+			(next = rcu_dereference(ancestor->real_parent)) != ancestor &&
 			count_children_upto2(ancestor) <= sole_child_count;
 			ancestor = next, sole_child_count = 1) {}
 
@@ -203,9 +224,10 @@ static u32 inherit_from_ancestor_hub(struct task_struct *parent,
 
 	if (burst_cache_expired(bc, now)) {
 		struct task_struct *direct_child;
-		u32 count = 0, total = 0;
+		u32 count = 0, total = 0, scan_count = 0;
 		for_each_child_task(ancestor, direct_child) {
-			if (count >= BURST_CACHE_STOP_COUNT) break;
+			if (count >= BURST_CACHE_SAMPLE_LIMIT) break;
+            if (scan_count++ >= BURST_CACHE_SCAN_LIMIT) break;
 
 			struct task_struct *descendant = direct_child;
 			while (count_children_upto2(descendant) == 1)
@@ -220,10 +242,12 @@ static u32 inherit_from_ancestor_hub(struct task_struct *parent,
 		update_burst_cache(bc, ancestor, count, total, now);
 	}
 
-	return bc->penalty;
+	bc_val.value = READ_ONCE(bc->value);
+    return (u32)bc_val.penalty;
 }
 
 static u32 inherit_from_thread_group(struct task_struct *p, u64 now) {
+	struct bore_bc bc_val;
 	struct task_struct *leader = p->group_leader;
 	struct bore_bc *bc = &leader->bore->group;
 
@@ -232,7 +256,7 @@ static u32 inherit_from_thread_group(struct task_struct *p, u64 now) {
 		u32 count = 0, total = 0;
 
 		for_each_thread(leader, sibling) {
-			if (count >= BURST_CACHE_STOP_COUNT) break;
+			if (count >= BURST_CACHE_SAMPLE_LIMIT) break;
 
 			if (!task_is_bore_eligible(sibling)) continue;
 			count++;
@@ -242,13 +266,15 @@ static u32 inherit_from_thread_group(struct task_struct *p, u64 now) {
 		update_burst_cache(bc, leader, count, total, now);
 	}
 
-	return bc->penalty;
+	bc_val.value = READ_ONCE(bc->value);
+    return (u32)bc_val.penalty;
 }
 
 void task_fork_bore(struct task_struct *p,
 	               struct task_struct *parent, u64 clone_flags, u64 now) {
 	if (!task_is_bore_eligible(p) || unlikely(!sched_bore)) return;
 
+	rcu_read_lock();
 	u32 inherited_penalty = (clone_flags & CLONE_THREAD)?
 		inherit_from_thread_group(parent, now):
 		inherit_penalty_fn(parent, clone_flags, now);
@@ -260,6 +286,7 @@ void task_fork_bore(struct task_struct *p,
 	p->bore->stop_update   = false;
 	p->bore->futex_waiting = false;
 	update_penalty(p);
+	rcu_read_unlock();
 }
 
 void reset_task_bore(struct task_struct *p)
@@ -284,6 +311,9 @@ static void update_inherit_type(void) {
 void __init sched_init_bore(void) {
 	printk(KERN_INFO "%s %s by %s\n",
 		SCHED_BORE_PROGNAME, SCHED_BORE_VERSION, SCHED_BORE_AUTHOR);
+
+	for (int i = 1; i <= BURST_CACHE_SAMPLE_LIMIT; i++)
+            bore_reciprocal_lut[i] = (u32)((0xffffffffULL + i) / i);
 
 	init_task.bore = kzalloc(sizeof(struct bore_ctx), GFP_KERNEL);
 	if (unlikely(!init_task.bore)) {
