@@ -331,7 +331,6 @@ static bool place_pp_slot(struct zram *zram, struct zram_pp_ctl *ctl,
 	list_add(&pps->entry, &ctl->pp_buckets[bid]);
 
 	zram_set_flag(zram, pps->index, ZRAM_PP_SLOT);
-	atomic_inc(&ctl->num_pp_slots);
 	return true;
 }
 
@@ -765,25 +764,18 @@ static void read_from_bdev_async(struct zram *zram, struct page *page,
 
 static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 {
-	/* 物理块分配状态 */
 	unsigned long batch_base_idx = 0;
-	int batch_count = 0;   /* 当前分配到的连续块总数 */
-	int batch_cursor = 0;  /* 当前连续块中已经使用的数量 */
-	
-	/* 当前正在构建的 bio 请求 */
+	int batch_count = 0;
+	int batch_cursor = 0;
 	struct zram_wb_batch_request *active_req = NULL;
 	struct zram_pp_slot *pps;
 	int ret = 0;
-	
-	/* 估算剩余工作量 */
-	int pending_slots = atomic_read(&ctl->num_pp_slots);
-	if (!pending_slots)
-		return 0;
+
+	atomic_set(&ctl->num_pp_slots, 1);
 
 	struct blk_plug plug;
 	blk_start_plug(&plug);
 
-	/* 循环获取待处理的槽位 */
 	while ((pps = select_pp_slot(ctl))) {
 		struct page *page;
 		unsigned long current_blk_idx;
@@ -793,53 +785,46 @@ static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 		spin_lock(&zram->wb_limit_lock);
 		if (zram->wb_limit_enable && !zram->bd_wb_limit) {
 			spin_unlock(&zram->wb_limit_lock);
-			ret = -EIO;
 			release_pp_slot(zram, pps);
-			break; /* 配额耗尽，停止循环 */
+			ret = -EIO;
+			break; 
 		}
 		spin_unlock(&zram->wb_limit_lock);
 
-		/* --- 2. 物理块管理：如果当前批次用完了，分配新的一批 --- */
+		/* --- 2. 物理块管理 --- */
 		if (batch_cursor >= batch_count) {
-			/* 如果之前有积攒的 BIO，先提交掉 (防止物理块不连续导致无法 merge) */
 			if (active_req) {
 				submit_bio(active_req->bio);
 				active_req = NULL;
 			}
 			
-			/* 归还上一批次分配了但未使用的块 (如果有) */
 			if (batch_base_idx && batch_count > batch_cursor) {
 				free_block_bdev_range(zram, 
 						      batch_base_idx + batch_cursor, 
 						      batch_count - batch_cursor);
 			}
 
-			/* 申请新的一批块，最多申请 ZRAM_WB_MAX_BATCH_SIZE 个 */
-			int want_count = pending_slots;
-			if (want_count > ZRAM_WB_MAX_BATCH_SIZE) 
-				want_count = ZRAM_WB_MAX_BATCH_SIZE;
+			int want_count = ZRAM_WB_MAX_BATCH_SIZE;
 			
 			batch_cursor = 0;
 			batch_count = 0;
 			batch_base_idx = alloc_block_bdev_batch(zram, want_count, &batch_count);
 			
 			if (!batch_base_idx) {
-				ret = -ENOSPC; /* 磁盘满 */
 				release_pp_slot(zram, pps);
+				ret = -ENOSPC;
 				break;
 			}
 		}
 
-		/* 计算当前槽位对应的物理块索引 */
 		current_blk_idx = batch_base_idx + batch_cursor;
 
-		/* --- 3. BIO 请求管理：如果没有活跃请求，创建一个新的 --- */
+		/* --- 3. BIO 请求管理 --- */
 		if (!active_req) {
 			active_req = alloc_wb_batch_request(zram, ctl, current_blk_idx);
 			if (!active_req) {
-				ret = -ENOMEM;
 				release_pp_slot(zram, pps);
-				/* 此时分配的块还未消耗，会在循环结束后的清理逻辑中被释放 */
+				ret = -ENOMEM;
 				break;
 			}
 		}
@@ -847,7 +832,6 @@ static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 		/* --- 4. 准备数据页 --- */
 		page = alloc_page(GFP_NOIO | __GFP_NOWARN);
 		if (!page) {
-			/* 内存不足，先提交已有的数据，然后退出 */
 			if (active_req->count > 0) {
 				submit_bio(active_req->bio);
 				active_req = NULL;
@@ -855,42 +839,32 @@ static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 				bio_put(active_req->bio);
 				active_req = NULL;
 			}
-			ret = -ENOMEM;
 			release_pp_slot(zram, pps);
+			ret = -ENOMEM;
 			break;
 		}
 
-		/* --- 5. 读取 ZRAM 数据 (解压) --- */
+		/* --- 5. 读取 ZRAM 数据 --- */
 		zram_slot_lock(zram, index);
 		if (!zram_test_flag(zram, index, ZRAM_PP_SLOT)) {
-			/* 槽位失效（极少见） */
 			zram_slot_unlock(zram, index);
 			__free_page(page);
 			release_pp_slot(zram, pps);
-			/* 注意：不增加 cursor，也不提交 bio，只是跳过这个任务 */
 			continue;
 		}
 		zram_slot_unlock(zram, index);
 
 		if (zram_read_page(zram, page, index, NULL)) {
-			/* 读取失败 */
 			__free_page(page);
 			release_pp_slot(zram, pps);
 			continue;
 		}
 
 		/* --- 6. 将页面加入 BIO --- */
-		/* bio_add_page 尝试将页面合并到 bio 中，返回实际添加的字节数 */
 		if (bio_add_page(active_req->bio, page, PAGE_SIZE, 0) < PAGE_SIZE) {
-			/* 
-			 * BIO 满了 (或者段限制)，无法添加当前页。
-			 * 策略：提交旧的，为当前页申请新的 BIO。
-			 */
-			
-			/* 提交旧 BIO */
+			/* BIO 满了，提交旧的，开新的 */
 			submit_bio(active_req->bio);
 			
-			/* 为当前页重新申请 BIO (复用 current_blk_idx) */
 			active_req = alloc_wb_batch_request(zram, ctl, current_blk_idx);
 			if (!active_req) {
 				__free_page(page);
@@ -899,9 +873,7 @@ static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 				break;
 			}
 			
-			/* 再次尝试添加 */
 			if (bio_add_page(active_req->bio, page, PAGE_SIZE, 0) < PAGE_SIZE) {
-				/* 如果新建的空 bio 都加不进去，那是严重错误 */
 				bio_put(active_req->bio);
 				active_req = NULL;
 				__free_page(page);
@@ -911,18 +883,18 @@ static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 			}
 		}
 
-		/* --- 7. 成功添加，记录元数据 --- */
+		/* --- 7. 成功添加 --- */
+		
+		atomic_inc(&ctl->num_pp_slots);
+
 		int idx = active_req->count++;
 		active_req->sub_reqs[idx].pps = pps;
 		active_req->sub_reqs[idx].blk_idx = current_blk_idx;
 		active_req->sub_reqs[idx].index = index;
 
-		/* 从控制结构中移除 pps，表示已移交给异步 IO 流程 */
 		remove_pp_slot_from_ctl(pps);
-		pending_slots--;
-		batch_cursor++; /* 只有成功添加进 BIO，才消耗一个物理块配额 */
+		batch_cursor++; 
 		
-		/* 如果当前 BIO 已经达到我们设定的人工上限 (ZRAM_WB_MAX_BATCH_SIZE)，立即提交 */
 		if (active_req->count >= ZRAM_WB_MAX_BATCH_SIZE) {
 			submit_bio(active_req->bio);
 			active_req = NULL;
@@ -938,14 +910,15 @@ static int zram_writeback_slots(struct zram *zram, struct zram_pp_ctl *ctl)
 	blk_finish_plug(&plug);
 
 	/* --- 8. 清理 --- */
-	/* 释放已分配但未使用的物理块 */
 	if (batch_base_idx && batch_count > batch_cursor) {
 		free_block_bdev_range(zram, 
 				      batch_base_idx + batch_cursor, 
 				      batch_count - batch_cursor);
 	}
 
-	/* 等待所有异步 IO 完成 */
+	if (atomic_dec_and_test(&ctl->num_pp_slots))
+		complete(&ctl->all_done);
+
 	wait_for_completion(&ctl->all_done);
 
 	return ret;
