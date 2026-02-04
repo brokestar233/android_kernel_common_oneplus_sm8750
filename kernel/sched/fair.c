@@ -6746,21 +6746,6 @@ static inline void set_rd_overutilized_status(struct root_domain *rd,
 	WRITE_ONCE(rd->overutilized, status);
 	trace_sched_overutilized_tp(rd, !!status);
 }
-
-static inline void check_update_overutilized_status(struct rq *rq)
-{
-	/*
-	 * overutilized field is used for load balancing decisions only
-	 * if energy aware scheduler is being used
-	 */
-	if (!sched_energy_enabled())
-		return;
-
-	if (!READ_ONCE(rq->rd->overutilized) && cpu_overutilized(rq->cpu))
-		set_rd_overutilized_status(rq->rd, SG_OVERUTILIZED);
-}
-#else
-static inline void check_update_overutilized_status(struct rq *rq) { }
 #endif
 
 /* Runqueue only has SCHED_IDLE tasks enqueued */
@@ -6788,7 +6773,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 	int idle_h_nr_running = task_has_idle_policy(p);
-	int task_new = !(flags & ENQUEUE_WAKEUP);
 	int should_iowait_boost;
 
 	/*
@@ -6864,8 +6848,6 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 * into account, but that is not straightforward to implement,
 	 * and the following generally works well enough in practice.
 	 */
-	if (!task_new)
-		check_update_overutilized_status(rq);
 
 enqueue_throttle:
 	assert_list_leaf_cfs_rq(rq);
@@ -9659,6 +9641,7 @@ struct sg_lb_stats {
 	unsigned int nr_numa_running;
 	unsigned int nr_preferred_running;
 #endif
+	unsigned int nr_overutilized; 
 };
 
 /*
@@ -10111,8 +10094,10 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		nr_running = rq->nr_running;
 		sgs->sum_nr_running += nr_running;
 
-		if (cpu_overutilized(i))
+		if (cpu_overutilized(i)) {
 			*sg_status |= SG_OVERUTILIZED;
+			sgs->nr_overutilized++;
+		}
 
 		/*
 		 * No need to call idle_cpu() if nr_running is not 0
@@ -10782,6 +10767,7 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 	struct sg_lb_stats *local = &sds->local_stat;
 	struct sg_lb_stats tmp_sgs;
 	unsigned long sum_util = 0;
+	unsigned int domain_overutilized_cnt = 0;
 	int sg_status = 0;
 
 	do {
@@ -10799,6 +10785,8 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 		}
 
 		update_sg_lb_stats(env, sds, sg, sgs, &sg_status);
+
+		domain_overutilized_cnt += sgs->nr_overutilized;
 
 		if (!local_group && update_sd_pick_busiest(env, sds, sg, sgs)) {
 			sds->busiest = sg;
@@ -10828,10 +10816,13 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 	if (!env->sd->parent) {
 		/* update overload indicator if we are at root domain */
 		WRITE_ONCE(env->dst_rq->rd->overload, sg_status & SG_OVERLOAD);
+		int threshold = env->sd->span_weight >> 1; 
 
-		/* Update over-utilization (tipping point, U >= 0) indicator */
-		set_rd_overutilized_status(env->dst_rq->rd,
-					   sg_status & SG_OVERUTILIZED);
+		if (domain_overutilized_cnt > threshold)
+			set_rd_overutilized_status(env->dst_rq->rd, SG_OVERUTILIZED);
+		else
+			set_rd_overutilized_status(env->dst_rq->rd, 0);
+
 	} else if (sg_status & SG_OVERUTILIZED) {
 		set_rd_overutilized_status(env->dst_rq->rd, SG_OVERUTILIZED);
 	}
@@ -12835,7 +12826,6 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 		task_tick_numa(rq, curr);
 
 	update_misfit_status(curr, rq);
-	check_update_overutilized_status(task_rq(curr));
 
 	task_tick_core(rq, curr);
 }
