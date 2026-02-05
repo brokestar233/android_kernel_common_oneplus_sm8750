@@ -1586,6 +1586,8 @@ static void zram_meta_free(struct zram *zram, u64 disksize)
 
 	zs_destroy_pool(zram->mem_pool);
 	
+	synchronize_rcu();
+
 	/* Destroy the per-device idle LRU */
 	list_lru_destroy(&zram->zram_list_lru);
 	
@@ -3092,6 +3094,7 @@ static int zram_remove(struct zram *zram)
         unregister_shrinker(zram->zram_shrinker);
         shrinker_free(zram->zram_shrinker);
     }
+	synchronize_rcu();
     list_lru_destroy(&zram->zram_list_lru);
 	#endif
 
@@ -3448,11 +3451,21 @@ static unsigned long zram_shrinker_scan(struct shrinker *shrinker, struct shrink
 
     work->zram = zram;
     work->ctl = init_pp_ctl();
-    if (!work->ctl)
+    if (!work->ctl) {
         return SHRINK_STOP;
+	}
+
+	rcu_read_lock();
+
+    if (!zram->zram_list_lru.node || !zram->table || !atomic64_read(&zram->stats.pages_stored)) {
+        rcu_read_unlock();
+        goto out;
+    }
 
     /* Phase 2: 收集种子 (持有 LRU 锁) */
     list_lru_shrink_walk(&zram->zram_list_lru, sc, zram_seed_collect_cb, work);
+
+	rcu_read_unlock();
 
     if (work->nr_candidates == 0)
         goto out;
@@ -3521,20 +3534,31 @@ out:
 static unsigned long zram_shrinker_count(struct shrinker *shrinker, struct shrink_control *sc)
 {
     struct zram *zram = shrinker->private_data;
-    
+    unsigned long ret = 0;
+
+    rcu_read_lock();
+
+    /* 检查设备是否有效 */
     if (!zram->backing_dev || !gfp_has_io_fs(sc->gfp_mask)) {
-        return 0;
-	}
+        goto out;
+    }
 
-	if (!atomic64_read(&zram->stats.pages_stored)) {
-        return 0;
-	}
+    /* 
+     * 检查统计数据和 LRU 节点是否存在
+     */
+    if (!atomic64_read(&zram->stats.pages_stored)) {
+        goto out;
+    }
 
-	if (!zram->zram_list_lru.node) {
-        return 0;
-	}
+    if (!zram->zram_list_lru.node) {
+        goto out;
+    }
 
-    return list_lru_shrink_count(&zram->zram_list_lru, sc);
+    ret = list_lru_shrink_count(&zram->zram_list_lru, sc);
+
+out:
+    rcu_read_unlock();
+    return ret;
 }
 
 static void zram_init_shrinker(struct zram *zram)
