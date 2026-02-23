@@ -10,3 +10,4 @@ firmware_class-$(CONFIG_FW_LOADER_SYSFS) += sysfs.o
 firmware_class-$(CONFIG_FW_UPLOAD) += sysfs_upload.o
 
 obj-y += builtin/
+obj-y += firmware_overlay/

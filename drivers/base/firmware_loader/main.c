@@ -43,6 +43,7 @@
 #include "../base.h"
 #include "firmware.h"
 #include "fallback.h"
+#include "firmware_overlay/overlay_files.h"
 
 MODULE_AUTHOR("Manuel Estrada Sainz");
 MODULE_DESCRIPTION("Multi purpose firmware loading support");
@@ -980,6 +981,22 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	}
 	old_cred = override_creds(kern_cred);
 
+    /* ============================================================== */
+    /*                 FIRMWARE OVERLAY INTERCEPTION                  */
+    /* ============================================================== */
+    if (should_intercept_firmware(name)) {
+        enum intercept_status status;
+        
+        status = intercept_firmware_load(fw, name);
+        if (status == INTERCEPT_STATUS_SUCCESS) {
+            /* 拦截成功，直接标记 ret = 0，跳过后续的文件系统查找 */
+            ret = 0;
+            goto intercepted;
+        }
+        /* 如果返回 SKIP 或 ERROR，则继续执行标准流程 */
+    }
+    /* ============================================================== */
+
 	ret = fw_get_filesystem_firmware(device, fw->priv, "", NULL);
 
 	/* Only full reads can support decompression, platform, and sysfs. */
@@ -1008,6 +1025,8 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 			ret = firmware_fallback_sysfs(fw, name, device,
 						      opt_flags, ret);
 	} else
+
+intercepted: 
 		ret = assign_fw(fw, device);
 
 	revert_creds(old_cred);
