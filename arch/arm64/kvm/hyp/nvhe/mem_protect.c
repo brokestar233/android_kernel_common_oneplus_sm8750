@@ -267,6 +267,12 @@ static void guest_s2_put_page(void *addr)
 	hyp_put_page(&current_vm->pool, addr);
 }
 
+static void guest_s2_free_unlinked_table(void *addr, u32 level)
+{
+	/* We are trying to collapse a table into a block mapping. This is forbidden. */
+	WARN_ON(1);
+}
+
 static void *__fixmap_guest_page(void *va, size_t *size)
 {
 	void *addr;
@@ -348,6 +354,7 @@ int kvm_guest_prepare_stage2(struct pkvm_hyp_vm *vm, void *pgd)
 		.zalloc_pages_exact	= guest_s2_zalloc_pages_exact,
 		.free_pages_exact	= guest_s2_free_pages_exact,
 		.zalloc_page		= guest_s2_zalloc_page,
+		.free_unlinked_table	= guest_s2_free_unlinked_table,
 		.phys_to_virt		= hyp_phys_to_virt,
 		.virt_to_phys		= hyp_virt_to_phys,
 		.page_count		= hyp_page_count,
@@ -1530,16 +1537,26 @@ struct guest_request_walker_data {
 	int			max_ptes;
 };
 
-#define GUEST_WALKER_DATA_INIT(__state)			\
-{						 	\
-	.size		= 0,				\
-	.desired_state	= __state,			\
-	.desired_mask	= ~0,				\
-	/*						\
-	 * Arbitrary limit of walked PTEs to restrict	\
-	 * the time spent at EL2			\
-	 */						\
-	.max_ptes	= 512,				\
+#define GUEST_WALKER_DATA_INIT(__state)							\
+{											\
+	.size		= 0,								\
+	.desired_state	= __state,							\
+	.desired_mask	= ~0,								\
+	/*										\
+	 * In the very unlucky case where we have:					\
+	 *   1. A block-aligned start address						\
+	 *   2. An existing table							\
+	 *   3. Contiguous phys for the entire table					\
+	 *										\
+	 * The guest stage-2 mapping of that range would try to collapse the existing	\
+	 * table into a block mapping. We do not want this to happen: the		\
+	 * stage-2 geometry must remain synchronized with the host's			\
+	 * kvm_pinned_page tree at all time.						\
+	 *										\
+	 * As a mitigation, limit the number of processed PTEs to half the size		\
+	 * of a table on a 4K page-size system.						\
+	 */										\
+	.max_ptes	= 256,								\
 }
 
 static int guest_request_walker(const struct kvm_pgtable_visit_ctx *ctx,

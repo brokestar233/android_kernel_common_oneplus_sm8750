@@ -119,6 +119,7 @@
   devm_gpiochip_add_data_with_key
   devm_gpiod_get
   devm_gpiod_get_optional
+  devm_hwspin_lock_request_specific
   devm_ioremap
   devm_ioremap_resource
   devm_ioremap_wc

@@ -74,6 +74,7 @@ extern struct kvm_iommu_ops kvm_nvhe_sym(smmu_ops);
 static int atomic_pages;
 module_param(atomic_pages, int, 0);
 
+#ifdef CONFIG_CMA
 static phys_addr_t __topup_virt_to_phys(void *virt)
 {
 	return __pa(virt);
@@ -132,6 +133,12 @@ static int __kvm_arm_smmu_topup_from_cma(size_t size, gfp_t gfp, size_t *allocat
 
 	return 0;
 }
+#else
+static int __kvm_arm_smmu_topup_from_cma(size_t size, gfp_t gfp, size_t *allocated)
+{
+	return -ENOMEM;
+}
+#endif /* CONFIG_CMA */
 
 static int kvm_arm_smmu_topup_memcache(struct arm_smccc_res *res, gfp_t gfp)
 {

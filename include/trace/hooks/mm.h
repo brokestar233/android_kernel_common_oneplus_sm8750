@@ -449,6 +449,9 @@ DECLARE_HOOK(android_vh_page_cache_ra_unbounded,
 DECLARE_HOOK(android_vh_force_page_cache_ra,
 	TP_PROTO(struct address_space *mapping, u64 *data),
 	TP_ARGS(mapping, data));
+DECLARE_HOOK(android_vh_filemap_fault_post_folio_locked,
+	TP_PROTO(struct inode *inode, struct folio *folio, pgoff_t index),
+	TP_ARGS(inode, folio, index));
 DECLARE_HOOK(android_vh_filemap_fault_folio_locked,
 	TP_PROTO(struct inode *inode, struct folio *folio, pgoff_t index),
 	TP_ARGS(inode, folio, index));
@@ -672,6 +675,21 @@ DECLARE_RESTRICTED_HOOK(android_rvh_gup_longterm_locked,
 		unsigned long start, unsigned long nr_pages,
 		struct page **pages),
 	TP_ARGS(rc, nr_pinned_pages, start, nr_pages, pages), 5);
+DECLARE_HOOK(android_vh_folio_add_file_rmap,
+	TP_PROTO(struct folio *folio, struct page *page, int nr_pages,
+		 int level),
+	TP_ARGS(folio, page, nr_pages, level));
+DECLARE_HOOK(android_vh_folio_remove_rmap,
+	TP_PROTO(struct folio *folio, struct page *page, int nr_pages,
+		 int level),
+	TP_ARGS(folio, page, nr_pages, level));
+DECLARE_HOOK(android_vh_folios_put_refs_direct_free_extent,
+	TP_PROTO(struct folio *folio, unsigned int nr_refs,
+		 struct lruvec **lruvec, unsigned long flags, bool *direct_free),
+	TP_ARGS(folio, nr_refs, lruvec, flags, direct_free));
+DECLARE_HOOK(android_vh_free_pages_and_swap_cache,
+	TP_PROTO(struct folio *folio),
+	TP_ARGS(folio));
 #endif /* _TRACE_HOOK_MM_H */
 
 /* This part must be outside protection */

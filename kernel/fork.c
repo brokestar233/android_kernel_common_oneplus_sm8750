@@ -119,6 +119,7 @@
 
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/sched.h>
+#include <trace/hooks/dtask.h>
 /*
  * Minimum number of threads to boot the kernel
  */
@@ -1004,7 +1005,6 @@ void __put_task_struct(struct task_struct *tsk)
 	WARN_ON(refcount_read(&tsk->usage));
 	WARN_ON(tsk == current);
 
-	trace_android_vh_put_task(tsk);
 #ifdef CONFIG_HMBIRD_SCHED
 	hmbird_free(tsk);
 #endif
@@ -1180,6 +1180,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	setup_thread_stack(tsk, orig);
 	clear_user_return_notifier(tsk);
 	clear_tsk_need_resched(tsk);
+	trace_android_vh_clear_curr_lazy(tsk);
 	set_task_stack_end_magic(tsk);
 	clear_syscall_work_syscall_user_dispatch(tsk);
 

@@ -1088,6 +1088,10 @@ static void handle___pkvm_host_split_guest(struct kvm_cpu_context *host_ctxt)
 	if (!hyp_vcpu)
 		goto out;
 
+	ret = pkvm_refill_memcache(hyp_vcpu);
+	if (ret)
+		goto out;
+
 	ret = __pkvm_host_split_guest(pfn, gfn, size, hyp_vcpu);
 
 out:
