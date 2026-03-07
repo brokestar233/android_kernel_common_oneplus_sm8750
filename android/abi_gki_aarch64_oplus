@@ -87,6 +87,7 @@
   ktime_get_real_ts64
   lock_rename
   lookup_one_len_unlocked
+  loop_process_cmd_list
   mem_cgroup_from_id
   mem_cgroup_update_lru_size
   memcg_page_state
@@ -271,6 +272,7 @@
   __traceiter_android_vh_kvmalloc_node_use_vmalloc
   __traceiter_android_vh_look_around
   __traceiter_android_vh_look_around_migrate_folio
+  __traceiter_android_vh_loop_skip_queue_work
   __traceiter_android_vh_map_util_freq
   __traceiter_android_vh_mark_page_accessed
   __traceiter_android_vh_mem_cgroup_alloc
@@ -283,6 +285,7 @@
   __traceiter_android_vh_mutex_opt_spin_finish
   __traceiter_android_vh_mutex_opt_spin_start
   __traceiter_android_vh_mutex_unlock_slowpath
+  __traceiter_android_vh_oom_evaluate_task_bypass
   __traceiter_android_vh_page_add_new_anon_rmap
   __traceiter_android_vh_page_referenced_check_bypass
   __traceiter_android_vh_page_should_be_protected
@@ -439,6 +442,7 @@
   __tracepoint_android_vh_kvmalloc_node_use_vmalloc
   __tracepoint_android_vh_look_around
   __tracepoint_android_vh_look_around_migrate_folio
+  __tracepoint_android_vh_loop_skip_queue_work
   __tracepoint_android_vh_map_util_freq
   __tracepoint_android_vh_mark_page_accessed
   __tracepoint_android_vh_mem_cgroup_alloc
@@ -451,6 +455,7 @@
   __tracepoint_android_vh_mutex_opt_spin_finish
   __tracepoint_android_vh_mutex_opt_spin_start
   __tracepoint_android_vh_mutex_unlock_slowpath
+  __tracepoint_android_vh_oom_evaluate_task_bypass
   __tracepoint_android_vh_page_add_new_anon_rmap
   __tracepoint_android_vh_page_referenced_check_bypass
   __tracepoint_android_vh_page_should_be_protected
@@ -547,6 +552,7 @@
   unregister_net_sysctl_table
   unregister_sysctl_table
   unregister_tcf_proto_ops
+  utf8_normalize
   v4l2_i2c_subdev_init
   vfs_create
   vfs_getattr
