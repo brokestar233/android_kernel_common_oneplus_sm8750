@@ -5,6 +5,7 @@
 #include <linux/lockdep.h>
 #include <linux/resume_user_mode.h>
 #include <linux/kasan.h>
+#include <linux/poll.h>
 #include <linux/io_uring_types.h>
 #include <uapi/linux/eventpoll.h>
 #include "io-wq.h"
@@ -312,9 +313,14 @@ static inline int io_run_task_work(void)
 	return 0;
 }
 
+static inline bool io_local_work_pending(struct io_ring_ctx *ctx)
+{
+	return !llist_empty(&ctx->work_llist) || !llist_empty(&ctx->retry_llist);
+}
+
 static inline bool io_task_work_pending(struct io_ring_ctx *ctx)
 {
-	return task_work_pending(current) || !llist_empty(&ctx->work_llist);
+	return task_work_pending(current) || io_local_work_pending(ctx);
 }
 
 static inline void io_tw_lock(struct io_ring_ctx *ctx, struct io_tw_state *ts)
@@ -409,5 +415,16 @@ static inline size_t uring_sqe_size(struct io_ring_ctx *ctx)
 	if (ctx->flags & IORING_SETUP_SQE128)
 		return 2 * sizeof(struct io_uring_sqe);
 	return sizeof(struct io_uring_sqe);
+}
+
+static inline bool io_file_can_poll(struct io_kiocb *req)
+{
+	if (req->flags & REQ_F_CAN_POLL)
+		return true;
+	if (file_can_poll(req->file)) {
+		req->flags |= REQ_F_CAN_POLL;
+		return true;
+	}
+	return false;
 }
 #endif

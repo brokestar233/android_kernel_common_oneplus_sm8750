@@ -13,9 +13,9 @@
  * page size in Android.
  */
 
-#include <linux/mm.h>
 #include <linux/pgsize_migration_inline.h>
 #include <linux/seq_file.h>
+#include <linux/mm.h>
 
 #if PAGE_SIZE == SZ_4K && defined(CONFIG_64BIT)
 extern void vma_set_pad_pages(struct vm_area_struct *vma,
