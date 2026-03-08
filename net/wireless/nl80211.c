@@ -8657,7 +8657,6 @@ static int nl80211_get_reg_do(struct sk_buff *skb, struct genl_info *info)
 	rtnl_lock();
 
 	if (info->attrs[NL80211_ATTR_WIPHY]) {
-		bool self_managed;
 
 		rdev = cfg80211_get_dev_from_info(genl_info_net(info), info);
 		if (IS_ERR(rdev)) {
@@ -8666,18 +8665,10 @@ static int nl80211_get_reg_do(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		wiphy = &rdev->wiphy;
-		self_managed = wiphy->regulatory_flags &
-			       REGULATORY_WIPHY_SELF_MANAGED;
 
 		rcu_read_lock();
 
 		regdom = get_wiphy_regdom(wiphy);
-
-		/* a self-managed-reg device must have a private regdom */
-		if (WARN_ON(!regdom && self_managed)) {
-			err = -EINVAL;
-			goto nla_put_failure_rcu;
-		}
 
 		if (regdom &&
 		    nla_put_u32(msg, NL80211_ATTR_WIPHY, get_wiphy_idx(wiphy)))
