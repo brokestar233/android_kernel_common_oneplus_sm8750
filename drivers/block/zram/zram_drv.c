@@ -1562,6 +1562,9 @@ void zram_free_page(struct zram *zram, size_t index)
 	zram_clear_flag(zram, index, ZRAM_IDLE);
 	zram_clear_flag(zram, index, ZRAM_INCOMPRESSIBLE);
 	zram_clear_flag(zram, index, ZRAM_PP_SLOT);
+	zram_clear_flag(zram, index, ZRAM_PAGE_ANON);
+	zram_clear_flag(zram, index, ZRAM_PAGE_FILE);
+	zram_clear_flag(zram, index, ZRAM_PAGE_DIRTY);
 	zram_set_priority(zram, index, 0);
 
 	if (zram_test_flag(zram, index, ZRAM_HUGE)) {
@@ -1723,11 +1726,21 @@ static int zram_bvec_read(struct zram *zram, struct bio_vec *bvec,
 }
 
 static int write_same_filled_page(struct zram *zram, unsigned long fill,
-				  u32 index)
+				  u32 index, struct page *page)
 {
 	zram_slot_lock(zram, index);
 	zram_set_flag(zram, index, ZRAM_SAME);
 	zram_set_handle(zram, index, fill);
+
+	if (PageAnon(page)) {
+		zram_set_flag(zram, index, ZRAM_PAGE_ANON);
+	} else {
+		zram_set_flag(zram, index, ZRAM_PAGE_FILE);
+		/* 块层写入时常设 Writeback，因此两者需一并判断 */
+		if (PageDirty(page) || PageWriteback(page))
+			zram_set_flag(zram, index, ZRAM_PAGE_DIRTY);
+	}
+
 	zram_slot_unlock(zram, index);
 
 	atomic64_inc(&zram->stats.same_pages);
@@ -1769,6 +1782,15 @@ static int write_incompressible_page(struct zram *zram, struct page *page,
 	zram_set_handle(zram, index, handle);
 	zram_set_obj_size(zram, index, PAGE_SIZE);
 	zram_set_priority(zram, index, prio);
+
+	if (PageAnon(page)) {
+		zram_set_flag(zram, index, ZRAM_PAGE_ANON);
+	} else {
+		zram_set_flag(zram, index, ZRAM_PAGE_FILE);
+		if (PageDirty(page) || PageWriteback(page))
+			zram_set_flag(zram, index, ZRAM_PAGE_DIRTY);
+	}
+
 	zram_slot_unlock(zram, index);
 
 	atomic64_add(PAGE_SIZE, &zram->stats.compr_data_size);
@@ -1803,7 +1825,7 @@ static int zram_write_page(struct zram *zram, struct page *page, u32 index)
 	same_filled = page_same_filled(mem, &element);
 	kunmap_atomic(mem);
 	if (same_filled)
-		return write_same_filled_page(zram, element, index);
+		return write_same_filled_page(zram, element, index, page);
 
 	for (prio = ZRAM_PRIMARY_COMP; prio < prio_max; prio++) {
 		if (!zram->comps[prio])
@@ -1863,6 +1885,15 @@ static int zram_write_page(struct zram *zram, struct page *page, u32 index)
 	zram_set_handle(zram, index, handle);
 	zram_set_obj_size(zram, index, comp_len);
 	zram_set_priority(zram, index, prio);
+
+	if (PageAnon(page)) {
+		zram_set_flag(zram, index, ZRAM_PAGE_ANON);
+	} else {
+		zram_set_flag(zram, index, ZRAM_PAGE_FILE);
+		if (PageDirty(page) || PageWriteback(page))
+			zram_set_flag(zram, index, ZRAM_PAGE_DIRTY);
+	}
+
 	zram_slot_unlock(zram, index);
 
 	/* Update stats */
@@ -3276,7 +3307,27 @@ static enum lru_status zram_shrink_cb(struct list_head *item, struct list_lru_on
         ret = LRU_SKIP;
         goto relock;
     }
-    
+
+    /* 根据文件页及脏页状态策略处理 */
+    if (zram_test_flag(zram, index, ZRAM_PAGE_FILE)) {
+        if (!zram_test_flag(zram, index, ZRAM_PAGE_DIRTY)) {
+            /* 1. 干净的文件页：直接释放 */
+            zram_free_page(zram, index);
+            zram_slot_unlock(zram, index);
+            ret = LRU_REMOVED_RETRY; /* 让 walker 继续尝试下个元素 */
+            goto relock;
+        } else {
+            /* 2. 脏文件页：踢出 LRU 并且清除 idle，不触发回写 */
+            if (zram_test_flag(zram, index, ZRAM_IDLE))
+                zram_lru_del(zram, entry); /* 本身携带安全锁操作 */
+            zram_clear_flag(zram, index, ZRAM_IDLE);
+            zram_slot_unlock(zram, index);
+            ret = LRU_REMOVED_RETRY;
+            goto relock;
+        }
+    }
+    /* 3. 匿名页或者未识别的页，将穿透该 if 逻辑走正常的回写通道 */
+
     /* 设置PP_SLOT标志(持锁状态下) */
     zram_set_flag(zram, index, ZRAM_PP_SLOT);
     

@@ -58,6 +58,10 @@ enum zram_pageflags {
 	ZRAM_COMP_PRIORITY_BIT1, /* First bit of comp priority index */
 	ZRAM_COMP_PRIORITY_BIT2, /* Second bit of comp priority index */
 
+	ZRAM_PAGE_ANON,		/* 匿名页 */
+	ZRAM_PAGE_FILE,		/* 文件页 */
+	ZRAM_PAGE_DIRTY,	/* 脏页 */
+
 	__NR_ZRAM_PAGEFLAGS,
 };
 
