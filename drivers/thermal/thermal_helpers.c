@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/sysfs.h>
+#include <linux/temp_offset_sysctl.h>
 
 #include "thermal_core.h"
 #include "thermal_trace.h"
@@ -91,6 +92,12 @@ int __thermal_zone_get_temp(struct thermal_zone_device *tz, int *temp)
 	lockdep_assert_held(&tz->lock);
 
 	ret = tz->ops->get_temp(tz, temp);
+
+	if (!ret &&
+		strncasecmp(tz->type, "battery", 7) != 0 &&
+		strncasecmp(tz->type, "batt", 4) != 0) {
+		*temp -= thermal_temp_offset_mc();
+	}
 
 	if (IS_ENABLED(CONFIG_THERMAL_EMULATION) && tz->emul_temperature) {
 		for (count = 0; count < tz->num_trips; count++) {
