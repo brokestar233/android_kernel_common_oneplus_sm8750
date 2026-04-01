@@ -392,6 +392,7 @@ extern int alloc_contig_range(unsigned long start, unsigned long end,
 extern struct page *alloc_contig_pages(unsigned long nr_pages, gfp_t gfp_mask,
 				       int nid, nodemask_t *nodemask);
 #endif
+void __free_contig_range(unsigned long pfn, unsigned long nr_pages);
 void free_contig_range(unsigned long pfn, unsigned long nr_pages);
 
 #endif /* __LINUX_GFP_H */
