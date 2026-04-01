@@ -5181,6 +5181,39 @@ void free_pages(unsigned long addr, unsigned int order)
 EXPORT_SYMBOL(free_pages);
 
 /*
+ * free_pages_bulk - Free an array of order-0 pages
+ * @page_array: Array of pages to free
+ * @nr_pages: The number of pages in the array
+ *
+ * Free the order-0 pages. Adjacent entries whose PFNs form a contiguous
+ * run are released with a single __free_contig_range() call.
+ *
+ * This assumes page_array is sorted in ascending PFN order. Without that,
+ * the function still frees all pages, but contiguous runs may not be
+ * detected and the freeing pattern can degrade to freeing one page at a
+ * time.
+ *
+ * Context: Sleepable process context only; calls cond_resched()
+ */
+void free_pages_bulk(struct page **page_array, unsigned long nr_pages)
+{
+	while (nr_pages) {
+		unsigned long nr_contig = 1;
+		unsigned long pfn = page_to_pfn(*page_array);
+
+		while (nr_contig < nr_pages &&
+		       page_to_pfn(page_array[nr_contig]) == pfn + nr_contig)
+			nr_contig++;
+
+		__free_contig_range(pfn, nr_contig);
+
+		nr_pages -= nr_contig;
+		page_array += nr_contig;
+		cond_resched();
+	}
+}
+
+/*
  * Page Fragment:
  *  An arbitrary-length arbitrary-offset area of memory which resides
  *  within a 0 or higher order page.  Multiple fragments within that page
