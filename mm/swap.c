@@ -519,7 +519,7 @@ void folio_add_lru(struct folio *folio)
 
 		trace_android_vh_folio_add_lru_folio_activate(folio, &bypass);
 		if (!bypass)
-			folio_set_active(folio);
+			folio_mark_accessed(folio);
 	}
 
 	folio_get(folio);
