@@ -34,3 +34,39 @@ obj-y += build_policy.o
 obj-y += build_utility.o
 obj-y += bore.o
 obj-$(CONFIG_ANDROID_VENDOR_HOOKS) += vendor_hooks.o
+
+# Cambyses: cambyses.c is #included from fair.c (needs access to static functions).
+# Cambyses SIMD: Separate TUs with ISA-specific flags.
+# FPU_KILL_FLAGS must be removed first (kernel builds with -mno-sse etc.),
+# then ISA flags added.  Following Nap's pattern (drivers/cpuidle/governors/nap/).
+ifdef CONFIG_SCHED_CAMBYSES_SIMD
+
+ifdef CONFIG_X86_64
+obj-y += cambyses_simd_ssse3.o cambyses_simd_avx2.o
+
+CAMBYSES_FPU_KILL_FLAGS := -mno-sse -mno-sse2 -mno-mmx -mno-avx -mno-3dnow \
+                           -mno-sse4a -msoft-float -mno-80387 -mno-fp-ret-in-387
+
+CFLAGS_REMOVE_cambyses_simd_ssse3.o += $(CAMBYSES_FPU_KILL_FLAGS)
+CFLAGS_REMOVE_cambyses_simd_avx2.o  += $(CAMBYSES_FPU_KILL_FLAGS)
+
+CFLAGS_cambyses_simd_ssse3.o += $(CC_FLAGS_FPU) -mssse3
+CFLAGS_cambyses_simd_avx2.o  += $(CC_FLAGS_FPU) -mavx -mavx2
+endif # CONFIG_X86_64
+
+ifdef CONFIG_ARM64
+obj-y += cambyses_simd_neon.o
+
+# Remove -mgeneral-regs-only to allow NEON/FP instructions
+CFLAGS_REMOVE_cambyses_simd_neon.o += -mgeneral-regs-only $(CC_FLAGS_NO_FPU)
+
+CLANG_RESOURCE_DIR := $(shell $(CC) -print-resource-dir)
+
+# Add FPU flags: -ffreestanding -isystem <compiler include path>
+CFLAGS_cambyses_simd_neon.o += $(CC_FLAGS_FPU) \
+                               -I$(CLANG_RESOURCE_DIR)/include \
+                               -march=armv8-a+simd \
+                               -ffreestanding
+endif # CONFIG_ARM64
+
+endif # CONFIG_SCHED_CAMBYSES_SIMD

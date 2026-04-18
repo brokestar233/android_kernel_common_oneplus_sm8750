@@ -85,12 +85,11 @@
 
 #include "sched.h"
 #include "stats.h"
-#include "autogroup.h"
+#include "cambyses.h"
 
 #include "autogroup.h"
 #include "pelt.h"
 #include "smp.h"
-#include "stats.h"
 
 #include "../workqueue_internal.h"
 #include "../../io_uring/io-wq.h"
@@ -4713,6 +4712,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->se.vlag			= 0;
 	p->se.slice			= sysctl_sched_base_slice;
 	INIT_LIST_HEAD(&p->se.group_node);
+#ifdef CONFIG_SCHED_CAMBYSES
+	svec_node_init(&p->se.cambyses_node);
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	p->se.cfs_rq			= NULL;
@@ -10479,6 +10481,19 @@ void __init sched_init(void)
 		rq->max_idle_balance_cost = sysctl_sched_migration_cost;
 
 		INIT_LIST_HEAD(&rq->cfs_tasks);
+#ifdef CONFIG_SCHED_CAMBYSES
+		rq->cambyses = NULL;
+		{
+			struct sched_cambyses_rq_data *cambyses;
+
+			cambyses = kzalloc_node(sizeof(*cambyses), GFP_KERNEL,
+					       cpu_to_node(i));
+			if (cambyses) {
+				svec_init(&cambyses->tasks, cambyses->buf, 256);
+				rq->cambyses = cambyses;
+			}
+		}
+#endif
 
 		rq_attach_root(rq, &def_root_domain);
 #ifdef CONFIG_NO_HZ_COMMON

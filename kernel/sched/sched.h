@@ -992,6 +992,20 @@ typedef enum misfit_reason {
 	MISFIT_PERF,		/* Requires moving to a more performant CPU */
 } misfit_reason_t;
 
+#ifdef CONFIG_SCHED_CAMBYSES
+struct sched_cambyses_rq_data {
+	struct svec_node	*buf[256];
+	struct svec_head	tasks;
+	/*
+	 * Shadow arrays — parallel to buf[], indexed by svec slot.
+	 * Enable cache-friendly pre-scoring without touching task_struct.
+	 * Synced at enqueue and in update_curr().
+	 */
+	u64			shadow_exec_start[256];
+	unsigned long		shadow_weight[256];
+};
+#endif
+
 /*
  * This is the main, per-CPU runqueue data structure.
  *
@@ -1214,11 +1228,30 @@ struct rq {
 
 	ANDROID_OEM_DATA_ARRAY(1, 16);
 
+#ifdef CONFIG_SCHED_CAMBYSES
+	ANDROID_KABI_USE(1, struct sched_cambyses_rq_data *cambyses);
+#else
 	ANDROID_KABI_RESERVE(1);
+#endif
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
 };
+
+#ifdef CONFIG_SCHED_CAMBYSES
+static inline struct sched_cambyses_rq_data *rq_cambyses(struct rq *rq)
+{
+	if (!rq)
+		return NULL;
+
+	return rq->cambyses;
+}
+#else
+static inline void *rq_cambyses(struct rq *rq)
+{
+	return NULL;
+}
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 

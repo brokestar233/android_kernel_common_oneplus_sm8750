@@ -57,6 +57,10 @@
 #include "stats.h"
 #include "autogroup.h"
 
+#ifdef CONFIG_SCHED_CAMBYSES
+#include "cambyses.h"
+#endif
+
 #include <linux/sched/bore.h>
 
 #include <trace/hooks/sched.h>
@@ -1232,6 +1236,16 @@ static void update_curr(struct cfs_rq *cfs_rq)
 		return;
 
 	curr->exec_start = now;
+
+#ifdef CONFIG_SCHED_CAMBYSES
+	if (entity_is_task(curr)) {
+		struct sched_cambyses_rq_data *cambyses = rq_cambyses(rq_of(cfs_rq));
+		int si = curr->cambyses_node.svec_idx;
+
+		if (cambyses && si >= 0)
+			cambyses->shadow_exec_start[si] = now;
+	}
+#endif
 
 	if (schedstat_enabled()) {
 		struct sched_statistics *stats;
@@ -3693,6 +3707,22 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 		account_numa_enqueue(rq, task_of(se));
 		list_add(&se->group_node, &rq->cfs_tasks);
+#ifdef CONFIG_SCHED_CAMBYSES
+		{
+			struct sched_cambyses_rq_data *cambyses = rq_cambyses(rq);
+
+			if (cambyses && svec_add(&cambyses->tasks,
+						 &task_of(se)->se.cambyses_node) >= 0) {
+				int idx = task_of(se)->se.cambyses_node.svec_idx;
+
+				if (idx >= 0) {
+					cambyses->shadow_exec_start[idx] =
+						task_of(se)->se.exec_start;
+					cambyses->shadow_weight[idx] = se->load.weight;
+				}
+			}
+		}
+#endif
 	}
 #endif
 	cfs_rq->nr_running++;
@@ -3706,8 +3736,28 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	update_load_sub(&cfs_rq->load, se->load.weight);
 #ifdef CONFIG_SMP
 	if (entity_is_task(se)) {
-		account_numa_dequeue(rq_of(cfs_rq), task_of(se));
+		struct rq *rq = rq_of(cfs_rq);
+
+		account_numa_dequeue(rq, task_of(se));
 		list_del_init(&se->group_node);
+#ifdef CONFIG_SCHED_CAMBYSES
+		{
+			struct sched_cambyses_rq_data *cambyses = rq_cambyses(rq);
+
+			if (cambyses) {
+				int idx = task_of(se)->se.cambyses_node.svec_idx;
+				int last = cambyses->tasks.svec_nr - 1;
+
+				svec_del(&cambyses->tasks, &task_of(se)->se.cambyses_node);
+				if (idx >= 0 && idx != last && last >= 0) {
+					cambyses->shadow_exec_start[idx] =
+						cambyses->shadow_exec_start[last];
+					cambyses->shadow_weight[idx] =
+						cambyses->shadow_weight[last];
+				}
+			}
+		}
+#endif
 	}
 #endif
 	cfs_rq->nr_running--;
@@ -3920,6 +3970,16 @@ void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 	}
 
 	update_load_set(&se->load, weight);
+
+#ifdef CONFIG_SCHED_CAMBYSES
+	if (entity_is_task(se)) {
+		struct sched_cambyses_rq_data *cambyses = rq_cambyses(rq_of(cfs_rq));
+		int si = task_of(se)->se.cambyses_node.svec_idx;
+
+		if (cambyses && si >= 0)
+			cambyses->shadow_weight[si] = weight;
+	}
+#endif
 
 	trace_android_vh_reweight_entity(se);
 #ifdef CONFIG_SMP
@@ -9264,16 +9324,59 @@ static void detach_task(struct task_struct *p, struct lb_env *env)
  *
  * Returns a task if successful and NULL otherwise.
  */
+#ifdef CONFIG_SCHED_CAMBYSES
+#include "cambyses.c"
+#endif
+
 static struct task_struct *detach_one_task(struct lb_env *env)
 {
 	struct task_struct *p;
 
 	lockdep_assert_rq_held(env->src_rq);
 
+#ifdef CONFIG_SCHED_CAMBYSES
+	if (static_branch_likely(&sched_cambyses))
+		return detach_one_task_cambyses(env);
+#endif
+
+	/* Dump cfs_tasks list order at scan start */
+	if (static_branch_unlikely(&cambyses_debug)) {
+		int __pos = 0;
+
+		trace_printk("detach_one: list_dump src_cpu=%d dst_cpu=%d nr=%d idle=%d\n",
+			     env->src_cpu, env->dst_cpu,
+			     env->src_rq->nr_running, env->idle);
+		list_for_each_entry_reverse(p, &env->src_rq->cfs_tasks,
+					    se.group_node) {
+			trace_printk("  [%d] pid=%d comm=%s nice=%d weight=%lu delta=%llu\n",
+				     __pos++, p->pid, p->comm,
+				     task_nice(p), p->se.load.weight,
+				     rq_clock_task(env->src_rq) - p->se.exec_start);
+			if (__pos >= 24)
+				break;
+		}
+	}
+
 	list_for_each_entry_reverse(p,
 			&env->src_rq->cfs_tasks, se.group_node) {
-		if (!can_migrate_task(p, env))
+		if (!can_migrate_task(p, env)) {
+			if (static_branch_unlikely(&cambyses_debug))
+				trace_printk("detach_one: SKIP pid=%d comm=%s nice=%d "
+					     "weight=%lu delta=%llu idle=%d src_cpu=%d\n",
+					     p->pid, p->comm, task_nice(p),
+					     p->se.load.weight,
+					     rq_clock_task(env->src_rq) - p->se.exec_start,
+					     env->idle, env->src_cpu);
 			continue;
+		}
+
+		if (static_branch_unlikely(&cambyses_debug))
+			trace_printk("detach_one: PICK pid=%d comm=%s nice=%d "
+				     "weight=%lu delta=%llu idle=%d src_cpu=%d\n",
+				     p->pid, p->comm, task_nice(p),
+				     p->se.load.weight,
+				     rq_clock_task(env->src_rq) - p->se.exec_start,
+				     env->idle, env->src_cpu);
 
 		detach_task(p, env);
 
@@ -9316,6 +9419,29 @@ static int detach_tasks(struct lb_env *env)
 	if (env->imbalance <= 0)
 		return 0;
 
+#ifdef CONFIG_SCHED_CAMBYSES
+	if (static_branch_likely(&sched_cambyses))
+		return detach_tasks_cambyses(env);
+#endif
+
+	/* Dump cfs_tasks list order at scan start */
+	if (static_branch_unlikely(&cambyses_debug)) {
+		int __pos = 0;
+
+		trace_printk("vanilla: list_dump src_cpu=%d dst_cpu=%d nr=%d mig_type=%d imbal=%ld idle=%d\n",
+			     env->src_cpu, env->dst_cpu,
+			     env->src_rq->nr_running,
+			     env->migration_type, env->imbalance, env->idle);
+		list_for_each_entry_reverse(p, tasks, se.group_node) {
+			trace_printk("  [%d] pid=%d comm=%s nice=%d weight=%lu delta=%llu\n",
+				     __pos++, p->pid, p->comm,
+				     task_nice(p), p->se.load.weight,
+				     rq_clock_task(env->src_rq) - p->se.exec_start);
+			if (__pos >= 24)
+				break;
+		}
+	}
+
 	while (!list_empty(tasks)) {
 		/*
 		 * We don't want to steal all, otherwise we may be treated likewise,
@@ -9338,8 +9464,30 @@ static int detach_tasks(struct lb_env *env)
 
 		p = list_last_entry(tasks, struct task_struct, se.group_node);
 
-		if (!can_migrate_task(p, env))
+		if (!can_migrate_task(p, env)) {
+			if (static_branch_unlikely(&cambyses_debug))
+				trace_printk("vanilla: loop=%d pid=%d comm=%s nice=%d weight=%lu "
+					     "delta=%llu can_mig=0 mig_type=%d imbal=%ld idle=%d src_cpu=%d\n",
+					     env->loop, p->pid, p->comm,
+					     task_nice(p), p->se.load.weight,
+					     rq_clock_task(env->src_rq) - p->se.exec_start,
+					     env->migration_type, env->imbalance, env->idle,
+					     env->src_cpu);
+			if (static_branch_unlikely(&cambyses_debug))
+				trace_printk("vanilla: SKIP_TO_HEAD loop=%d pid=%d nice=%d hot=%d src_cpu=%d\n",
+					     env->loop, p->pid, task_nice(p),
+					     task_hot(p, env), env->src_cpu);
 			goto next;
+		}
+
+		if (static_branch_unlikely(&cambyses_debug))
+			trace_printk("vanilla: loop=%d pid=%d comm=%s nice=%d weight=%lu "
+				     "delta=%llu can_mig=1 mig_type=%d imbal=%ld idle=%d src_cpu=%d\n",
+				     env->loop, p->pid, p->comm,
+				     task_nice(p), p->se.load.weight,
+				     rq_clock_task(env->src_rq) - p->se.exec_start,
+				     env->migration_type, env->imbalance, env->idle,
+				     env->src_cpu);
 
 		switch (env->migration_type) {
 		case migrate_load:
@@ -9394,6 +9542,11 @@ static int detach_tasks(struct lb_env *env)
 		list_add(&p->se.group_node, &env->tasks);
 
 		detached++;
+
+		if (static_branch_unlikely(&cambyses_debug))
+			trace_printk("vanilla: DETACHED pid=%d nice=%d mig_type=%d imbal=%ld src_cpu=%d\n",
+				     p->pid, task_nice(p), env->migration_type, env->imbalance,
+				     env->src_cpu);
 
 #ifdef CONFIG_PREEMPTION
 		/*
@@ -11395,6 +11548,19 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 	return busiest;
 }
 
+#ifdef CONFIG_SCHED_CAMBYSES
+static struct rq *sched_balance_find_src_rq(struct lb_env *env,
+					    struct sched_group *group)
+{
+	/*
+	 * Reuse the current kernel's busiest-rq selector while honoring
+	 * the caller-updated env->cpus mask, which may already exclude
+	 * previously tried source CPUs.
+	 */
+	return find_busiest_queue(env, group);
+}
+#endif
+
 /*
  * Max backoff if we encounter pinned tasks. Pretty arbitrary value, but
  * so long as it is large enough.
@@ -11532,6 +11698,12 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 	struct sched_group *group;
 	struct rq *busiest;
 	struct rq_flags rf;
+#ifdef CONFIG_SCHED_CAMBYSES
+	unsigned long cambyses_avg_load = 0;
+	unsigned long cambyses_init_imbalance = 0;
+	int cambyses_drain_nr = 0;
+	bool cambyses_drain = false;
+#endif
 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(load_balance_mask);
 	struct lb_env env = {
 		.sd		= sd,
@@ -11656,6 +11828,87 @@ more_balance:
 			goto more_balance;
 		}
 
+#ifdef CONFIG_SCHED_CAMBYSES
+		/*
+		 * Multi-source balance drain: when imbalance remains after
+		 * the initial busiest, scan additional above-average CPUs
+		 * in the same group.
+		 *
+		 * On first entry, compute the group's average load.  Then
+		 * repeatedly pick the next-busiest CPU (via
+		 * sched_balance_find_src_rq with already-tried CPUs masked
+		 * out), skipping any CPU whose load <= avg_load (wrong
+		 * direction).  No per-source budget cap — over-drain is
+		 * self-correcting via newidle.
+		 *
+		 * This is safe because Cambyses's scan has no side effects
+		 * on the source rq (no list_move reordering), and an empty
+		 * result returns immediately via nr_cands == 0.
+		 *
+		 * Self-terminating: stops when remaining imbalance hits 0,
+		 * or when the next candidate's load <= avg_load.
+		 */
+		if (static_branch_likely(&sched_cambyses) &&
+		    static_branch_unlikely(&cambyses_multisource_drain) &&
+		    env.imbalance > 0) {
+			unsigned long src_load, moved;
+
+			if (!cambyses_drain) {
+				int __cpu, __nr = 0;
+
+				for_each_cpu(__cpu, sched_group_span(group)) {
+					cambyses_avg_load += cpu_load(cpu_rq(__cpu));
+					__nr++;
+				}
+				if (__nr)
+					cambyses_avg_load /= __nr;
+				cambyses_init_imbalance = env.imbalance;
+				cambyses_drain = true;
+			}
+
+			/*
+			 * Diminishing-returns cutoff: if we have already
+			 * moved a meaningful fraction of the initial
+			 * budget, further sources are unlikely to justify
+			 * the scan cost.  The threshold halves with each
+			 * attempt, so early sources need to contribute
+			 * more to keep going.
+			 *
+			 *   attempt 1: stop if moved >= init >> 1  (50%)
+			 *   attempt 2: stop if moved >= init >> 2  (25%)
+			 *   attempt 3: stop if moved >= init >> 3  (12.5%)
+			 */
+			cambyses_drain_nr++;
+			moved = cambyses_init_imbalance - env.imbalance;
+			if (moved >= (cambyses_init_imbalance >> cambyses_drain_nr))
+				goto cambyses_drain_done;
+
+			__cpumask_clear_cpu(cpu_of(busiest), env.cpus);
+			{
+				struct rq *next;
+
+				next = sched_balance_find_src_rq(&env, group);
+				if (next && next->nr_running > 1) {
+					src_load = cpu_load(next);
+					if (src_load > cambyses_avg_load) {
+						busiest        = next;
+						env.src_cpu    = next->cpu;
+						env.src_rq     = next;
+						env.loop       = 0;
+						env.loop_break =
+							SCHED_NR_MIGRATE_BREAK;
+						env.loop_max   = min(
+							sysctl_sched_nr_migrate,
+							next->nr_running);
+						env.flags     |= LBF_ALL_PINNED;
+						goto more_balance;
+					}
+				}
+			}
+cambyses_drain_done: ;
+		}
+#endif
+
 		/*
 		 * We failed to reach balance because of affinity.
 		 */
@@ -11680,6 +11933,12 @@ more_balance:
 			if (!cpumask_subset(cpus, env.dst_grpmask)) {
 				env.loop = 0;
 				env.loop_break = SCHED_NR_MIGRATE_BREAK;
+#ifdef CONFIG_SCHED_CAMBYSES
+				cambyses_drain = false;
+				cambyses_avg_load = 0;
+				cambyses_init_imbalance = 0;
+				cambyses_drain_nr = 0;
+#endif
 				goto redo;
 			}
 			goto out_all_pinned;
@@ -11747,6 +12006,11 @@ more_balance:
 		/* We were unbalanced, so reset the balancing interval */
 		sd->balance_interval = sd->min_interval;
 	}
+
+	if (IS_ENABLED(CONFIG_SCHED_CAMBYSES) &&
+	    static_branch_unlikely(&cambyses_debug) && !ld_moved)
+		trace_printk("balance_rq: FAILED cpu=%d idle=%d sd_level=%d\n",
+			     this_cpu, idle, sd->level);
 
 	goto out;
 

@@ -36,6 +36,7 @@
 #include <linux/seqlock.h>
 #include <linux/kcsan.h>
 #include <linux/rv.h>
+#include <linux/svec.h>
 #include <linux/livepatch_sched.h>
 #include <linux/android_vendor.h>
 #include <linux/android_kabi.h>
@@ -543,6 +544,14 @@ struct sched_entity {
 
 	struct list_head		group_node;
 	unsigned int			on_rq;
+
+#ifdef CONFIG_SCHED_CAMBYSES
+#ifndef __GENKSYMS__
+	struct svec_node		cambyses_node;
+#endif
+#else
+	/* hole */
+#endif
 
 	u64				exec_start;
 	u64				sum_exec_runtime;
