@@ -4980,19 +4980,15 @@ static void set_initial_priority(struct pglist_data *pgdat, struct scan_control 
 	sc->priority = clamp(priority, DEF_PRIORITY / 2, DEF_PRIORITY);
 }
 
-static bool lruvec_is_sizable(struct lruvec *lruvec, struct scan_control *sc)
+static unsigned long lruvec_evictable_size(struct lruvec *lruvec, bool can_swap)
 {
 	int gen, type, zone;
-	unsigned long total = 0;
-	bool can_swap = get_swappiness(lruvec, sc);
+	unsigned long seq, total = 0;
 	struct lru_gen_folio *lrugen = &lruvec->lrugen;
-	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
 	DEFINE_MAX_SEQ(lruvec);
 	DEFINE_MIN_SEQ(lruvec);
 
 	for (type = !can_swap; type < ANON_AND_FILE; type++) {
-		unsigned long seq;
-
 		for (seq = min_seq[type]; seq <= max_seq; seq++) {
 			gen = lru_gen_from_seq(seq);
 
@@ -5000,6 +4996,17 @@ static bool lruvec_is_sizable(struct lruvec *lruvec, struct scan_control *sc)
 				total += max(READ_ONCE(lrugen->nr_pages[gen][type][zone]), 0L);
 		}
 	}
+
+	return total;
+}
+
+static bool lruvec_is_sizable(struct lruvec *lruvec, struct scan_control *sc)
+{
+	unsigned long total;
+	bool can_swap = get_swappiness(lruvec, sc);
+	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
+
+	total = lruvec_evictable_size(lruvec, can_swap);
 
 	/* whether the size is big enough to be helpful */
 	return mem_cgroup_online(memcg) ? (total >> sc->priority) : total;
@@ -5727,7 +5734,7 @@ static bool should_run_aging(struct lruvec *lruvec, unsigned long max_seq,
 	int gen, type, zone;
 	unsigned long old = 0;
 	unsigned long young = 0;
-	unsigned long total = 0;
+	unsigned long total;
 	struct lru_gen_folio *lrugen = &lruvec->lrugen;
 	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
 	DEFINE_MIN_SEQ(lruvec);
@@ -5749,13 +5756,14 @@ static bool should_run_aging(struct lruvec *lruvec, unsigned long max_seq,
 			for (zone = 0; zone < MAX_NR_ZONES; zone++)
 				size += max(READ_ONCE(lrugen->nr_pages[gen][type][zone]), 0L);
 
-			total += size;
 			if (seq == max_seq)
 				young += size;
 			else if (seq + MIN_NR_GENS == max_seq)
 				old += size;
 		}
 	}
+
+	total = lruvec_evictable_size(lruvec, can_swap);
 
 	/* try to scrape all its memory if this memcg was deleted */
 	if (!mem_cgroup_online(memcg)) {
