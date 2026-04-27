@@ -5412,12 +5412,6 @@ bool isolate_folio(struct lruvec *lruvec, struct folio *folio, struct scan_contr
 {
 	bool success;
 
-	/* swapping inhibited */
-	if (!(sc->gfp_mask & __GFP_IO) &&
-	    (folio_test_dirty(folio) ||
-	     (folio_test_anon(folio) && !folio_test_swapcache(folio))))
-		return false;
-
 	/* raced with release_pages() */
 	if (!folio_try_get(folio))
 		return false;
