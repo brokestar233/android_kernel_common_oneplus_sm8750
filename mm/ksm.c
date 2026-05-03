@@ -2987,6 +2987,9 @@ void rmap_walk_ksm(struct folio *folio, struct rmap_walk_control *rwc)
 		return;
 again:
 	hlist_for_each_entry(rmap_item, &stable_node->hlist, hlist) {
+		/* Ignore the stable/unstable/sqnr flags */
+		const unsigned long addr = rmap_item->address & PAGE_MASK;
+		const unsigned long vm_pgoff = rmap_item->vm_pgoff;
 		struct anon_vma *anon_vma = rmap_item->anon_vma;
 		struct anon_vma_chain *vmac;
 		struct vm_area_struct *vma;
@@ -2999,15 +3002,15 @@ again:
 			}
 			anon_vma_lock_read(anon_vma);
 		}
+		/*
+		 * Currently KSM folios are order-0 normal pages, so pgoff_end
+		 * should be the same as pgoff_start.
+		 */
 		anon_vma_interval_tree_foreach(vmac, &anon_vma->rb_root,
-					       0, ULONG_MAX) {
-			unsigned long addr;
+					       vm_pgoff, vm_pgoff) {
 
 			cond_resched();
 			vma = vmac->vma;
-
-			/* Ignore the stable/unstable/sqnr flags */
-			addr = rmap_item->address & PAGE_MASK;
 
 			if (addr < vma->vm_start || addr >= vma->vm_end)
 				continue;
