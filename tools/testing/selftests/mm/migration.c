@@ -6,6 +6,9 @@
 
 #include "../kselftest_harness.h"
 #include <strings.h>
+#include <string.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <pthread.h>
 #include <numa.h>
 #include <numaif.h>
@@ -15,10 +18,73 @@
 #include <signal.h>
 #include <time.h>
 
+#include "vm_util.h"
+
 #define TWOMEG (2<<20)
 #define RUNTIME (20)
+#define KSM_RUN_PATH "/sys/kernel/mm/ksm/run"
+#define KSM_FULL_SCANS_PATH "/sys/kernel/mm/ksm/full_scans"
 
 #define ALIGN(x, a) (((x) + (a - 1)) & (~((a) - 1)))
+
+static long read_sysfs_long(const char *path)
+{
+	char buf[32];
+	ssize_t ret;
+	int fd;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return -errno;
+
+	ret = pread(fd, buf, sizeof(buf) - 1, 0);
+	close(fd);
+	if (ret <= 0)
+		return -errno;
+
+	buf[ret] = '\0';
+	return strtol(buf, NULL, 10);
+}
+
+static int write_sysfs_string(const char *path, const char *value)
+{
+	ssize_t len = strlen(value);
+	ssize_t ret;
+	int fd;
+
+	fd = open(path, O_WRONLY);
+	if (fd < 0)
+		return -errno;
+
+	ret = write(fd, value, len);
+	close(fd);
+	if (ret != len)
+		return -errno;
+
+	return 0;
+}
+
+static int wait_ksm_full_scans(unsigned int scans)
+{
+	long start_scans, cur_scans;
+	int retries = 500;
+
+	start_scans = read_sysfs_long(KSM_FULL_SCANS_PATH);
+	if (start_scans < 0)
+		return start_scans;
+
+	if (write_sysfs_string(KSM_RUN_PATH, "1") < 0)
+		return -errno;
+
+	do {
+		usleep(10000);
+		cur_scans = read_sysfs_long(KSM_FULL_SCANS_PATH);
+		if (cur_scans < 0)
+			return cur_scans;
+	} while (cur_scans < start_scans + scans && --retries > 0);
+
+	return retries > 0 ? 0 : -ETIMEDOUT;
+}
 
 FIXTURE(migration)
 {
@@ -197,6 +263,70 @@ TEST_F_TIMEOUT(migration, private_anon_thp, 2*RUNTIME)
 	ASSERT_EQ(migrate(ptr, self->n1, self->n2), 0);
 	for (i = 0; i < self->nthreads - 1; i++)
 		ASSERT_EQ(pthread_cancel(self->threads[i]), 0);
+}
+
+TEST_F_TIMEOUT(migration, ksm_and_mremap, 2*RUNTIME)
+{
+	char saved_run[32] = { 0 };
+	char *region, *peer;
+	unsigned long page_sz;
+	unsigned long region_pfn, peer_pfn;
+	ssize_t saved_run_len;
+	int pagemap_fd, run_fd;
+	int status = 0;
+	int ret;
+
+	if (self->n1 < 0 || self->n2 < 0)
+		SKIP(return, "Not enough NUMA nodes available");
+
+	run_fd = open(KSM_RUN_PATH, O_RDWR);
+	if (run_fd < 0)
+		SKIP(return, "KSM sysfs is unavailable");
+
+	saved_run_len = pread(run_fd, saved_run, sizeof(saved_run) - 1, 0);
+	if (saved_run_len < 0)
+		SKIP(return, "Cannot read current KSM run state");
+
+	pagemap_fd = open("/proc/self/pagemap", O_RDONLY);
+	ASSERT_GE(pagemap_fd, 0);
+
+	page_sz = getpagesize();
+	region = mmap(NULL, 2 * page_sz, PROT_READ | PROT_WRITE,
+			      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(region, MAP_FAILED);
+	peer = mmap(NULL, page_sz, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(peer, MAP_FAILED);
+
+	memset(region, 0x77, 2 * page_sz);
+	memset(peer, 0x77, page_sz);
+
+	region = mremap(region + page_sz, page_sz, page_sz,
+			MREMAP_MAYMOVE | MREMAP_FIXED, region);
+	ASSERT_NE(region, MAP_FAILED);
+
+	ASSERT_EQ(madvise(region, page_sz, MADV_MERGEABLE), 0);
+	ASSERT_EQ(madvise(peer, page_sz, MADV_MERGEABLE), 0);
+
+	ret = wait_ksm_full_scans(2);
+	ASSERT_EQ(ret, 0);
+
+	region_pfn = pagemap_get_pfn(pagemap_fd, region);
+	peer_pfn = pagemap_get_pfn(pagemap_fd, peer);
+	ASSERT_NE(region_pfn, -1ul);
+	ASSERT_NE(peer_pfn, -1ul);
+	ASSERT_EQ(region_pfn, peer_pfn);
+
+	ret = move_pages(0, 1, (void **)&region, &self->n2, &status,
+			 MPOL_MF_MOVE_ALL);
+	ASSERT_EQ(ret, 0);
+	ASSERT_EQ(status, 0);
+
+	ASSERT_EQ(pwrite(run_fd, saved_run, saved_run_len, 0), saved_run_len);
+	ASSERT_EQ(close(run_fd), 0);
+	ASSERT_EQ(close(pagemap_fd), 0);
+	ASSERT_EQ(munmap(peer, page_sz), 0);
+	ASSERT_EQ(munmap(region, page_sz), 0);
 }
 
 TEST_HARNESS_MAIN
