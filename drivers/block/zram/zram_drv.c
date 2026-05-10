@@ -40,14 +40,11 @@
 
 #ifdef CONFIG_ZRAM_AUTO_SIZE
 #include <linux/math64.h>
-#include <linux/cpu.h>
-#include <linux/reciprocal_div.h>
 #include <linux/minmax.h>
-#include <linux/intfp.h>
 
-#ifndef FP_BITS
-#define FP_BITS 16
-#endif
+#define ZRAM_AUTO_SIZE_STEP	(256ULL << 20)
+#define ZRAM_AUTO_MIN_SIZE	(1ULL << 30)
+#define ZRAM_AUTO_MAX_SIZE	(64ULL << 30)
 
 #endif
 
@@ -2472,48 +2469,99 @@ static inline u64 _round_up(u64 num, u64 multiple) {
 }
 
 #ifdef CONFIG_ZRAM_AUTO_SIZE
-u64 calculate_pressure_factor_log_slow_to_fast_kernel(u64 mem_pressure, u64 zram_pressure, u64 min_num, u64 max_num) {
-    s32 pressure_diff = 0;
-    s32 pressure_increase_log;
-    s32 base_factor_log;
-    s32 combined_factor_log;
-    s32 scaling_factor_log;
-    u64 combined_pressure_factor_percent;
+static void zram_get_auto_history(struct zram *zram,
+		unsigned int *mem_pressure,
+		unsigned int *zram_pressure,
+		u64 *last_disksize)
+{
+	spin_lock(&zram->pressure_lock);
+	*mem_pressure = zram->historical_mem_pressure;
+	*zram_pressure = zram->historical_zram_pressure;
+	*last_disksize = zram->historical_disksize;
+	spin_unlock(&zram->pressure_lock);
+}
 
-    if (mem_pressure > 60) {
-        pressure_diff += (s32)(mem_pressure - 60);
-    }
-    if (zram_pressure > 50) {
-        pressure_diff += (s32)(zram_pressure - 50);
-    }
+static u64 zram_auto_min_size(u64 total_mem)
+{
+	return max_t(u64, ZRAM_AUTO_MIN_SIZE, div64_ul(total_mem, 8));
+}
 
-    if (pressure_diff <= 0) {
-        return min_num;
-    }
+static u64 zram_auto_max_size(u64 total_mem)
+{
+	return min_t(u64, ZRAM_AUTO_MAX_SIZE, total_mem * 2);
+}
 
-    // 1. 将压力差转换为 log 格式
-    pressure_increase_log = u64_to_log32fpmax((u64)pressure_diff);
+static u64 zram_auto_resize_step(u64 size, int percent)
+{
+	if (percent > 0)
+		size += div64_ul(size * percent, 100);
+	else if (percent < 0)
+		size -= div64_ul(size * -percent, 100);
 
-    // 2.添加一个缩放因子来减缓增长
-    scaling_factor_log = u64_to_log32fpmax(15ULL);  // log(15)
-    pressure_increase_log = pressure_increase_log - scaling_factor_log;  // log(x) - log(15) = log(x/15)
+	return size;
+}
 
-    // 3. 将基础因子（100）转换为 log 格式
-    base_factor_log = u64_to_log32fpmax(100ULL);
+static int zram_auto_adjust_percent(unsigned int mem_pressure,
+		unsigned int zram_pressure, bool have_history)
+{
+	if (zram_pressure >= 90 || mem_pressure >= 88)
+		return 20;
+	if (zram_pressure >= 80 || mem_pressure >= 78)
+		return 10;
+	if (!have_history)
+		return 0;
+	if (zram_pressure <= 35 && mem_pressure <= 55)
+		return -10;
+	if (zram_pressure <= 45 && mem_pressure <= 60)
+		return -5;
 
-    // 4. 在 log 空间中相加，模拟线性空间的乘法
-    combined_factor_log = base_factor_log + pressure_increase_log;
+	return 0;
+}
 
-    // 5. 将结果从 log 格式转换回线性整数
-    combined_pressure_factor_percent = log32fpmax_to_u64(combined_factor_log);
+static u64 zram_calc_pressure_boost(unsigned int mem_pressure,
+		unsigned long zram_pressure, u64 min_percent, u64 max_percent)
+{
+	u64 boost = min_percent;
 
-    // 6. 限制结果的范围
-    combined_pressure_factor_percent = min(combined_pressure_factor_percent, max_num);
-    if (combined_pressure_factor_percent < min_num) {
-        combined_pressure_factor_percent = min_num;
-    }
+	if (mem_pressure > 60)
+		boost += min_t(u64, 60, (u64)(mem_pressure - 60) * 2);
+	if (zram_pressure > 60)
+		boost += min_t(u64, 90, (u64)(zram_pressure - 60) * 3);
 
-    return combined_pressure_factor_percent;
+	return clamp_t(u64, boost, min_percent, max_percent);
+}
+
+static u64 zram_calc_auto_disksize(struct zram *zram, u64 total_mem)
+{
+	unsigned int mem_pressure, zram_pressure;
+	u64 last_disksize, min_size, max_size, target_size;
+	bool have_history;
+	int adjust_percent;
+
+	zram_get_auto_history(zram, &mem_pressure, &zram_pressure,
+			      &last_disksize);
+
+	have_history = last_disksize != 0;
+	target_size = have_history ? last_disksize : div64_ul(total_mem, 2);
+	adjust_percent = zram_auto_adjust_percent(mem_pressure,
+						zram_pressure,
+						have_history);
+	if (adjust_percent)
+		target_size = zram_auto_resize_step(target_size, adjust_percent);
+
+	min_size = zram_auto_min_size(total_mem);
+	max_size = zram_auto_max_size(total_mem);
+	if (min_size > max_size)
+		min_size = max_size;
+
+	target_size = _round_up(target_size, ZRAM_AUTO_SIZE_STEP);
+	target_size = clamp_t(u64, target_size, min_size, max_size);
+
+	pr_info("auto disksize=%llu (history=%llu, pressure=%u:%u, adjust=%d%%)\n",
+		target_size, last_disksize, mem_pressure, zram_pressure,
+		adjust_percent);
+
+	return target_size;
 }
 #endif
 
@@ -2528,53 +2576,9 @@ static ssize_t disksize_store(struct device *dev,
 
 #ifdef CONFIG_ZRAM_AUTO_SIZE
 	if (sysfs_streq(buf, "auto")) {
-        unsigned long total_mem = (u64)totalram_pages() << PAGE_SHIFT; // 总物理内存
-        unsigned int num_cores = num_online_cpus(); // 在线 CPU 核心数
-        u64 base_ratio;
-		u64 target_size;
-        u64 combined_pressure_factor_percent;
+		u64 total_mem = (u64)totalram_pages() << PAGE_SHIFT;
 
-        // 1. 优化 base_ratio 的计算：确保 8 核时达到 100%
-        // 每个核心贡献 13%，上限 100%
-        base_ratio = min(num_cores * 13ULL, 100ULL); 
-        
-        // 计算基于内存和核心数的初始目标大小
-        target_size = div64_ul(total_mem * base_ratio, 100ULL);
-
-        // 2. 引入历史内存和 Zram 压力因子
-        spin_lock(&zram->pressure_lock);
-        unsigned int mem_pressure = zram->historical_mem_pressure;
-        unsigned int zram_pressure = zram->historical_zram_pressure;
-        spin_unlock(&zram->pressure_lock);
-
-        combined_pressure_factor_percent = 100ULL; // 默认压力因子为 100% (不增加也不减少)
-
-        // 根据压力数据调整因子
-    	combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_pressure, zram_pressure, 100ULL, 200ULL);
-
-        // 应用压力因子
-        target_size = div64_ul(target_size * combined_pressure_factor_percent, 100ULL);
-
-        // 3. 向上取整到最近的 GB
-        target_size = _round_up(target_size, 1ULL << 30);
-
-        // 4. 调整 clamp 范围：允许 Zram 大小超过物理内存
-        // 最小 Zram 1GB，或总内存的 1/8 （取两者最大值）
-        u64 min_allowed_size = max(1ULL * 1024 * 1024 * 1024ULL, div64_ul(total_mem, 8ULL)); 
-        // 最大 Zram 可以是 64GB，或总内存的 2 倍（取两者最小值）
-        u64 max_allowed_size = min(64ULL * 1024 * 1024 * 1024ULL, total_mem * 2ULL); 
-        
-        // 确保最小不会超过最大
-        if (min_allowed_size > max_allowed_size) {
-            min_allowed_size = max_allowed_size; 
-        }
-
-        target_size = clamp(target_size, min_allowed_size, max_allowed_size);
-        
-        pr_info("zram: auto-calculated disksize: %llu (mem: %luGB, cores: %u, pressure: %u:%u, factor: %llu%%)\n",
-                target_size, total_mem >> 30, num_cores, mem_pressure, zram_pressure, combined_pressure_factor_percent);
-
-		disksize = target_size;
+		disksize = zram_calc_auto_disksize(zram, total_mem);
     } else {
         // 用户手动设置 Zram 大小
         disksize  = memparse(buf, NULL);
@@ -2692,6 +2696,7 @@ static ssize_t pressure_show(struct device *dev, struct device_attribute *attr, 
 {
     struct zram *zram;
     unsigned int mem_pressure, zram_pressure;
+    u64 last_disksize;
     
     // 参数合法性检查
     if (!dev || !buf) {
@@ -2706,13 +2711,12 @@ static ssize_t pressure_show(struct device *dev, struct device_attribute *attr, 
     }
     
     // 在读取时也需要加锁，确保数据一致性
-    spin_lock(&zram->pressure_lock);
-    mem_pressure = zram->historical_mem_pressure;
-    zram_pressure = zram->historical_zram_pressure;
-    spin_unlock(&zram->pressure_lock);
+    zram_get_auto_history(zram, &mem_pressure, &zram_pressure,
+			  &last_disksize);
     
     // 使用 scnprintf 而不是 sprintf，更安全
-    return scnprintf(buf, PAGE_SIZE, "%u:%u\n", mem_pressure, zram_pressure);
+    return scnprintf(buf, PAGE_SIZE, "%u:%u:%llu\n",
+			     mem_pressure, zram_pressure, last_disksize);
 }
 
 static ssize_t pressure_store(struct device *dev, struct device_attribute *attr,
@@ -2720,7 +2724,8 @@ static ssize_t pressure_store(struct device *dev, struct device_attribute *attr,
 {
     struct zram *zram = dev_to_zram(dev);
     unsigned int mem_pressure, zram_pressure;
-    char *colon_pos;
+    u64 last_disksize = 0;
+    char *mem_pos, *zram_pos, *size_pos;
     char *local_buf;
     int ret = -EINVAL;
 
@@ -2754,30 +2759,44 @@ static ssize_t pressure_store(struct device *dev, struct device_attribute *attr,
         local_buf[len - 1] = '\0';
     }
 
-    // 查找冒号分隔符
-    colon_pos = strchr(local_buf, ':');
-    if (!colon_pos) {
+    mem_pos = local_buf;
+    zram_pos = strchr(mem_pos, ':');
+    if (!zram_pos) {
         pr_err("zram: invalid pressure format, expected 'mem_pressure:zram_pressure'\n");
         ret = -EINVAL;
         goto out;
     }
 
-    // 分割字符串
-    *colon_pos = '\0';
+    *zram_pos++ = '\0';
+    size_pos = strchr(zram_pos, ':');
+    if (size_pos)
+	*size_pos++ = '\0';
 
     // 解析内存压力
-    ret = kstrtouint(local_buf, 10, &mem_pressure);
+    ret = kstrtouint(mem_pos, 10, &mem_pressure);
     if (ret) {
         pr_err("zram: invalid memory pressure value\n");
         goto out;
     }
 
     // 解析 Zram 压力
-    ret = kstrtouint(colon_pos + 1, 10, &zram_pressure);
+    ret = kstrtouint(zram_pos, 10, &zram_pressure);
     if (ret) {
         pr_err("zram: invalid zram pressure value\n");
         goto out;
     }
+
+	if (size_pos && *size_pos) {
+		char *endp;
+
+		last_disksize = memparse(size_pos, &endp);
+		if (endp == size_pos || *endp != '\0') {
+			pr_err("zram: invalid historical disksize value\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		last_disksize = PAGE_ALIGN(last_disksize);
+	}
 
     // 限制压力值在 0-100 之间
     mem_pressure = clamp(mem_pressure, 0U, 100U);
@@ -2786,9 +2805,11 @@ static ssize_t pressure_store(struct device *dev, struct device_attribute *attr,
     spin_lock(&zram->pressure_lock);
     zram->historical_mem_pressure = mem_pressure;
     zram->historical_zram_pressure = zram_pressure;
+    zram->historical_disksize = last_disksize;
     spin_unlock(&zram->pressure_lock);
 
-    pr_debug("zram: updated historical pressure to %u:%u\n", mem_pressure, zram_pressure);
+    pr_debug("zram: updated historical pressure to %u:%u:%llu\n",
+	     mem_pressure, zram_pressure, last_disksize);
     
     ret = len;
 
@@ -2863,8 +2884,8 @@ static int zram_add(void)
 {
 	struct zram *zram;
 	int ret, device_id;
-	unsigned long total_mem = (u64)totalram_pages() << PAGE_SHIFT; // 总物理内存
-	u64 default_disksize = _round_up(total_mem, 1ULL << 30);
+	u64 total_mem = (u64)totalram_pages() << PAGE_SHIFT;
+	u64 default_disksize;
 
 	zram = kzalloc(sizeof(struct zram), GFP_KERNEL);
 	if (!zram)
@@ -2900,6 +2921,10 @@ static int zram_add(void)
 	spin_lock_init(&zram->pressure_lock);
 	zram->historical_mem_pressure = 0; 
 	zram->historical_zram_pressure = 0;
+	zram->historical_disksize = 0;
+	default_disksize = zram_calc_auto_disksize(zram, total_mem);
+#else
+	default_disksize = _round_up(total_mem, 1ULL << 30);
 #endif
 
 	snprintf(zram->disk->disk_name, 16, "zram%d", device_id);
@@ -3245,7 +3270,10 @@ static int monitor_func(void *data)
 
 		exec_count++;
 		if (exec_count == 10) {
-			combined_pressure_factor_percent = calculate_pressure_factor_log_slow_to_fast_kernel(mem_usage, avg_zram_usage, 50ULL, 200ULL);
+			combined_pressure_factor_percent = zram_calc_pressure_boost(mem_usage,
+							      avg_zram_usage,
+							      50ULL,
+							      200ULL);
 			batch_size = div64_ul(768 * combined_pressure_factor_percent, 100ULL);
 			pr_info("combined_pressure_factor_percent=%llu, batch_size=%llu\n", combined_pressure_factor_percent, batch_size);
 			exec_count = 0;

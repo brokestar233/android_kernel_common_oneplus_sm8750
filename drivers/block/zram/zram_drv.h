@@ -161,6 +161,7 @@ struct zram {
 #ifdef CONFIG_ZRAM_AUTO_SIZE
 	unsigned int historical_mem_pressure;
 	unsigned int historical_zram_pressure;
+	u64 historical_disksize;
 	spinlock_t pressure_lock; 
 #endif
 };
