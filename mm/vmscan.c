@@ -4223,9 +4223,6 @@ static int folio_inc_gen(struct lruvec *lruvec, struct folio *folio)
 
 		new_flags = old_flags & ~(LRU_GEN_MASK | LRU_REFS_MASK | LRU_REFS_FLAGS);
 		new_flags |= (new_gen + 1UL) << LRU_GEN_PGOFF;
-		/* for folio_end_writeback() */
-		if (reclaiming)
-			new_flags |= BIT(PG_reclaim);
 	} while (!try_cmpxchg(&folio->flags, &old_flags, new_flags));
 
 	lru_gen_update_size(lruvec, folio, old_gen, new_gen);
@@ -5814,6 +5811,33 @@ static bool should_run_aging(struct lruvec *lruvec, unsigned long max_seq,
 	return false;
 }
 
+static unsigned long apply_proportional_protection(struct mem_cgroup *memcg,
+						   struct scan_control *sc,
+						   unsigned long size)
+{
+	unsigned long low, min;
+
+	mem_cgroup_protection(sc->target_mem_cgroup, memcg, &min, &low);
+
+	if (min || low) {
+		unsigned long cgroup_size = mem_cgroup_size(memcg);
+		unsigned long protection;
+
+		if (!sc->memcg_low_reclaim && low > min) {
+			protection = low;
+			sc->memcg_low_skipped = 1;
+		} else {
+			protection = min;
+		}
+
+		cgroup_size = max(cgroup_size, protection);
+		size -= size * protection / (cgroup_size + 1);
+		size = max(size, SWAP_CLUSTER_MAX);
+	}
+
+	return size;
+}
+
 /*
  * For future optimizations:
  * 1. Defer try_to_inc_max_seq() to workqueues to reduce latency for memcg
@@ -7129,7 +7153,7 @@ again:
 			set_bit(PGDAT_WRITEBACK, &pgdat->flags);
 
 		/* Allow kswapd to start writing pages during reclaim.*/
-		if (sc->nr.unqueued_dirty == sc->nr.file_taken)
+		if (sc->nr.dirty && sc->nr.dirty == sc->nr.taken)
 			set_bit(PGDAT_DIRTY, &pgdat->flags);
 
 		/*
