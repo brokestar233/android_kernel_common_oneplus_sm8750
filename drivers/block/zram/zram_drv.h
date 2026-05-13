@@ -166,6 +166,9 @@ struct zram {
 #endif
 };
 
+int zram_memcg_init(void);
+void zram_memcg_exit(void);
+
 void zram_slot_lock(struct zram *zram, u32 index);
 void zram_slot_unlock(struct zram *zram, u32 index);
 void zram_set_handle(struct zram *zram, u32 index, unsigned long handle);
