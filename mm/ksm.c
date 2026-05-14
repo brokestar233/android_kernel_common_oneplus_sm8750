@@ -190,7 +190,7 @@ struct ksm_stable_node {
  * @mm: the memory structure this rmap_item is pointing into
  * @address: the virtual address this rmap_item tracks (+ flags in low bits)
  * @oldchecksum: previous checksum of the page at that virtual address
- * @vm_pgoff: vm_pgoff into the original VMA where the page is mapped
+ * @rmap_pgoff: linear page index of the original mapping
  * @node: rb node of this rmap_item in the unstable tree
  * @head: pointer to stable_node heading this list in the stable tree
  * @hlist: link into hlist of rmap_items hanging off that stable_node
@@ -207,7 +207,7 @@ struct ksm_rmap_item {
 	unsigned long address;		/* + low bits used for flags below */
 	union {
 		unsigned int oldchecksum;	/* when unstable */
-		unsigned long vm_pgoff;		/* for reverse mapping, when stable */
+		pgoff_t rmap_pgoff;		/* linear page index, when stable */
 	};
 	union {
 		struct rb_node node;	/* when node of unstable tree */
@@ -579,7 +579,7 @@ static void break_cow(struct ksm_rmap_item *rmap_item)
 	 * to undo, we also need to drop a reference to the anon_vma.
 	 */
 	put_anon_vma(rmap_item->anon_vma);
-	rmap_item->vm_pgoff = 0;
+	rmap_item->rmap_pgoff = 0;
 
 	mmap_read_lock(mm);
 	vma = find_mergeable_vma(mm, addr);
@@ -690,7 +690,7 @@ static void remove_node_from_stable_tree(struct ksm_stable_node *stable_node)
 		VM_BUG_ON(stable_node->rmap_hlist_len <= 0);
 		stable_node->rmap_hlist_len--;
 		put_anon_vma(rmap_item->anon_vma);
-		rmap_item->vm_pgoff = 0;
+		rmap_item->rmap_pgoff = 0;
 		rmap_item->address &= PAGE_MASK;
 		cond_resched();
 	}
@@ -843,7 +843,7 @@ static void remove_rmap_item_from_tree(struct ksm_rmap_item *rmap_item)
 		stable_node->rmap_hlist_len--;
 
 		put_anon_vma(rmap_item->anon_vma);
-		rmap_item->vm_pgoff = 0;
+		rmap_item->rmap_pgoff = 0;
 		rmap_item->head = NULL;
 		rmap_item->address &= PAGE_MASK;
 
@@ -1381,7 +1381,7 @@ static int try_to_merge_with_ksm_page(struct ksm_rmap_item *rmap_item,
 
 	/* Must get reference to anon_vma while still holding mmap_lock */
 	rmap_item->anon_vma = vma->anon_vma;
-	rmap_item->vm_pgoff = vma->vm_pgoff;
+	rmap_item->rmap_pgoff = linear_page_index(vma, rmap_item->address);
 	get_anon_vma(vma->anon_vma);
 out:
 	mmap_read_unlock(mm);
@@ -2989,7 +2989,7 @@ again:
 	hlist_for_each_entry(rmap_item, &stable_node->hlist, hlist) {
 		/* Ignore the stable/unstable/sqnr flags */
 		const unsigned long addr = rmap_item->address & PAGE_MASK;
-		const unsigned long vm_pgoff = rmap_item->vm_pgoff;
+		const pgoff_t rmap_pgoff = rmap_item->rmap_pgoff;
 		struct anon_vma *anon_vma = rmap_item->anon_vma;
 		struct anon_vma_chain *vmac;
 		struct vm_area_struct *vma;
@@ -3007,7 +3007,7 @@ again:
 		 * should be the same as pgoff_start.
 		 */
 		anon_vma_interval_tree_foreach(vmac, &anon_vma->rb_root,
-					       vm_pgoff, vm_pgoff) {
+					       rmap_pgoff, rmap_pgoff) {
 
 			cond_resched();
 			vma = vmac->vma;
