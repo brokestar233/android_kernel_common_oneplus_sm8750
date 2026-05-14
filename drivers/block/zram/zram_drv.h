@@ -166,8 +166,25 @@ struct zram {
 #endif
 };
 
+struct zram_opt_stats {
+	u64 pages_stored;
+	u64 huge_pages;
+	u64 compr_data_size;
+	u64 writestall;
+	u64 bd_reads;
+	u64 bd_writes;
+	unsigned long disksize_pages;
+	unsigned long limit_pages;
+	bool has_writeback;
+	bool has_capacity;
+};
+
 int zram_memcg_init(void);
 void zram_memcg_exit(void);
+bool free_zram_is_ok(void);
+bool zram_get_opt_stats(struct zram_opt_stats *stats);
+int zram_opt_init(void);
+void zram_opt_exit(void);
 
 void zram_slot_lock(struct zram *zram, u32 index);
 void zram_slot_unlock(struct zram *zram, u32 index);
