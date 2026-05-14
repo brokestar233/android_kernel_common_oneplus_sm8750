@@ -428,6 +428,8 @@ struct node_vma {
  * @anon_vma: pointer to anon_vma for this mm,address, when in stable tree
  * @mm: the memory structure this rmap_item is pointing into
  * @address: the virtual address this rmap_item tracks (+ flags in low bits)
+ * @hash_round: hash round of this rmap_item in the unstable tree
+ * @rmap_pgoff: linear page index of the original mapping in stable tree
  * @node: rb node of this rmap_item in the unstable tree
  * @head: pointer to ksm_stable_node heading this list in the stable tree
  * @hlist: link into hlist of rmap_items hanging off that ksm_stable_node
@@ -436,7 +438,10 @@ struct rmap_item {
 	struct vma_slot *slot;
 	struct page *page;
 	unsigned long address;	/* + low bits used for flags below */
-	unsigned long hash_round;
+	union {
+		unsigned long hash_round;
+		pgoff_t rmap_pgoff;
+	};
 	unsigned long entry_index;
 	union {
 		struct {/* when in unstable tree */
@@ -896,6 +901,7 @@ static void uksm_drop_anon_vma(struct rmap_item *rmap_item)
 	struct anon_vma *anon_vma = rmap_item->anon_vma;
 
 	put_anon_vma(anon_vma);
+	rmap_item->rmap_pgoff = 0;
 }
 
 
@@ -2706,9 +2712,11 @@ get_page_out:
 }
 
 static void hold_anon_vma(struct rmap_item *rmap_item,
-			  struct anon_vma *anon_vma)
+			  struct anon_vma *anon_vma,
+			  pgoff_t rmap_pgoff)
 {
 	rmap_item->anon_vma = anon_vma;
+	rmap_item->rmap_pgoff = rmap_pgoff;
 	get_anon_vma(anon_vma);
 }
 
@@ -2787,7 +2795,9 @@ node_vma_new:
 node_vma_ok: /* ok, ready to add to the list */
 	rmap_item->head = node_vma;
 	hlist_add_head(&rmap_item->hlist, &node_vma->rmap_hlist);
-	hold_anon_vma(rmap_item, rmap_item->slot->vma->anon_vma);
+	hold_anon_vma(rmap_item, rmap_item->slot->vma->anon_vma,
+		      linear_page_index(rmap_item->slot->vma,
+					get_rmap_addr(rmap_item)));
 	if (logdedup) {
 		rmap_item->slot->pages_merged++;
 		if (node_vma_cont) {
@@ -4918,7 +4928,6 @@ void rmap_walk_ksm(struct folio *folio, struct rmap_walk_control *rwc)
 	struct node_vma *node_vma;
 	struct rmap_item *rmap_item;
 	int search_new_forks = 0;
-	unsigned long address;
 
 	VM_BUG_ON_PAGE(!PageKsm(&folio->page), &folio->page);
 	VM_BUG_ON_PAGE(!PageLocked(&folio->page), &folio->page);
@@ -4926,9 +4935,11 @@ void rmap_walk_ksm(struct folio *folio, struct rmap_walk_control *rwc)
 	stable_node = folio_stable_node(folio);
 	if (!stable_node)
 		return;
-again:
+	again:
 	hlist_for_each_entry(node_vma, &stable_node->hlist, hlist) {
 		hlist_for_each_entry(rmap_item, &node_vma->rmap_hlist, hlist) {
+			const unsigned long address = get_rmap_addr(rmap_item);
+			const pgoff_t rmap_pgoff = rmap_item->rmap_pgoff;
 			struct anon_vma *anon_vma = rmap_item->anon_vma;
 			struct anon_vma_chain *vmac;
 			struct vm_area_struct *vma;
@@ -4942,10 +4953,9 @@ again:
 				anon_vma_lock_read(anon_vma);
 			}
 			anon_vma_interval_tree_foreach(vmac, &anon_vma->rb_root,
-						       0, ULONG_MAX) {
+					       rmap_pgoff, rmap_pgoff) {
 				cond_resched();
 				vma = vmac->vma;
-				address = get_rmap_addr(rmap_item);
 
 				if (address < vma->vm_start ||
 				    address >= vma->vm_end)
@@ -5892,4 +5902,3 @@ subsys_initcall(ksm_init);
 #else
 late_initcall(uksm_init);
 #endif
-

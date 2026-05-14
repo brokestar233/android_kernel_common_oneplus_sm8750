@@ -17,6 +17,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -42,6 +43,9 @@
 #define KSM_SLEEP_MS_PATH	"/sys/kernel/mm/ksm/sleep_millisecs"
 #define KSM_PAGES_TO_SCAN	"/sys/kernel/mm/ksm/pages_to_scan"
 #define KSM_FULL_SCANS_PATH	"/sys/kernel/mm/ksm/full_scans"
+#define UKSM_RUN_PATH		"/sys/kernel/mm/uksm/run"
+#define UKSM_SLEEP_MS_PATH	"/sys/kernel/mm/uksm/sleep_millisecs"
+#define UKSM_FULL_SCANS_PATH	"/sys/kernel/mm/uksm/full_scans"
 
 /* Tracepoint control paths */
 #define TRACE_ENABLE		"/sys/kernel/tracing/events/rmap/rmap_walk/enable"
@@ -88,6 +92,36 @@ static int write_sys(const char *path, const char *value)
 	return 0;
 }
 
+static bool using_uksm(void)
+{
+	return access(KSM_RUN_PATH, F_OK) != 0 && access(UKSM_RUN_PATH, F_OK) == 0;
+}
+
+static const char *dedup_run_path(void)
+{
+	return using_uksm() ? UKSM_RUN_PATH : KSM_RUN_PATH;
+}
+
+static const char *dedup_sleep_ms_path(void)
+{
+	return using_uksm() ? UKSM_SLEEP_MS_PATH : KSM_SLEEP_MS_PATH;
+}
+
+static const char *dedup_full_scans_path(void)
+{
+	return using_uksm() ? UKSM_FULL_SCANS_PATH : KSM_FULL_SCANS_PATH;
+}
+
+static const char *dedup_pages_to_scan_path(void)
+{
+	return using_uksm() ? NULL : KSM_PAGES_TO_SCAN;
+}
+
+static const char *dedup_stop_value(void)
+{
+	return using_uksm() ? "0" : "2";
+}
+
 /*
  * Read an integer from a sysfs file.
  */
@@ -115,7 +149,7 @@ static int read_sys_int(const char *path)
  */
 static int ksm_get_full_scans(void)
 {
-	return read_sys_int(KSM_FULL_SCANS_PATH);
+	return read_sys_int(dedup_full_scans_path());
 }
 
 /*
@@ -135,7 +169,7 @@ static void wait_ksm_merge(void)
 	}
 
 	/* Make sure KSM is running */
-	if (write_sys(KSM_RUN_PATH, "1") < 0) {
+	if (write_sys(dedup_run_path(), "1") < 0) {
 		fprintf(stderr, "Failed to start KSM\n");
 		return;
 	}
@@ -320,10 +354,12 @@ static void test_ksm(void)
 	printf("\n=== Testing KSM pages ===\n");
 
 	/* Stop KSM and set aggressive scan parameters */
-	if (write_sys(KSM_RUN_PATH, "2") < 0)
+	if (write_sys(dedup_run_path(), dedup_stop_value()) < 0)
 		exit(1);
-	if (write_sys(KSM_SLEEP_MS_PATH, "0") < 0 ||
-	    write_sys(KSM_PAGES_TO_SCAN, "10000") < 0)
+	if (write_sys(dedup_sleep_ms_path(), "0") < 0)
+		exit(1);
+	if (dedup_pages_to_scan_path() &&
+	    write_sys(dedup_pages_to_scan_path(), "10000") < 0)
 		exit(1);
 
 	region = mmap(NULL, size, PROT_READ | PROT_WRITE,
@@ -341,7 +377,7 @@ static void test_ksm(void)
 	}
 
 	/* Start KSM scanner */
-	if (write_sys(KSM_RUN_PATH, "1") < 0) {
+	if (write_sys(dedup_run_path(), "1") < 0) {
 		munmap(region, size);
 		exit(1);
 	}
@@ -367,7 +403,7 @@ static void test_ksm(void)
 	}
 
 	munmap(region, size);
-	write_sys(KSM_RUN_PATH, "2");	/* stop KSM */
+	write_sys(dedup_run_path(), dedup_stop_value());	/* stop KSM/UKSM */
 }
 
 /*
@@ -485,4 +521,3 @@ int main(void)
 
 	return 0;
 }
-

@@ -24,6 +24,8 @@
 #define RUNTIME (20)
 #define KSM_RUN_PATH "/sys/kernel/mm/ksm/run"
 #define KSM_FULL_SCANS_PATH "/sys/kernel/mm/ksm/full_scans"
+#define UKSM_RUN_PATH "/sys/kernel/mm/uksm/run"
+#define UKSM_FULL_SCANS_PATH "/sys/kernel/mm/uksm/full_scans"
 
 #define ALIGN(x, a) (((x) + (a - 1)) & (~((a) - 1)))
 
@@ -44,6 +46,17 @@ static long read_sysfs_long(const char *path)
 
 	buf[ret] = '\0';
 	return strtol(buf, NULL, 10);
+}
+
+static const char *dedup_run_path(void)
+{
+	return access(KSM_RUN_PATH, F_OK) == 0 ? KSM_RUN_PATH : UKSM_RUN_PATH;
+}
+
+static const char *dedup_full_scans_path(void)
+{
+	return access(KSM_FULL_SCANS_PATH, F_OK) == 0 ?
+		KSM_FULL_SCANS_PATH : UKSM_FULL_SCANS_PATH;
 }
 
 static int write_sysfs_string(const char *path, const char *value)
@@ -67,18 +80,20 @@ static int write_sysfs_string(const char *path, const char *value)
 static int wait_ksm_full_scans(unsigned int scans)
 {
 	long start_scans, cur_scans;
+	const char *run_path = dedup_run_path();
+	const char *full_scans_path = dedup_full_scans_path();
 	int retries = 500;
 
-	start_scans = read_sysfs_long(KSM_FULL_SCANS_PATH);
+	start_scans = read_sysfs_long(full_scans_path);
 	if (start_scans < 0)
 		return start_scans;
 
-	if (write_sysfs_string(KSM_RUN_PATH, "1") < 0)
+	if (write_sysfs_string(run_path, "1") < 0)
 		return -errno;
 
 	do {
 		usleep(10000);
-		cur_scans = read_sysfs_long(KSM_FULL_SCANS_PATH);
+		cur_scans = read_sysfs_long(full_scans_path);
 		if (cur_scans < 0)
 			return cur_scans;
 	} while (cur_scans < start_scans + scans && --retries > 0);
@@ -271,6 +286,7 @@ TEST_F_TIMEOUT(migration, ksm_and_mremap, 2*RUNTIME)
 	char *region, *peer;
 	unsigned long page_sz;
 	unsigned long region_pfn, peer_pfn;
+	const char *run_path = dedup_run_path();
 	ssize_t saved_run_len;
 	int pagemap_fd, run_fd;
 	int status = 0;
@@ -279,9 +295,9 @@ TEST_F_TIMEOUT(migration, ksm_and_mremap, 2*RUNTIME)
 	if (self->n1 < 0 || self->n2 < 0)
 		SKIP(return, "Not enough NUMA nodes available");
 
-	run_fd = open(KSM_RUN_PATH, O_RDWR);
+	run_fd = open(run_path, O_RDWR);
 	if (run_fd < 0)
-		SKIP(return, "KSM sysfs is unavailable");
+		SKIP(return, "KSM/UKSM sysfs is unavailable");
 
 	saved_run_len = pread(run_fd, saved_run, sizeof(saved_run) - 1, 0);
 	if (saved_run_len < 0)
