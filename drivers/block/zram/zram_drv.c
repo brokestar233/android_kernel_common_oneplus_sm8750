@@ -70,38 +70,6 @@ static DEFINE_MUTEX(zram_index_mutex);
 static int zram_major;
 static const char *default_compressor = CONFIG_ZRAM_DEF_COMP;
 
-bool free_zram_is_ok(void)
-{
-	struct zram *zram;
-	int id;
-	bool ok = false;
-
-	mutex_lock(&zram_index_mutex);
-	idr_for_each_entry(&zram_index_idr, zram, id) {
-		unsigned long stored_pages;
-		unsigned long disksize_pages;
-
-		down_read(&zram->init_lock);
-		if (!init_done(zram)) {
-			up_read(&zram->init_lock);
-			continue;
-		}
-
-		stored_pages = atomic64_read(&zram->stats.pages_stored);
-		disksize_pages = zram->disksize >> PAGE_SHIFT;
-		if (stored_pages < disksize_pages &&
-		    (!zram->limit_pages || stored_pages < zram->limit_pages)) {
-			ok = true;
-			up_read(&zram->init_lock);
-			break;
-		}
-		up_read(&zram->init_lock);
-	}
-	mutex_unlock(&zram_index_mutex);
-
-	return ok;
-}
-
 bool zram_get_opt_stats(struct zram_opt_stats *stats)
 {
 	struct zram *zram;
@@ -113,12 +81,22 @@ bool zram_get_opt_stats(struct zram_opt_stats *stats)
 
 	memset(stats, 0, sizeof(*stats));
 
-	mutex_lock(&zram_index_mutex);
+	/*
+	 * Called from reclaim/vendor-hook paths where sleeping on a contended
+	 * mutex/rwsem can trigger "scheduling while atomic" during zram reset.
+	 * Treat stats collection as best-effort and skip if the device is being
+	 * reconfigured.
+	 */
+	if (!mutex_trylock(&zram_index_mutex))
+		return false;
+
 	idr_for_each_entry(&zram_index_idr, zram, id) {
 		unsigned long stored_pages;
 		unsigned long disksize_pages;
 
-		down_read(&zram->init_lock);
+		if (!down_read_trylock(&zram->init_lock))
+			continue;
+
 		if (!init_done(zram)) {
 			up_read(&zram->init_lock);
 			continue;

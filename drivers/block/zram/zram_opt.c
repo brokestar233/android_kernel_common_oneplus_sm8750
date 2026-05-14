@@ -15,6 +15,7 @@
 #include <linux/proc_fs.h>
 #include <linux/psi.h>
 #include <linux/sched/rt.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/swap.h>
 #include <linux/types.h>
@@ -67,6 +68,7 @@ static atomic64_t zo_pressure_high_events;
 static int zo_last_pressure = ZO_PRESSURE_LOW;
 static int zo_last_tier = ZO_TIER_ROOT;
 static int zo_last_swappiness;
+static int zo_last_vm_swappiness = -1;
 static bool zo_last_balance_anon_file_reclaim;
 static unsigned long zo_last_fullness;
 static unsigned long zo_last_huge_ratio;
@@ -183,10 +185,14 @@ static int zo_compute_pressure(struct zram_opt_stats *stats,
 	huge_ratio_avg = bmavg_read_u16(&zo_huge_ratio_avg);
 	compress_avg = bmavg_read_u16(&zo_compress_pct_avg);
 
-	if (current->in_memstall ||
-	    fullness_avg >= ZO_PRESSURE_HIGH_FULLNESS ||
+	if (fullness_avg >= ZO_PRESSURE_HIGH_FULLNESS ||
 	    huge_ratio_avg >= ZO_PRESSURE_HIGH_HUGE_RATIO) {
 		pressure = ZO_PRESSURE_HIGH;
+	} else if (current->in_memstall &&
+		   (fullness_avg >= ZO_PRESSURE_MEDIUM_FULLNESS ||
+		    huge_ratio_avg >= ZO_PRESSURE_MEDIUM_HUGE_RATIO ||
+		    compress_avg <= ZO_PRESSURE_MEDIUM_COMPRESS_PCT)) {
+		pressure = ZO_PRESSURE_MEDIUM;
 	} else if (zo_last_pressure == ZO_PRESSURE_HIGH) {
 		if (fullness_avg >= ZO_PRESSURE_HIGH_FULLNESS_EXIT ||
 		    huge_ratio_avg >= ZO_PRESSURE_HIGH_HUGE_RATIO_EXIT)
@@ -235,39 +241,20 @@ static int zo_compute_pressure(struct zram_opt_stats *stats,
 }
 
 static bool zo_free_zram_is_usable(struct zram_opt_stats *stats,
-		unsigned long *fullness_pct,
-		unsigned long *huge_ratio_pct,
-		unsigned long *compress_pct)
+		unsigned long fullness,
+		unsigned long huge_ratio,
+		unsigned long compress)
 {
-	unsigned long fullness = 0, huge_ratio = 0, compress = 100;
-
 	if (!stats || !stats->has_capacity)
-		goto no;
-
-	zo_compute_pressure(stats, &fullness, &huge_ratio, &compress);
+		return false;
 
 	if (fullness >= 98)
-		goto no;
+		return false;
 	if (huge_ratio >= 55 && fullness >= 90)
-		goto no;
+		return false;
 	if (compress <= 108 && fullness >= 90)
-		goto no;
-
-	if (fullness_pct)
-		*fullness_pct = fullness;
-	if (huge_ratio_pct)
-		*huge_ratio_pct = huge_ratio;
-	if (compress_pct)
-		*compress_pct = compress;
+		return false;
 	return true;
-no:
-	if (fullness_pct)
-		*fullness_pct = fullness;
-	if (huge_ratio_pct)
-		*huge_ratio_pct = huge_ratio;
-	if (compress_pct)
-		*compress_pct = compress;
-	return false;
 }
 
 static int zo_compute_zram_penalty(unsigned long fullness,
@@ -330,6 +317,15 @@ static int tune_dynamic_direct_swappiness(void)
 	return g_direct_swappiness;
 }
 
+static void zo_sync_vm_swappiness(int swappiness)
+{
+	swappiness = clamp(swappiness, 0, 200);
+	zo_last_vm_swappiness = swappiness;
+
+	if (READ_ONCE(vm_swappiness) != swappiness)
+		WRITE_ONCE(vm_swappiness, swappiness);
+}
+
 static void zo_set_swappiness(void *data, int *swappiness)
 {
 	struct zram_opt_stats stats;
@@ -349,17 +345,11 @@ static void zo_set_swappiness(void *data, int *swappiness)
 	zo_last_huge_ratio = huge_ratio;
 	zo_last_compress_pct = compress;
 
-	if (!zo_free_zram_is_usable(&stats, &fullness, &huge_ratio, &compress)) {
+	if (!zo_free_zram_is_usable(&stats, fullness, huge_ratio, compress)) {
 		*swappiness = 0;
 		zo_last_swappiness = 0;
-		atomic64_inc(&zo_zero_swappiness_events);
-		atomic64_inc(&zo_swappiness_rewrites);
-		return;
-	}
-
-	if (!free_zram_is_ok()) {
-		*swappiness = 0;
-		zo_last_swappiness = 0;
+		if (current_is_kswapd())
+			zo_sync_vm_swappiness(0);
 		atomic64_inc(&zo_zero_swappiness_events);
 		atomic64_inc(&zo_swappiness_rewrites);
 		return;
@@ -418,6 +408,8 @@ static void zo_set_swappiness(void *data, int *swappiness)
 
 	*swappiness = clamp(tuned, 0, 200);
 	zo_last_swappiness = *swappiness;
+	if (current_is_kswapd())
+		zo_sync_vm_swappiness(*swappiness);
 	atomic64_inc(&zo_swappiness_rewrites);
 }
 
@@ -625,64 +617,76 @@ static ssize_t swappiness_para_write(struct file *file,
 static ssize_t swappiness_para_read(struct file *file,
 		char __user *buffer, size_t count, loff_t *off)
 {
-	char kbuf[PARA_BUF_LEN] = { '\0' };
+	char *kbuf;
 	int len;
+	ssize_t ret;
 
-	len = scnprintf(kbuf, PARA_BUF_LEN, "vm_swappiness: %d\n", g_swappiness);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	kbuf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!kbuf)
+		return -ENOMEM;
+
+	len = scnprintf(kbuf, PAGE_SIZE, "vm_swappiness: %d\n", g_swappiness);
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"direct_swappiness: %d\n",
 			tune_dynamic_direct_swappiness());
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"kswapd_swappiness: %d\n", tune_dynamic_swappines());
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"balance_anon_file_reclaim: %s\n",
 			zo_last_balance_anon_file_reclaim ? "true" : "false");
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"pressure_level: %d\n", zo_last_pressure);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"memcg_tier: %d\n", zo_last_tier);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"last_swappiness: %d\n", zo_last_swappiness);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
+			"vm_swappiness_live: %d\n", READ_ONCE(vm_swappiness));
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
+			"last_vm_swappiness: %d\n", zo_last_vm_swappiness);
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"zram_fullness: %lu\n", zo_last_fullness);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"huge_ratio: %lu\n", zo_last_huge_ratio);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"compress_pct: %lu\n", zo_last_compress_pct);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"swappiness_rewrites: %lld\n",
 			atomic64_read(&zo_swappiness_rewrites));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"zero_swappiness_events: %lld\n",
 			atomic64_read(&zo_zero_swappiness_events));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"direct_bypass_events: %lld\n",
 			atomic64_read(&zo_direct_bypass_events));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"balance_true_events: %lld\n",
 			atomic64_read(&zo_balance_true_events));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"balance_false_events: %lld\n",
 			atomic64_read(&zo_balance_false_events));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"pressure_low_events: %lld\n",
 			atomic64_read(&zo_pressure_low_events));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"pressure_medium_events: %lld\n",
 			atomic64_read(&zo_pressure_medium_events));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"pressure_high_events: %lld\n",
 			atomic64_read(&zo_pressure_high_events));
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"tier_topapp_keywords: %s\n", zo_topapp_keywords);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"tier_foreground_keywords: %s\n", zo_foreground_keywords);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"tier_background_keywords: %s\n", zo_background_keywords);
-	len += scnprintf(kbuf + len, PARA_BUF_LEN - len,
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"tier_system_keywords: %s\n", zo_system_keywords);
 
-	return simple_read_from_buffer(buffer, count, off, kbuf, len);
+	ret = simple_read_from_buffer(buffer, count, off, kbuf, len);
+	kfree(kbuf);
+
+	return ret;
 }
 
 static const struct proc_ops proc_swappiness_para_ops = {

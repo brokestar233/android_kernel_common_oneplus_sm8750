@@ -181,7 +181,6 @@ struct zram_opt_stats {
 
 int zram_memcg_init(void);
 void zram_memcg_exit(void);
-bool free_zram_is_ok(void);
 bool zram_get_opt_stats(struct zram_opt_stats *stats);
 int zram_opt_init(void);
 void zram_opt_exit(void);
