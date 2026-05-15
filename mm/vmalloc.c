@@ -3030,7 +3030,7 @@ vm_area_alloc_pages(gfp_t gfp, int nid,
 {
 	unsigned int nr_allocated = 0;
 	unsigned int nr_remaining = nr_pages;
-	unsigned int max_attempt_order = MAX_PAGE_ORDER;
+	unsigned int max_attempt_order = MAX_ORDER - 1;
 	gfp_t alloc_gfp = gfp;
 	bool nofail = gfp & __GFP_NOFAIL;
 	struct page *page;
@@ -3050,9 +3050,9 @@ vm_area_alloc_pages(gfp_t gfp, int nid,
 	 */
 	while (large_order > order && nr_remaining) {
 		if (nid == NUMA_NO_NODE)
-			page = alloc_pages_noprof(large_gfp, large_order);
+			page = alloc_pages(large_gfp, large_order);
 		else
-			page = alloc_pages_node_noprof(nid, large_gfp, large_order);
+			page = alloc_pages_node(nid, large_gfp, large_order);
 
 		if (unlikely(!page)) {
 			max_attempt_order = --large_order;

@@ -6730,10 +6730,10 @@ static void free_prepared_contig_range(struct page *page,
 		unsigned int order;
 
 		/* We are limited by the largest buddy order. */
-		order = pfn ? __ffs(pfn) : MAX_PAGE_ORDER;
+		order = pfn ? __ffs(pfn) : MAX_ORDER - 1;
 		/* Don't exceed the number of pages to free. */
 		order = min_t(unsigned int, order, ilog2(nr_pages));
-		order = min_t(unsigned int, order, MAX_PAGE_ORDER);
+		order = min_t(unsigned int, order, MAX_ORDER - 1);
 
 		/*
 		 * Our caller has already called free_pages_prepare() for each
@@ -6777,15 +6777,15 @@ static void __free_contig_range_common(unsigned long pfn, unsigned long nr_pages
 			continue;
 		}
 
-		if (start && page_to_section(page) != start_sec) {
+		if (start && pfn_to_section_nr(page_to_pfn(page)) != start_sec) {
 			free_prepared_contig_range(start, i - nr_start);
 			start = page;
 			nr_start = i;
-			start_sec = page_to_section(page);
+			start_sec = pfn_to_section_nr(page_to_pfn(page));
 		} else if (!start) {
 			start = page;
 			nr_start = i;
-			start_sec = page_to_section(page);
+			start_sec = pfn_to_section_nr(page_to_pfn(page));
 		}
 	}
 
