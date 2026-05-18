@@ -6,6 +6,7 @@
 
 enum {
     SYMBOL_GAME_PID,
+	SYMBOL_OPLUS_DISPLAY_IS_SCREEN_OFF,
 	NR_SYMBOLS,
 };
 
@@ -21,9 +22,15 @@ static struct symbol_entry symbols_status[NR_SYMBOLS] = {
 		.addr = 0,
 		.found = false,
 	},
+	[SYMBOL_OPLUS_DISPLAY_IS_SCREEN_OFF] = {
+		.name = "oplus_display_is_screen_off",
+		.addr = 0,
+		.found = false,
+	},
 };
 
 unsigned long lookup_symbol(int symbol_index);
 bool check_game_pid(void);
+bool check_screen_off_state(void);
 
 #endif /* _LINUX_GAME_PID_H */

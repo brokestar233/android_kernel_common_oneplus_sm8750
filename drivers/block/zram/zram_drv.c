@@ -3498,6 +3498,9 @@ static unsigned long zram_shrinker_scan(struct shrinker *shrinker, struct shrink
 		return SHRINK_STOP;
 	}
 
+	if (check_screen_off_state())
+		return SHRINK_STOP;
+
 	sc->nr_to_scan = batch_size;
 
 	pr_debug("shrinker_scan: starting for zram device %s, nr_to_scan=%lu, gfp_mask=0x%x\n",

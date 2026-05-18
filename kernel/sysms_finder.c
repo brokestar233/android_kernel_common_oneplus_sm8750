@@ -47,3 +47,16 @@ bool check_game_pid(void)
 
 	return result;
 }
+
+bool check_screen_off_state(void)
+{
+	bool (*screen_off_fn)(void);
+	unsigned long addr;
+
+	addr = lookup_symbol(SYMBOL_OPLUS_DISPLAY_IS_SCREEN_OFF);
+	if (!addr)
+		return false;
+
+	screen_off_fn = (bool (*)(void))addr;
+	return screen_off_fn();
+}
