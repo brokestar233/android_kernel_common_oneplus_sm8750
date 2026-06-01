@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * zram optimization helpers integrated as part of zram core module.
- * Ported from external zram_opt implementation with tree-external
- * dependencies removed or replaced by in-tree equivalents.
+ * Uses system memory usage as the PRIMARY signal for swap aggressiveness,
+ * with zram health as a secondary modifier.  Target: <65% memory usage.
+ * 75% is the yellow line, 80% is the absolute red line.
  */
 
 #define pr_fmt(fmt) "zram_opt: " fmt
@@ -64,6 +65,8 @@ static atomic64_t zo_balance_false_events;
 static atomic64_t zo_pressure_low_events;
 static atomic64_t zo_pressure_medium_events;
 static atomic64_t zo_pressure_high_events;
+static atomic64_t zo_scan_skip_events;
+static atomic64_t zo_file_is_tiny_events;
 
 static int zo_last_pressure = ZO_PRESSURE_LOW;
 static int zo_last_tier = ZO_TIER_ROOT;
@@ -73,20 +76,33 @@ static bool zo_last_balance_anon_file_reclaim;
 static unsigned long zo_last_fullness;
 static unsigned long zo_last_huge_ratio;
 static unsigned long zo_last_compress_pct;
+static unsigned long zo_last_mem_usage_pct;
 static struct bmavg_u16 zo_fullness_avg;
 static struct bmavg_u16 zo_huge_ratio_avg;
 static struct bmavg_u16 zo_compress_pct_avg;
 
-#define ZO_PRESSURE_HIGH_FULLNESS	92
-#define ZO_PRESSURE_HIGH_FULLNESS_EXIT	85
-#define ZO_PRESSURE_MEDIUM_FULLNESS	75
-#define ZO_PRESSURE_MEDIUM_FULLNESS_EXIT	68
-#define ZO_PRESSURE_HIGH_HUGE_RATIO	35
-#define ZO_PRESSURE_HIGH_HUGE_RATIO_EXIT	28
-#define ZO_PRESSURE_MEDIUM_HUGE_RATIO	20
-#define ZO_PRESSURE_MEDIUM_HUGE_RATIO_EXIT	16
-#define ZO_PRESSURE_MEDIUM_COMPRESS_PCT	130
-#define ZO_PRESSURE_MEDIUM_COMPRESS_PCT_EXIT	140
+/*
+ * System memory usage thresholds.
+ * <65% = target zone (green), 65-75% = elevated (orange),
+ * 75% = yellow line, 80% = absolute red line.
+ */
+#define ZO_MEM_PCT_GREEN_CEIL	65
+#define ZO_MEM_PCT_YELLOW	75
+#define ZO_MEM_PCT_RED		80
+
+/*
+ * Zram health pressure thresholds (secondary signal).
+ */
+#define ZO_PRESSURE_HIGH_FULLNESS	90
+#define ZO_PRESSURE_HIGH_FULLNESS_EXIT	82
+#define ZO_PRESSURE_MEDIUM_FULLNESS	68
+#define ZO_PRESSURE_MEDIUM_FULLNESS_EXIT	60
+#define ZO_PRESSURE_HIGH_HUGE_RATIO	40
+#define ZO_PRESSURE_HIGH_HUGE_RATIO_EXIT	32
+#define ZO_PRESSURE_MEDIUM_HUGE_RATIO	25
+#define ZO_PRESSURE_MEDIUM_HUGE_RATIO_EXIT	18
+#define ZO_PRESSURE_MEDIUM_COMPRESS_PCT	140
+#define ZO_PRESSURE_MEDIUM_COMPRESS_PCT_EXIT	150
 
 #define ZO_TIER_KEYWORD_LEN	64
 
@@ -147,6 +163,30 @@ static int zo_detect_memcg_tier(struct task_struct *task)
 	return ZO_TIER_ROOT;
 }
 
+/*
+ * Estimate system memory usage percentage.
+ * Matches how Android userspace calculates "used" memory:
+ *   used = total - free - file_cache - slab_reclaimable
+ */
+static unsigned long zo_get_mem_usage_pct(void)
+{
+	unsigned long total = totalram_pages();
+	unsigned long free_pg = global_zone_page_state(NR_FREE_PAGES);
+	unsigned long file_pg = global_node_page_state(NR_ACTIVE_FILE) +
+				global_node_page_state(NR_INACTIVE_FILE);
+	unsigned long slab_recl = global_node_page_state(NR_SLAB_RECLAIMABLE_B);
+	unsigned long avail;
+
+	if (!total)
+		return 100;
+
+	avail = free_pg + file_pg + slab_recl;
+	if (avail >= total)
+		return 0;
+
+	return ((total - avail) * 100) / total;
+}
+
 static int zo_compute_pressure(struct zram_opt_stats *stats,
 		unsigned long *fullness_pct,
 		unsigned long *huge_ratio_pct,
@@ -188,10 +228,9 @@ static int zo_compute_pressure(struct zram_opt_stats *stats,
 	if (fullness_avg >= ZO_PRESSURE_HIGH_FULLNESS ||
 	    huge_ratio_avg >= ZO_PRESSURE_HIGH_HUGE_RATIO) {
 		pressure = ZO_PRESSURE_HIGH;
-	} else if (current->in_memstall &&
-		   (fullness_avg >= ZO_PRESSURE_MEDIUM_FULLNESS ||
-		    huge_ratio_avg >= ZO_PRESSURE_MEDIUM_HUGE_RATIO ||
-		    compress_avg <= ZO_PRESSURE_MEDIUM_COMPRESS_PCT)) {
+	} else if (fullness_avg >= ZO_PRESSURE_MEDIUM_FULLNESS ||
+		   huge_ratio_avg >= ZO_PRESSURE_MEDIUM_HUGE_RATIO ||
+		   compress_avg <= ZO_PRESSURE_MEDIUM_COMPRESS_PCT) {
 		pressure = ZO_PRESSURE_MEDIUM;
 	} else if (zo_last_pressure == ZO_PRESSURE_HIGH) {
 		if (fullness_avg >= ZO_PRESSURE_HIGH_FULLNESS_EXIT ||
@@ -248,42 +287,48 @@ static bool zo_free_zram_is_usable(struct zram_opt_stats *stats,
 	if (!stats || !stats->has_capacity)
 		return false;
 
-	if (fullness >= 98)
-		return false;
-	if (huge_ratio >= 55 && fullness >= 90)
-		return false;
-	if (compress <= 108 && fullness >= 90)
+	/*
+	 * Only consider zram truly unusable when it is essentially full.
+	 * Even an unhealthy zram is better than OOM-killing on mobile.
+	 */
+	if (fullness >= 99)
 		return false;
 	return true;
 }
 
+/*
+ * Zram health penalty: gentle nudge rather than a hard cut.
+ * Maximum possible penalty is capped at 15 to ensure swap never
+ * stops — on mobile, even a degraded zram beats OOM-kill.
+ * Penalty is only applied when memory is below the yellow line.
+ */
 static int zo_compute_zram_penalty(unsigned long fullness,
 		unsigned long huge_ratio, unsigned long compress)
 {
 	int penalty = 0;
 
 	if (fullness >= 95)
-		penalty += 45;
+		penalty += 6;
 	else if (fullness >= 90)
-		penalty += 30;
+		penalty += 4;
 	else if (fullness >= 85)
-		penalty += 15;
+		penalty += 2;
 
 	if (huge_ratio >= 45)
-		penalty += 25;
+		penalty += 4;
 	else if (huge_ratio >= 35)
-		penalty += 15;
+		penalty += 2;
 	else if (huge_ratio >= 25)
-		penalty += 8;
+		penalty += 1;
 
 	if (compress <= 110)
-		penalty += 25;
+		penalty += 4;
 	else if (compress <= 120)
-		penalty += 15;
+		penalty += 2;
 	else if (compress <= 135)
-		penalty += 8;
+		penalty += 1;
 
-	return penalty;
+	return min(penalty, 15);
 }
 
 static int tune_dynamic_swappines(void)
@@ -326,85 +371,112 @@ static void zo_sync_vm_swappiness(int swappiness)
 		WRITE_ONCE(vm_swappiness, swappiness);
 }
 
+/*
+ * Primary swappiness control: system memory usage drives swap aggressiveness.
+ *
+ *   >= 80% (RED)   : swappiness = 200, no exceptions
+ *   >= 75% (YELLOW): swappiness = 200
+ *   >= 65% (ORANGE): swappiness = 180
+ *   <  65% (GREEN) : swappiness = 160 - zram_penalty (min 130)
+ *
+ * Zram health penalty is only applied in the green zone; above the yellow
+ * line the system must swap regardless of zram efficiency.
+ */
 static void zo_set_swappiness(void *data, int *swappiness)
 {
 	struct zram_opt_stats stats;
+	unsigned long mem_pct;
 	unsigned long fullness = 0, huge_ratio = 0, compress = 100;
 	int pressure;
 	int tier;
 	int tuned;
+	bool has_zram;
 
-	if (!zram_get_opt_stats(&stats))
-		return;
+	has_zram = zram_get_opt_stats(&stats);
+	mem_pct = zo_get_mem_usage_pct();
+	zo_last_mem_usage_pct = mem_pct;
 
-	pressure = zo_compute_pressure(&stats, &fullness, &huge_ratio, &compress);
+	if (has_zram) {
+		pressure = zo_compute_pressure(&stats, &fullness,
+					       &huge_ratio, &compress);
+		zo_last_pressure = pressure;
+		zo_last_fullness = fullness;
+		zo_last_huge_ratio = huge_ratio;
+		zo_last_compress_pct = compress;
+	} else {
+		pressure = ZO_PRESSURE_LOW;
+	}
 	tier = zo_detect_memcg_tier(current);
-	zo_last_pressure = pressure;
 	zo_last_tier = tier;
-	zo_last_fullness = fullness;
-	zo_last_huge_ratio = huge_ratio;
-	zo_last_compress_pct = compress;
 
-	if (!zo_free_zram_is_usable(&stats, fullness, huge_ratio, compress)) {
-		*swappiness = 0;
-		zo_last_swappiness = 0;
+	/* Zram 99% full — use minimal swappiness, never zero */
+	if (has_zram &&
+	    !zo_free_zram_is_usable(&stats, fullness, huge_ratio, compress)) {
+		*swappiness = current_is_kswapd() ? 80 : 60;
+		zo_last_swappiness = *swappiness;
 		if (current_is_kswapd())
-			zo_sync_vm_swappiness(0);
+			zo_sync_vm_swappiness(*swappiness);
 		atomic64_inc(&zo_zero_swappiness_events);
 		atomic64_inc(&zo_swappiness_rewrites);
 		return;
 	}
 
-	if (current_is_kswapd()) {
-		tuned = tune_dynamic_swappines();
-		switch (pressure) {
-		case ZO_PRESSURE_LOW:
-			tuned = max(tuned - 20, 40);
-			break;
-		case ZO_PRESSURE_HIGH:
-			tuned = min(tuned + 20, 200);
-			break;
-		default:
-			break;
-		}
+	/* ---- PRIMARY: memory-usage-driven swappiness ---- */
+	if (mem_pct >= ZO_MEM_PCT_RED) {
+		/* RED LINE: absolute maximum swap */
+		tuned = 200;
+	} else if (mem_pct >= ZO_MEM_PCT_YELLOW) {
+		/* YELLOW LINE: very aggressive swap */
+		tuned = 200;
+	} else if (mem_pct >= ZO_MEM_PCT_GREEN_CEIL) {
+		/* ORANGE zone: aggressive swap */
+		tuned = 180;
 	} else {
-		tuned = tune_dynamic_direct_swappiness();
-		switch (pressure) {
-		case ZO_PRESSURE_LOW:
-			tuned = max(tuned - 20, 20);
-			break;
-		case ZO_PRESSURE_HIGH:
-			tuned = min(tuned, 40);
-			break;
-		default:
-			break;
-		}
+		/* GREEN zone: moderately aggressive baseline */
+		tuned = 160;
+	}
 
+	/* ---- SECONDARY: zram health penalty (green zone only) ---- */
+	if (mem_pct < ZO_MEM_PCT_YELLOW && has_zram) {
+		int penalty = zo_compute_zram_penalty(fullness,
+						      huge_ratio, compress);
+		tuned -= penalty;
+	}
+
+	/* ---- Tier-based caps for direct reclaim ---- */
+	if (!current_is_kswapd()) {
 		switch (tier) {
 		case ZO_TIER_TOPAPP:
-			tuned = pressure == ZO_PRESSURE_HIGH ? min(tuned, 20) :
-				min(tuned, 40);
+			tuned = min(tuned, 160);
 			break;
 		case ZO_TIER_FOREGROUND:
-			tuned = pressure == ZO_PRESSURE_HIGH ? min(tuned, 30) :
-				min(tuned, 55);
+			tuned = min(tuned, 170);
 			break;
 		case ZO_TIER_BACKGROUND:
-			tuned = min(tuned + 15, 160);
+			tuned = min(tuned + 10, 200);
 			break;
 		case ZO_TIER_SYSTEM:
-			tuned = min(tuned + 5, 140);
+			tuned = min(tuned + 5, 200);
 			break;
 		default:
 			break;
 		}
 	}
 
-	tuned -= zo_compute_zram_penalty(fullness, huge_ratio, compress);
-	if (current_is_kswapd())
-		tuned = max(tuned, 20);
-	else
-		tuned = max(tuned, 10);
+	/* ---- Minimum swappiness floors ---- */
+	if (mem_pct >= ZO_MEM_PCT_YELLOW) {
+		/* At yellow/red line, never go below 160 */
+		tuned = max(tuned, 160);
+	} else if (mem_pct >= ZO_MEM_PCT_GREEN_CEIL) {
+		/* Orange zone: floor at 140 */
+		tuned = max(tuned, 140);
+	} else {
+		/* Green zone: floor at 130 for kswapd, 100 for direct */
+		if (current_is_kswapd())
+			tuned = max(tuned, 130);
+		else
+			tuned = max(tuned, 100);
+	}
 
 	*swappiness = clamp(tuned, 0, 200);
 	zo_last_swappiness = *swappiness;
@@ -422,37 +494,34 @@ static void zo_set_inactive_ratio(void *data,
 		*inactive_ratio = 1;
 }
 
+/*
+ * Balance anon/file reclaim: always enable anon reclaim when memory
+ * is above the green ceiling, so the kernel swaps out anon pages
+ * instead of only dropping file cache.
+ */
 static void balance_reclaim(void *unused, bool *balance_anon_file_reclaim)
 {
-	struct zram_opt_stats stats;
-	pg_data_t *pgdat;
-	struct zone *zone;
-	unsigned long free_pages_threshold;
-	unsigned long normal_zone_free_pages;
-	unsigned long fullness = 0, huge_ratio = 0, compress = 100;
-	int pressure = ZO_PRESSURE_LOW;
-	int tier = zo_detect_memcg_tier(current);
+	unsigned long mem_pct = zo_get_mem_usage_pct();
 
-	pgdat = NODE_DATA(0);
-	zone = &pgdat->node_zones[ZONE_NORMAL];
-	free_pages_threshold = low_wmark_pages(zone) +
-		((high_wmark_pages(zone) - low_wmark_pages(zone)) >> 1);
-	if (zram_get_opt_stats(&stats)) {
-		pressure = zo_compute_pressure(&stats, &fullness, &huge_ratio,
-					      &compress);
-		if (pressure == ZO_PRESSURE_HIGH)
-			free_pages_threshold = high_wmark_pages(zone);
-		else if (pressure == ZO_PRESSURE_LOW)
-			free_pages_threshold = low_wmark_pages(zone);
-		if (tier == ZO_TIER_TOPAPP || tier == ZO_TIER_FOREGROUND)
-			free_pages_threshold = min_t(unsigned long,
-				free_pages_threshold,
-				high_wmark_pages(zone));
+	/* Above green ceiling: ALWAYS balance to encourage swap */
+	if (mem_pct >= ZO_MEM_PCT_GREEN_CEIL) {
+		*balance_anon_file_reclaim = true;
+		zo_last_balance_anon_file_reclaim = true;
+		atomic64_inc(&zo_balance_true_events);
+		return;
 	}
 
-	normal_zone_free_pages = zone_page_state(zone, NR_FREE_PAGES);
-	*balance_anon_file_reclaim =
-		normal_zone_free_pages >= free_pages_threshold;
+	/* Below green ceiling: use watermark-based heuristic */
+	{
+		pg_data_t *pgdat = NODE_DATA(0);
+		struct zone *zone = &pgdat->node_zones[ZONE_NORMAL];
+		unsigned long free_pages;
+
+		free_pages = zone_page_state(zone, NR_FREE_PAGES);
+		*balance_anon_file_reclaim =
+			free_pages >= low_wmark_pages(zone);
+	}
+
 	zo_last_balance_anon_file_reclaim = *balance_anon_file_reclaim;
 	if (*balance_anon_file_reclaim)
 		atomic64_inc(&zo_balance_true_events);
@@ -469,32 +538,85 @@ static void vh_android_vh_throttle_direct_reclaim_bypass(void *data,
 	}
 }
 
+/*
+ * Prevent the kernel from skipping swap during reclaim when memory
+ * is above the green ceiling.  This hook is called from
+ * do_try_to_free_pages() before the reclaim loop.
+ */
+static void zo_tune_scan_control(void *data, bool *skip_swap)
+{
+	if (zo_get_mem_usage_pct() >= ZO_MEM_PCT_GREEN_CEIL) {
+		*skip_swap = false;
+		atomic64_inc(&zo_scan_skip_events);
+	}
+}
+
+/*
+ * Force anon scanning when memory is elevated.  Setting file_is_tiny
+ * tells the reclaim scanner that file pages are dangerously low, which
+ * causes it to prefer scanning anon pages (i.e. swapping).
+ * Also bump nr_to_reclaim at the red/yellow line for deeper reclaim.
+ */
+static void zo_modify_scan_control(void *data, u64 *ext,
+		unsigned long *nr_to_reclaim,
+		struct mem_cgroup *target_mem_cgroup,
+		bool *file_is_tiny, bool *may_writepage)
+{
+	unsigned long mem_pct = zo_get_mem_usage_pct();
+
+	if (mem_pct >= ZO_MEM_PCT_GREEN_CEIL) {
+		*file_is_tiny = true;
+		atomic64_inc(&zo_file_is_tiny_events);
+	}
+
+	if (mem_pct >= ZO_MEM_PCT_YELLOW) {
+		unsigned long target = SWAP_CLUSTER_MAX * 4UL;
+
+		if (*nr_to_reclaim < target)
+			*nr_to_reclaim = target;
+	}
+}
+
+/*
+ * Always use global vm_swappiness (which we control) instead of
+ * per-memcg swappiness, so our tuning takes effect everywhere.
+ */
+static void zo_use_vm_swappiness(void *data, bool *use_vm_swappiness)
+{
+	*use_vm_swappiness = true;
+}
+
+/*
+ * Dynamically adjust zone watermarks.  Scale oplus_extra_free_kbytes
+ * based on system memory usage:
+ *   RED    : 4x
+ *   YELLOW : 3x
+ *   ORANGE : 2x
+ *   GREEN  : 1x (base)
+ *   <GREEN : 0.5x
+ */
 static void adjust_zone_wmark(void *unused, struct zone *zone, u64 interval)
 {
-	struct zram_opt_stats stats;
 	unsigned long delta;
 	unsigned long lowmem_pages = 0;
-	unsigned long fullness = 0, huge_ratio = 0, compress = 100;
 	unsigned long scaled_extra;
+	unsigned long mem_pct;
 	struct zone *z;
 
 	if (!oplus_extra_free_kbytes)
 		return;
 
+	mem_pct = zo_get_mem_usage_pct();
 	scaled_extra = oplus_extra_free_kbytes;
-	if (zram_get_opt_stats(&stats)) {
-		int pressure = zo_compute_pressure(&stats, &fullness, &huge_ratio,
-					      &compress);
-		if (pressure == ZO_PRESSURE_HIGH)
-			scaled_extra = scaled_extra * 2;
-		else if (pressure == ZO_PRESSURE_MEDIUM)
-			scaled_extra = scaled_extra + (scaled_extra >> 1);
-		else
-			scaled_extra = max_t(unsigned long, scaled_extra >> 1, 1);
 
-		if (fullness >= 85)
-			scaled_extra += scaled_extra >> 1;
-	}
+	if (mem_pct >= ZO_MEM_PCT_RED)
+		scaled_extra = scaled_extra * 4;
+	else if (mem_pct >= ZO_MEM_PCT_YELLOW)
+		scaled_extra = scaled_extra * 3;
+	else if (mem_pct >= ZO_MEM_PCT_GREEN_CEIL)
+		scaled_extra = scaled_extra * 2;
+	else
+		scaled_extra = max_t(unsigned long, scaled_extra >> 1, 1);
 
 	for_each_zone(z) {
 		if (!is_highmem(z))
@@ -539,8 +661,32 @@ static int register_zram_opt_vendor_hooks(void)
 	if (ret)
 		goto unregister_adjust_zone_wmark;
 
+	ret = register_trace_android_vh_tune_scan_control(
+			zo_tune_scan_control, NULL);
+	if (ret)
+		goto unregister_throttle_bypass;
+
+	ret = register_trace_android_vh_modify_scan_control(
+			zo_modify_scan_control, NULL);
+	if (ret)
+		goto unregister_scan_control;
+
+	ret = register_trace_android_vh_use_vm_swappiness(
+			zo_use_vm_swappiness, NULL);
+	if (ret)
+		goto unregister_modify_scan;
+
 	return 0;
 
+unregister_modify_scan:
+	unregister_trace_android_vh_modify_scan_control(
+			zo_modify_scan_control, NULL);
+unregister_scan_control:
+	unregister_trace_android_vh_tune_scan_control(
+			zo_tune_scan_control, NULL);
+unregister_throttle_bypass:
+	unregister_trace_android_vh_throttle_direct_reclaim_bypass(
+			vh_android_vh_throttle_direct_reclaim_bypass, NULL);
 unregister_adjust_zone_wmark:
 	unregister_trace_android_vh_init_adjust_zone_wmark(adjust_zone_wmark,
 			NULL);
@@ -556,6 +702,12 @@ out:
 
 static void unregister_zram_opt_vendor_hooks(void)
 {
+	unregister_trace_android_vh_use_vm_swappiness(
+			zo_use_vm_swappiness, NULL);
+	unregister_trace_android_vh_modify_scan_control(
+			zo_modify_scan_control, NULL);
+	unregister_trace_android_vh_tune_scan_control(
+			zo_tune_scan_control, NULL);
 	unregister_trace_android_vh_throttle_direct_reclaim_bypass(
 			vh_android_vh_throttle_direct_reclaim_bypass, NULL);
 	unregister_trace_android_vh_init_adjust_zone_wmark(adjust_zone_wmark,
@@ -635,6 +787,8 @@ static ssize_t swappiness_para_read(struct file *file,
 			"balance_anon_file_reclaim: %s\n",
 			zo_last_balance_anon_file_reclaim ? "true" : "false");
 	len += scnprintf(kbuf + len, PAGE_SIZE - len,
+			"mem_usage_pct: %lu\n", zo_last_mem_usage_pct);
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"pressure_level: %d\n", zo_last_pressure);
 	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"memcg_tier: %d\n", zo_last_tier);
@@ -674,6 +828,12 @@ static ssize_t swappiness_para_read(struct file *file,
 	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"pressure_high_events: %lld\n",
 			atomic64_read(&zo_pressure_high_events));
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
+			"scan_skip_events: %lld\n",
+			atomic64_read(&zo_scan_skip_events));
+	len += scnprintf(kbuf + len, PAGE_SIZE - len,
+			"file_is_tiny_events: %lld\n",
+			atomic64_read(&zo_file_is_tiny_events));
 	len += scnprintf(kbuf + len, PAGE_SIZE - len,
 			"tier_topapp_keywords: %s\n", zo_topapp_keywords);
 	len += scnprintf(kbuf + len, PAGE_SIZE - len,
