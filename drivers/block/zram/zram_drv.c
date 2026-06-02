@@ -189,6 +189,63 @@ static inline struct zram *dev_to_zram(struct device *dev)
 	return (struct zram *)dev_to_disk(dev)->private_data;
 }
 
+#ifdef CONFIG_ZRAM_WRITEBACK
+
+/*
+ * System memory usage threshold for screen-off writeback (percent).
+ * When the display is off, writeback to the backing device is
+ * allowed ONLY if system memory pressure exceeds this threshold.
+ *
+ * This prevents the backing device from filling with cold data
+ * during idle screen-off periods (which would cause morning lag
+ * when data must be read back), while still allowing writeback
+ * under genuine memory pressure.
+ *
+ * Using system memory (rather than zram fullness) is deliberate:
+ * zram disksize changes across reboots due to auto-sizing, but
+ * absolute memory pressure is the real signal for writeback need.
+ */
+#define ZRAM_WB_MEM_THRESHOLD_PCT	80
+
+/*
+ * Estimate system memory usage percentage.
+ * used = total - free - file_pages - slab_reclaimable
+ */
+static unsigned long zram_mem_usage_pct(void)
+{
+	unsigned long total = totalram_pages();
+	unsigned long free_pg = global_zone_page_state(NR_FREE_PAGES);
+	unsigned long file_pg = global_node_page_state(NR_ACTIVE_FILE) +
+				global_node_page_state(NR_INACTIVE_FILE);
+	unsigned long slab_recl = global_node_page_state(NR_SLAB_RECLAIMABLE_B);
+	unsigned long avail;
+
+	if (!total)
+		return 100;
+
+	avail = free_pg + file_pg + slab_recl;
+	if (avail >= total)
+		return 0;
+
+	return ((total - avail) * 100) / total;
+}
+
+static bool zram_writeback_allowed(struct zram *zram)
+{
+	if (check_screen_off_state()) {
+		/*
+		 * Screen off: allow writeback only when system
+		 * memory pressure is high enough to justify the
+		 * backing-device IO cost and subsequent readback.
+		 */
+		if (zram_mem_usage_pct() < ZRAM_WB_MEM_THRESHOLD_PCT)
+			return false;
+	}
+
+	return true;
+}
+#endif
+
 static unsigned long zram_get_handle(struct zram *zram, u32 index)
 {
 	return zram->table[index].handle;
@@ -3498,7 +3555,7 @@ static unsigned long zram_shrinker_scan(struct shrinker *shrinker, struct shrink
 		return SHRINK_STOP;
 	}
 
-	if (check_screen_off_state())
+	if (!zram_writeback_allowed())
 		return SHRINK_STOP;
 
 	sc->nr_to_scan = batch_size;
