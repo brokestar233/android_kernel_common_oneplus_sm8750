@@ -43,6 +43,9 @@ for ko in "${ko_files[@]}"; do
 
     base=$(basename "$ko")
     name="${base%.ko}"                    # 去掉 .ko
+    # 内核构建系统 (scripts/Makefile.lib:123) 会将模块名中的连字符替换为下划线，
+    # 这里做同样的处理以保持与 info->name 一致
+    name="${name//-/_}"
     array_name="${name//[^a-zA-Z0-9]/_}_data"  # 合法 C 标识符
 
     # 先获取原始大小
