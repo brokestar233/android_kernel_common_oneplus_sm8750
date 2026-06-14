@@ -60,3 +60,16 @@ bool check_screen_off_state(void)
 	screen_off_fn = (bool (*)(void))addr;
 	return screen_off_fn();
 }
+
+bool check_charging_state(void)
+{
+	bool (*connecting_state_fn)(void);
+	unsigned long addr;
+
+	addr = lookup_symbol(SYMBOL_GET_CONNECTING_STATE);
+	if (!addr)
+		return false;
+
+	connecting_state_fn = (bool (*)(void))addr;
+	return connecting_state_fn();
+}

@@ -165,26 +165,13 @@ static int zo_detect_memcg_tier(struct task_struct *task)
 
 /*
  * Estimate system memory usage percentage.
+ * Delegates to the shared zram_mem_usage_pct() to avoid code duplication.
  * Matches how Android userspace calculates "used" memory:
  *   used = total - free - file_cache - slab_reclaimable
  */
 static unsigned long zo_get_mem_usage_pct(void)
 {
-	unsigned long total = totalram_pages();
-	unsigned long free_pg = global_zone_page_state(NR_FREE_PAGES);
-	unsigned long file_pg = global_node_page_state(NR_ACTIVE_FILE) +
-				global_node_page_state(NR_INACTIVE_FILE);
-	unsigned long slab_recl = global_node_page_state(NR_SLAB_RECLAIMABLE_B);
-	unsigned long avail;
-
-	if (!total)
-		return 100;
-
-	avail = free_pg + file_pg + slab_recl;
-	if (avail >= total)
-		return 0;
-
-	return ((total - avail) * 100) / total;
+	return zram_mem_usage_pct();
 }
 
 static int zo_compute_pressure(struct zram_opt_stats *stats,

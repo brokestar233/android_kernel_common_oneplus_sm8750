@@ -62,6 +62,8 @@ enum zram_pageflags {
 	ZRAM_PAGE_FILE,		/* 文件页 */
 	ZRAM_PAGE_DIRTY,	/* 脏页 */
 
+	ZRAM_STATE_MIGRATING,	/* page is being migrated on backing device */
+
 	__NR_ZRAM_PAGEFLAGS,
 };
 
@@ -77,6 +79,8 @@ struct zram_table_entry {
 #ifdef	CONFIG_ZRAM_WRITEBACK
 	struct list_head lru;
 	bool referenced;
+	u8 wb_nr_pages;
+	u8 migration_count;
 #endif
 };
 
@@ -153,6 +157,13 @@ struct zram {
 	struct shrinker *zram_shrinker;
 	/* Global LRU list for zram entries. */
 	struct list_lru zram_list_lru;
+	/* GC fields */
+	struct work_struct gc_work;
+	struct delayed_work gc_periodic_work;
+	atomic_t gc_pending;
+	bool gc_stopping;
+	u32 gc_target_pages;
+	unsigned long gc_scan_cursor;
 #endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
@@ -181,12 +192,15 @@ struct zram_opt_stats {
 
 int zram_memcg_init(void);
 void zram_memcg_exit(void);
+unsigned long zram_mem_usage_pct(void);
 bool zram_get_opt_stats(struct zram_opt_stats *stats);
 int zram_opt_init(void);
 void zram_opt_exit(void);
 
 void zram_slot_lock(struct zram *zram, u32 index);
 void zram_slot_unlock(struct zram *zram, u32 index);
+int zram_slot_trylock(struct zram *zram, u32 index);
+unsigned long zram_get_handle(struct zram *zram, u32 index);
 void zram_set_handle(struct zram *zram, u32 index, unsigned long handle);
 bool zram_test_flag(struct zram *zram, u32 index, enum zram_pageflags flag);
 void zram_set_flag(struct zram *zram, u32 index, enum zram_pageflags flag);
