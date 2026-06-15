@@ -56,51 +56,64 @@ void free_block_bdev(struct zram *zram, unsigned long blk_idx)
 	int was_set;
 
 	was_set = test_and_clear_bit(blk_idx, zram->bitmap);
-	WARN_ON_ONCE(!was_set);
+	if (WARN_ON_ONCE(!was_set))
+		return;
 	atomic64_dec(&zram->stats.bd_count);
 }
 
 unsigned long alloc_block_bdev_batch(struct zram *zram, int req_count, int *act_count)
 {
-	unsigned long blk_idx, conflict, start = 0;
-	int found = 0;
+	unsigned long blk_idx, conflict, start, end, run_len;
+	int found, i;
 
+	*act_count = 0;
+	if (req_count <= 0)
+		return 0;
+
+	/* Skip bit 0 to keep zram.handle = 0 invalid. */
 	blk_idx = 1;
-	while (blk_idx < zram->nr_pages && found < req_count) {
+	while (blk_idx < zram->nr_pages) {
 		blk_idx = find_next_zero_bit(zram->bitmap, zram->nr_pages, blk_idx);
 		if (blk_idx >= zram->nr_pages)
 			break;
 
-		if (found == 0)
-			start = blk_idx;
+		start = blk_idx;
+		end = find_next_bit(zram->bitmap, zram->nr_pages, start);
+		run_len = end - start;
+		if (run_len < min_t(unsigned long, req_count, 2)) {
+			if (end >= zram->nr_pages)
+				break;
+			blk_idx = end + 1;
+			continue;
+		}
+		found = min_t(unsigned long, run_len, req_count);
+		if (!found)
+			break;
 
-		if (test_and_set_bit(blk_idx, zram->bitmap))
-			goto retry;
+		for (i = 0; i < found; i++) {
+			if (test_and_set_bit(start + i, zram->bitmap))
+				goto retry;
+		}
 
-		atomic64_inc(&zram->stats.bd_count);
-		found++;
-		blk_idx++;
-		continue;
+		atomic64_add(found, &zram->stats.bd_count);
+		*act_count = found;
+		return start;
 
 retry:
 		/*
-		 * Rollback on conflict — save the conflict point so we
-		 * can skip past it after clearing our previous allocations.
-		 * Without this skip, a persistently set bit could cause an
-		 * infinite reallocate-rollback loop.
+		 * Roll back on conflict and continue after the conflicting
+		 * block.  The returned range must be truly contiguous because
+		 * callers address it as base + i.
 		 */
-		conflict = blk_idx;
-		while (found > 0) {
-			blk_idx--;
-			found--;
-			test_and_clear_bit(start + found, zram->bitmap);
+		conflict = start + i;
+		while (i-- > 0) {
+			test_and_clear_bit(start + i, zram->bitmap);
 			atomic64_dec(&zram->stats.bd_count);
 		}
 		blk_idx = conflict + 1;
 	}
 
-	*act_count = found;
-	return found > 0 ? start : 0;
+	return 0;
 }
 
 void free_block_bdev_range(struct zram *zram, unsigned long blk_idx, int count)
@@ -109,7 +122,8 @@ void free_block_bdev_range(struct zram *zram, unsigned long blk_idx, int count)
 
 	for (i = 0; i < count; i++) {
 		int was_set = test_and_clear_bit(blk_idx + i, zram->bitmap);
-		WARN_ON_ONCE(!was_set);
+		if (WARN_ON_ONCE(!was_set))
+			continue;
 		atomic64_dec(&zram->stats.bd_count);
 	}
 }
@@ -469,8 +483,11 @@ static void zram_replace_block_bdev(struct zram *zram,
 	if (old_blk_idx == new_blk_idx)
 		return;
 
-	test_and_set_bit(new_blk_idx, zram->bitmap);
-	test_and_clear_bit(old_blk_idx, zram->bitmap);
+	if (WARN_ON_ONCE(!test_bit(new_blk_idx, zram->bitmap))) {
+		if (!test_and_set_bit(new_blk_idx, zram->bitmap))
+			atomic64_inc(&zram->stats.bd_count);
+	}
+	free_block_bdev(zram, old_blk_idx);
 }
 
 static bool zram_wb_slot_can_gc(struct zram *zram, unsigned long index)
@@ -487,14 +504,46 @@ static bool zram_wb_slot_can_gc(struct zram *zram, unsigned long index)
 	return true;
 }
 
+struct zram_gc_candidate {
+	unsigned long index;
+	unsigned long old_blk;
+};
+
+static void zram_gc_insert_candidate(struct zram_gc_candidate *candidates,
+				     int *nr_candidates,
+				     int max_candidates,
+				     unsigned long index,
+				     unsigned long old_blk)
+{
+	int pos;
+
+	if (*nr_candidates == max_candidates &&
+	    old_blk <= candidates[max_candidates - 1].old_blk)
+		return;
+
+	pos = min(*nr_candidates, max_candidates - 1);
+	if (*nr_candidates < max_candidates)
+		(*nr_candidates)++;
+
+	while (pos > 0 && candidates[pos - 1].old_blk < old_blk) {
+		candidates[pos] = candidates[pos - 1];
+		pos--;
+	}
+
+	candidates[pos].index = index;
+	candidates[pos].old_blk = old_blk;
+}
+
 static int zram_gc_compact(struct zram *zram, int target_pages)
 {
 	unsigned long index;
 	unsigned long wb_indices[ZRAM_GC_MAX_BATCH];
 	unsigned long old_blks[ZRAM_GC_MAX_BATCH];
+	struct zram_gc_candidate candidates[ZRAM_GC_MAX_BATCH];
 	struct page *pages[ZRAM_GC_MAX_BATCH] = {};
 	unsigned long new_base;
 	ktime_t gc_start;
+	int nr_candidates = 0;
 	int nr_selected = 0;
 	int act_count = 0;
 	int i;
@@ -514,10 +563,24 @@ static int zram_gc_compact(struct zram *zram, int target_pages)
 	gc_start = ktime_get();
 	target_pages = zram_gc_clamp_target_pages(zram, target_pages);
 
-	/* Scan for WB pages starting from cursor */
+	/*
+	 * Reserve the earliest contiguous hole first, then only move WB pages
+	 * from higher backing blocks into that hole.  This makes GC directional:
+	 * it fills front fragmentation and frees blocks closer to the tail.
+	 */
+	new_base = alloc_block_bdev_batch(zram, target_pages, &act_count);
+	if (!new_base || act_count < 2) {
+		if (new_base)
+			free_block_bdev_range(zram, new_base, act_count);
+		return 0;
+	}
+	target_pages = act_count;
+
+	/* Scan for high WB pages starting from cursor. */
 	index = READ_ONCE(zram->gc_scan_cursor);
 	for (nr_entries = 0; nr_entries < ZRAM_GC_MAX_SCAN_ENTRIES; nr_entries++) {
 		unsigned long flags;
+		unsigned long old_blk;
 
 		if (index >= nr_total_entries) {
 			index = 0;
@@ -545,9 +608,12 @@ static int zram_gc_compact(struct zram *zram, int target_pages)
 
 		/* 持锁后二次确认状态未变 */
 		if (likely(zram_wb_slot_can_gc(zram, index))) {
-			wb_indices[nr_selected] = index;
-			old_blks[nr_selected] = zram_get_handle(zram, index);
-			nr_selected++;
+			old_blk = zram_get_handle(zram, index);
+			if (old_blk > new_base)
+				zram_gc_insert_candidate(candidates,
+							 &nr_candidates,
+							 target_pages,
+							 index, old_blk);
 		}
 		zram_slot_unlock(zram, index);
 next:
@@ -556,19 +622,36 @@ next:
 
 	WRITE_ONCE(zram->gc_scan_cursor, index);
 
-	if (nr_selected < 2)
-		return 0;
-
 	/* Budget check after scan */
 	if (ktime_ms_delta(ktime_get(), gc_start) >= ZRAM_GC_BUDGET_MS)
-		goto rollback;
+		goto free_reserved;
 
-	/* Allocate contiguous destination blocks */
-	new_base = alloc_block_bdev_batch(zram, nr_selected, &act_count);
-	if (!new_base || act_count < nr_selected) {
-		if (new_base)
-			free_block_bdev_range(zram, new_base, act_count);
-		goto rollback;
+	for (i = 0; i < nr_candidates && nr_selected < target_pages; i++) {
+		unsigned long dst_blk = new_base + nr_selected;
+
+		if (candidates[i].old_blk <= dst_blk)
+			break;
+
+		zram_slot_lock(zram, candidates[i].index);
+		if (zram_wb_slot_can_gc(zram, candidates[i].index) &&
+		    zram_get_handle(zram, candidates[i].index) == candidates[i].old_blk &&
+		    candidates[i].old_blk > dst_blk) {
+			zram_set_flag(zram, candidates[i].index,
+				      ZRAM_STATE_MIGRATING);
+			wb_indices[nr_selected] = candidates[i].index;
+			old_blks[nr_selected] = candidates[i].old_blk;
+			nr_selected++;
+		}
+		zram_slot_unlock(zram, candidates[i].index);
+	}
+
+	if (nr_selected < 2)
+		goto free_reserved;
+
+	if (nr_selected < act_count) {
+		free_block_bdev_range(zram, new_base + nr_selected,
+				      act_count - nr_selected);
+		act_count = nr_selected;
 	}
 
 	/* Allocate pages for readback */
@@ -604,23 +687,22 @@ next:
 	for (i = 0; i < nr_selected; i++) {
 		zram_slot_lock(zram, wb_indices[i]);
 
-		if (!zram_wb_slot_can_gc(zram, wb_indices[i]) ||
+		if (!zram_test_flag(zram, wb_indices[i], ZRAM_STATE_MIGRATING) ||
+		    !zram_test_flag(zram, wb_indices[i], ZRAM_WB) ||
 		    zram_get_handle(zram, wb_indices[i]) != old_blks[i]) {
-			/* Slot changed under us, free the new block */
+			/* Slot changed under us, free the new block. */
 			free_block_bdev(zram, new_base + i);
+			if (zram_test_flag(zram, wb_indices[i], ZRAM_STATE_MIGRATING))
+				zram_wb_clear_migration(zram, wb_indices[i]);
 			zram_slot_unlock(zram, wb_indices[i]);
 			continue;
 		}
 
-		/* Set migration flag */
-		zram_set_flag(zram, wb_indices[i], ZRAM_STATE_MIGRATING);
 		zram_set_handle(zram, wb_indices[i], new_base + i);
+		zram_replace_block_bdev(zram, old_blks[i], new_base + i);
 		zram_wb_clear_migration(zram, wb_indices[i]);
 
 		zram_slot_unlock(zram, wb_indices[i]);
-
-		/* Update bitmap: free old block, mark new block */
-		zram_replace_block_bdev(zram, old_blks[i], new_base + i);
 	}
 
 	/* Clean up pages */
@@ -634,7 +716,8 @@ next:
 	return nr_selected;
 
 free_pages:
-	free_block_bdev_range(zram, new_base, nr_selected);
+	free_block_bdev_range(zram, new_base, act_count);
+	act_count = 0;
 	for (i = 0; i < nr_selected; i++) {
 		if (pages[i]) {
 			__free_page(pages[i]);
@@ -642,13 +725,14 @@ free_pages:
 		}
 	}
 
-rollback:
+free_reserved:
+	if (act_count)
+		free_block_bdev_range(zram, new_base, act_count);
+
 	for (i = 0; i < nr_selected; i++) {
 		zram_slot_lock(zram, wb_indices[i]);
 		if (zram_test_flag(zram, wb_indices[i], ZRAM_STATE_MIGRATING))
 			zram_wb_clear_migration(zram, wb_indices[i]);
-		if (zram_test_flag(zram, wb_indices[i], ZRAM_PP_SLOT))
-			zram_wb_clear_flag(zram, wb_indices[i], ZRAM_PP_SLOT);
 		zram_slot_unlock(zram, wb_indices[i]);
 	}
 

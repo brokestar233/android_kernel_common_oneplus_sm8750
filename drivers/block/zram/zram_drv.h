@@ -60,7 +60,6 @@ enum zram_pageflags {
 
 	ZRAM_PAGE_ANON,		/* 匿名页 */
 	ZRAM_PAGE_FILE,		/* 文件页 */
-	ZRAM_PAGE_DIRTY,	/* 脏页 */
 
 	ZRAM_STATE_MIGRATING,	/* page is being migrated on backing device */
 
